@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use anyhow::Result;
-use directories::ProjectDirs;
 
+use crate::config_dir::moltis_config_dir;
 use crate::types::OAuthTokens;
 
 /// File-based token storage at `~/.config/moltis/oauth_tokens.json`.
@@ -14,9 +14,7 @@ pub struct TokenStore {
 
 impl TokenStore {
     pub fn new() -> Self {
-        let path = ProjectDirs::from("", "", "moltis")
-            .map(|dirs| dirs.config_dir().join("oauth_tokens.json"))
-            .unwrap_or_else(|| PathBuf::from("oauth_tokens.json"));
+        let path = moltis_config_dir().join("oauth_tokens.json");
         Self { path }
     }
 

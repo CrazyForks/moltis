@@ -1,4 +1,5 @@
 pub mod callback_server;
+mod config_dir;
 pub mod defaults;
 pub mod flow;
 pub mod pkce;

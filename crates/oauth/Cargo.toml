@@ -7,7 +7,6 @@ edition.workspace = true
 anyhow = { workspace = true }
 axum = { workspace = true }
 base64 = "0.22"
-directories = { workspace = true }
 rand = "0.9"
 reqwest = { workspace = true }
 serde = { workspace = true }
