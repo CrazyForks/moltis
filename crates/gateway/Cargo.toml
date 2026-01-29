@@ -1,0 +1,28 @@
+[package]
+name = "moltis-gateway"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+moltis-common = { workspace = true }
+moltis-protocol = { workspace = true }
+moltis-config = { workspace = true }
+moltis-sessions = { workspace = true }
+moltis-channels = { workspace = true }
+moltis-routing = { workspace = true }
+moltis-agents = { workspace = true }
+moltis-plugins = { workspace = true }
+moltis-cron = { workspace = true }
+moltis-media = { workspace = true }
+moltis-canvas = { workspace = true }
+anyhow = { workspace = true }
+axum = { workspace = true }
+tokio = { workspace = true }
+tokio-tungstenite = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }
+futures = { workspace = true }
+tower-http = { version = "0.6", features = ["cors"] }
+hostname = "0.4"

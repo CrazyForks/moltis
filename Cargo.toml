@@ -1,0 +1,77 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/gateway",
+    "crates/channels",
+    "crates/routing",
+    "crates/auto-reply",
+    "crates/agents",
+    "crates/tools",
+    "crates/memory",
+    "crates/media",
+    "crates/browser",
+    "crates/canvas",
+    "crates/plugins",
+    "crates/cron",
+    "crates/config",
+    "crates/onboarding",
+    "crates/cli",
+    "crates/protocol",
+    "crates/sessions",
+    "crates/common",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+# HTTP/WS server
+axum = { version = "0.8", features = ["ws"] }
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Error handling
+anyhow = "1"
+thiserror = "2"
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+opentelemetry = { version = "0.29" }
+opentelemetry_sdk = { version = "0.29", features = ["rt-tokio"] }
+opentelemetry-otlp = { version = "0.29", features = ["tonic"] }
+tracing-opentelemetry = "0.30"
+# CLI
+clap = { version = "4", features = ["derive"] }
+# Database
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"] }
+# HTTP client
+reqwest = { version = "0.12", features = ["json", "stream"] }
+# UUID
+uuid = { version = "1", features = ["v4"] }
+# Async streams
+futures = "0.3"
+tokio-tungstenite = "0.26"
+
+# Workspace crates
+moltis-common = { path = "crates/common" }
+moltis-protocol = { path = "crates/protocol" }
+moltis-config = { path = "crates/config" }
+moltis-sessions = { path = "crates/sessions" }
+moltis-gateway = { path = "crates/gateway" }
+moltis-channels = { path = "crates/channels" }
+moltis-routing = { path = "crates/routing" }
+moltis-auto-reply = { path = "crates/auto-reply" }
+moltis-agents = { path = "crates/agents" }
+moltis-tools = { path = "crates/tools" }
+moltis-memory = { path = "crates/memory" }
+moltis-media = { path = "crates/media" }
+moltis-browser = { path = "crates/browser" }
+moltis-canvas = { path = "crates/canvas" }
+moltis-plugins = { path = "crates/plugins" }
+moltis-cron = { path = "crates/cron" }
+moltis-onboarding = { path = "crates/onboarding" }
+moltis-cli = { path = "crates/cli" }

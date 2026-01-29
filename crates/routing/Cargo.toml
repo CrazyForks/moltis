@@ -1,0 +1,12 @@
+[package]
+name = "moltis-routing"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+moltis-common = { workspace = true }
+moltis-config = { workspace = true }
+moltis-sessions = { workspace = true }
+anyhow = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }

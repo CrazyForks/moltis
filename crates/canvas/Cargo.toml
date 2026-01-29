@@ -1,0 +1,11 @@
+[package]
+name = "moltis-canvas"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+moltis-common = { workspace = true }
+anyhow = { workspace = true }
+axum = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }

@@ -1,0 +1,12 @@
+//! Tool implementations and policy enforcement.
+//!
+//! Tools: bash/exec, browser, canvas, message, nodes, cron, sessions,
+//! web fetch/search, memory, image gen, plus channel and plugin tools.
+//!
+//! Policy: multi-layered allow/deny (global, per-agent, per-provider,
+//! per-group, per-sender, sandbox).
+
+pub mod policy;
+pub mod sandbox;
+pub mod exec;
+pub mod approval;

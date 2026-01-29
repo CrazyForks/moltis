@@ -1,0 +1,10 @@
+[package]
+name = "moltis-browser"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+moltis-common = { workspace = true }
+anyhow = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }

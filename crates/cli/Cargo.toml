@@ -1,0 +1,20 @@
+[package]
+name = "moltis-cli"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "moltis"
+path = "src/main.rs"
+
+[dependencies]
+moltis-common = { workspace = true }
+moltis-gateway = { workspace = true }
+moltis-config = { workspace = true }
+moltis-onboarding = { workspace = true }
+moltis-agents = { workspace = true }
+anyhow = { workspace = true }
+clap = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
