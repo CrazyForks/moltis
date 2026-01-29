@@ -1,10 +1,14 @@
-//! Configuration loading, validation, env substitution, includes, and legacy migration.
+//! Configuration loading, validation, env substitution, and legacy migration.
 //!
-//! Config file: ~/.clawdbot/config.json5
-//! Supports JSON5 (comments, trailing commas), ${ENV_VAR} substitution,
-//! $include directives, and auto-migration from old schemas.
+//! Config files: `moltis.toml`, `moltis.yaml`, or `moltis.json`
+//! Searched in `./` then `~/.config/moltis/`.
+//!
+//! Supports `${ENV_VAR}` substitution in all string values.
 
-pub mod loader;
-pub mod schema;
 pub mod env_subst;
+pub mod loader;
 pub mod migrate;
+pub mod schema;
+
+pub use loader::discover_and_load;
+pub use schema::MoltisConfig;

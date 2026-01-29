@@ -57,6 +57,9 @@ futures = "0.3"
 tokio-tungstenite = "0.26"
 tokio-stream = "0.1"
 dotenvy = "0.15"
+toml = "0.8"
+serde_yaml = "0.9"
+directories = "6"
 # LLM provider crates (optional, behind feature flags)
 genai = "0.5"
 async-openai = { version = "0.32", features = ["chat-completion"] }

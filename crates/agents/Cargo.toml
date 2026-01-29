@@ -10,6 +10,7 @@ provider-async-openai = ["dep:async-openai"]
 
 [dependencies]
 moltis-common = { workspace = true }
+moltis-config = { workspace = true }
 moltis-sessions = { workspace = true }
 anyhow = { workspace = true }
 async-trait = "0.1"
