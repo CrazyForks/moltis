@@ -1,4 +1,4 @@
-name: Build Debian Packages
+name: Build Linux Packages
 
 on:
   push:
@@ -57,3 +57,76 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: target/${{ matrix.target }}/debian/*.deb
+
+  build-arch:
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            arch: x86_64
+            runner: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            arch: aarch64
+            runner: ubuntu-latest
+
+    runs-on: ${{ matrix.runner }}
+    name: Build .pkg.tar.zst (${{ matrix.arch }})
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install packaging tools
+        run: sudo apt-get update && sudo apt-get install -y fakeroot zstd
+
+      - name: Install cross-compilation tools
+        if: matrix.arch == 'aarch64'
+        run: |
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+          echo '[target.aarch64-unknown-linux-gnu]' >> ~/.cargo/config.toml
+          echo 'linker = "aarch64-linux-gnu-gcc"' >> ~/.cargo/config.toml
+
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Determine package version
+        id: version
+        run: |
+          VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Build .pkg.tar.zst
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          PKG_DIR="pkg-root"
+          mkdir -p "$PKG_DIR/usr/bin"
+          cp "target/${{ matrix.target }}/release/moltis" "$PKG_DIR/usr/bin/moltis"
+          chmod 755 "$PKG_DIR/usr/bin/moltis"
+
+          cat > "$PKG_DIR/.PKGINFO" <<PKGINFO
+          pkgname = moltis
+          pkgver = ${VERSION}-1
+          pkgdesc = Rust version of moltbot
+          url = https://docs.molt.bot/
+          arch = ${{ matrix.arch }}
+          license = MIT
+          PKGINFO
+
+          cd "$PKG_DIR"
+          fakeroot -- tar --zstd -cf "../moltis-${VERSION}-1-${{ matrix.arch }}.pkg.tar.zst" .PKGINFO usr/
+
+      - name: Upload .pkg.tar.zst artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: moltis-${{ matrix.arch }}.pkg.tar.zst
+          path: "*.pkg.tar.zst"
+
+      - name: Upload to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: "*.pkg.tar.zst"
