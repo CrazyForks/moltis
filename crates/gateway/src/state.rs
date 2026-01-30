@@ -7,6 +7,8 @@ use tokio::sync::{mpsc, oneshot, RwLock};
 
 use moltis_protocol::ConnectParams;
 
+use moltis_tools::approval::ApprovalManager;
+
 use crate::auth::ResolvedAuth;
 use crate::nodes::NodeRegistry;
 use crate::pairing::PairingState;
@@ -146,12 +148,14 @@ pub struct GatewayState {
     pub pending_invokes: RwLock<HashMap<String, PendingInvoke>>,
     /// Domain services.
     pub services: GatewayServices,
+    /// Approval manager for exec command gating.
+    pub approval_manager: Arc<ApprovalManager>,
     /// Late-bound chat service override (for circular init).
     pub chat_override: RwLock<Option<Arc<dyn crate::services::ChatService>>>,
 }
 
 impl GatewayState {
-    pub fn new(auth: ResolvedAuth, services: GatewayServices) -> Arc<Self> {
+    pub fn new(auth: ResolvedAuth, services: GatewayServices, approval_manager: Arc<ApprovalManager>) -> Arc<Self> {
         let hostname = hostname::get()
             .ok()
             .and_then(|h| h.into_string().ok())
@@ -168,6 +172,7 @@ impl GatewayState {
             pairing: RwLock::new(PairingState::new()),
             pending_invokes: RwLock::new(HashMap::new()),
             services,
+            approval_manager,
             chat_override: RwLock::new(None),
         })
     }

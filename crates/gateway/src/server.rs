@@ -16,6 +16,9 @@ use moltis_protocol::TICK_INTERVAL_MS;
 
 use moltis_agents::providers::ProviderRegistry;
 
+use moltis_tools::approval::ApprovalManager;
+
+use crate::approval::{GatewayApprovalBroadcaster, LiveExecApprovalService};
 use crate::auth;
 use crate::broadcast::broadcast_tick;
 use crate::chat::{LiveChatService, LiveModelService};
@@ -76,17 +79,25 @@ pub async fn start_gateway(bind: &str, port: u16) -> anyhow::Result<()> {
     let registry = Arc::new(ProviderRegistry::from_env_with_config(&config.providers));
     let provider_summary = registry.provider_summary();
 
+    // Create shared approval manager.
+    let approval_manager = Arc::new(ApprovalManager::default());
+
     let mut services = GatewayServices::noop();
+    services.exec_approval = Arc::new(LiveExecApprovalService::new(Arc::clone(&approval_manager)));
     if !registry.is_empty() {
         services = services.with_model(Arc::new(LiveModelService::new(Arc::clone(&registry))));
     }
 
-    let state = GatewayState::new(resolved_auth, services);
+    let state = GatewayState::new(resolved_auth, services, Arc::clone(&approval_manager));
 
     // Wire live chat service (needs state reference, so done after state creation).
     if !registry.is_empty() {
+        let broadcaster = Arc::new(GatewayApprovalBroadcaster::new(Arc::clone(&state)));
+        let exec_tool = moltis_tools::exec::ExecTool::default()
+            .with_approval(Arc::clone(&approval_manager), broadcaster);
+
         let mut tool_registry = moltis_agents::tool_registry::ToolRegistry::new();
-        tool_registry.register(Box::new(moltis_tools::exec::ExecTool::default()));
+        tool_registry.register(Box::new(exec_tool));
         let live_chat = Arc::new(
             LiveChatService::new(Arc::clone(&registry), Arc::clone(&state))
                 .with_tools(tool_registry),

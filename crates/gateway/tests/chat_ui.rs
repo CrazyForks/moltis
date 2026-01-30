@@ -20,7 +20,7 @@ use moltis_agents::providers::ProviderRegistry;
 async fn start_test_server() -> SocketAddr {
     let resolved_auth = auth::resolve_auth(None, None);
     let services = GatewayServices::noop();
-    let state = GatewayState::new(resolved_auth, services);
+    let state = GatewayState::new(resolved_auth, services, Arc::new(moltis_tools::approval::ApprovalManager::default()));
     let methods = Arc::new(MethodRegistry::new());
     let app = build_gateway_app(state, methods);
 
@@ -216,7 +216,7 @@ async fn gateway_startup_with_llm_wiring_does_not_block() {
         services = services.with_model(Arc::new(LiveModelService::new(Arc::clone(&registry))));
     }
 
-    let state = GatewayState::new(resolved_auth, services);
+    let state = GatewayState::new(resolved_auth, services, Arc::new(moltis_tools::approval::ApprovalManager::default()));
 
     // This is the call that used to panic with blocking_write inside async.
     if !registry.is_empty() {
@@ -232,7 +232,7 @@ async fn gateway_startup_with_llm_wiring_does_not_block() {
     // Force it with an empty registry to exercise set_chat unconditionally.
     let resolved_auth2 = auth::resolve_auth(None, None);
     let registry2 = Arc::new(ProviderRegistry::from_env());
-    let state2 = GatewayState::new(resolved_auth2, GatewayServices::noop());
+    let state2 = GatewayState::new(resolved_auth2, GatewayServices::noop(), Arc::new(moltis_tools::approval::ApprovalManager::default()));
     state2
         .set_chat(Arc::new(LiveChatService::new(
             Arc::clone(&registry2),

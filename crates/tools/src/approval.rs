@@ -180,6 +180,11 @@ impl ApprovalManager {
         }
     }
 
+    /// Return the IDs of all pending approval requests.
+    pub async fn pending_ids(&self) -> Vec<String> {
+        self.pending.read().await.keys().cloned().collect()
+    }
+
     /// Wait for an approval decision with timeout.
     pub async fn wait_for_decision(&self, rx: oneshot::Receiver<ApprovalDecision>) -> ApprovalDecision {
         match tokio::time::timeout(self.timeout, rx).await {

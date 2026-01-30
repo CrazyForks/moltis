@@ -221,6 +221,10 @@
             streamText = "";
           }
         }
+        if (frame.event === "exec.approval.requested") {
+          var ap = frame.payload || {};
+          renderApprovalCard(ap.requestId, ap.command);
+        }
         return;
       }
     };
@@ -343,6 +347,76 @@
       rpcResult.textContent = JSON.stringify(res, null, 2);
     });
   });
+
+  // ── Approval cards ─────────────────────────────────────────────
+
+  function renderApprovalCard(requestId, command) {
+    var card = document.createElement("div");
+    card.className = "msg approval-card";
+    card.id = "approval-" + requestId;
+
+    var label = document.createElement("div");
+    label.className = "approval-label";
+    label.textContent = "Command requires approval:";
+    card.appendChild(label);
+
+    var cmdEl = document.createElement("code");
+    cmdEl.className = "approval-cmd";
+    cmdEl.textContent = command;
+    card.appendChild(cmdEl);
+
+    var btnGroup = document.createElement("div");
+    btnGroup.className = "approval-btns";
+
+    var allowBtn = document.createElement("button");
+    allowBtn.className = "approval-btn approval-allow";
+    allowBtn.textContent = "Allow";
+    allowBtn.onclick = function () { resolveApproval(requestId, "approved", command, card); };
+
+    var denyBtn = document.createElement("button");
+    denyBtn.className = "approval-btn approval-deny";
+    denyBtn.textContent = "Deny";
+    denyBtn.onclick = function () { resolveApproval(requestId, "denied", null, card); };
+
+    btnGroup.appendChild(allowBtn);
+    btnGroup.appendChild(denyBtn);
+    card.appendChild(btnGroup);
+
+    // Countdown.
+    var countdown = document.createElement("div");
+    countdown.className = "approval-countdown";
+    card.appendChild(countdown);
+    var remaining = 120;
+    var timer = setInterval(function () {
+      remaining--;
+      countdown.textContent = remaining + "s";
+      if (remaining <= 0) {
+        clearInterval(timer);
+        card.classList.add("approval-expired");
+        allowBtn.disabled = true;
+        denyBtn.disabled = true;
+        countdown.textContent = "expired";
+      }
+    }, 1000);
+    countdown.textContent = remaining + "s";
+
+    msgBox.appendChild(card);
+    msgBox.scrollTop = msgBox.scrollHeight;
+  }
+
+  function resolveApproval(requestId, decision, command, card) {
+    var params = { requestId: requestId, decision: decision };
+    if (command) params.command = command;
+    sendRpc("exec.approval.resolve", params).then(function () {
+      card.classList.add("approval-resolved");
+      var btns = card.querySelectorAll(".approval-btn");
+      btns.forEach(function (b) { b.disabled = true; });
+      var status = document.createElement("div");
+      status.className = "approval-status";
+      status.textContent = decision === "approved" ? "Allowed" : "Denied";
+      card.appendChild(status);
+    });
+  }
 
   connect();
   input.focus();
