@@ -2812,6 +2812,113 @@
     refreshProvidersPage = null;
   });
 
+  // ════════════════════════════════════════════════════════════
+  // Channels page
+  // ════════════════════════════════════════════════════════════
+  var channelModal = $("channelModal");
+  var channelModalTitle = $("channelModalTitle");
+  var channelModalBody = $("channelModalBody");
+  var channelModalClose = $("channelModalClose");
+
+  function openChannelModal() {
+    channelModal.classList.remove("hidden");
+    channelModalTitle.textContent = "Add Channel";
+    channelModalBody.textContent = "";
+    var msg = createEl("div", {
+      className: "text-sm text-[var(--muted)]",
+      style: "padding:12px 0;",
+      textContent: "Channel creation is not yet available. Channels are configured externally."
+    });
+    channelModalBody.appendChild(msg);
+  }
+
+  function closeChannelModal() {
+    channelModal.classList.add("hidden");
+  }
+
+  channelModalClose.addEventListener("click", closeChannelModal);
+  channelModal.addEventListener("click", function (e) {
+    if (e.target === channelModal) closeChannelModal();
+  });
+
+  // Safe: static hardcoded HTML template, no user input.
+  var channelsPageHTML =
+    '<div class="flex-1 flex flex-col min-w-0 p-4 gap-4 overflow-y-auto">' +
+      '<div class="flex items-center gap-3">' +
+        '<h2 class="text-lg font-medium text-[var(--text-strong)]">Channels</h2>' +
+        '<button id="chanAddBtn" class="bg-[var(--accent-dim)] text-white border-none px-3 py-1.5 rounded text-xs cursor-pointer hover:bg-[var(--accent)] transition-colors">+ Add Channel</button>' +
+      '</div>' +
+      '<div id="channelPageList"></div>' +
+    '</div>';
+
+  var refreshChannelsPage = null;
+
+  registerPage("/channels", function initChannels(container) {
+    container.innerHTML = channelsPageHTML;
+
+    var addBtn = $("chanAddBtn");
+    var listEl = $("channelPageList");
+
+    addBtn.addEventListener("click", function () {
+      if (connected) openChannelModal();
+    });
+
+    function renderChannelList() {
+      sendRpc("channels.status", {}).then(function (res) {
+        if (!res || !res.ok) return;
+        var channels = (res.payload && res.payload.channels) || [];
+        while (listEl.firstChild) listEl.removeChild(listEl.firstChild);
+
+        if (channels.length === 0) {
+          listEl.appendChild(createEl("div", {
+            className: "text-sm text-[var(--muted)]",
+            textContent: "No channels connected."
+          }));
+          return;
+        }
+
+        channels.forEach(function (ch) {
+          var card = createEl("div", {
+            style: "display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border:1px solid var(--border);border-radius:6px;margin-bottom:6px;"
+          });
+
+          var left = createEl("div", { style: "display:flex;align-items:center;gap:8px;" });
+          left.appendChild(createEl("span", {
+            className: "text-sm text-[var(--text-strong)]",
+            textContent: ch.name || ch.type || "channel"
+          }));
+
+          var statusBadge = createEl("span", {
+            className: "provider-item-badge " + (ch.status === "connected" ? "configured" : "oauth"),
+            textContent: ch.status || "unknown"
+          });
+          left.appendChild(statusBadge);
+          card.appendChild(left);
+
+          var logoutBtn = createEl("button", {
+            className: "session-action-btn session-delete",
+            textContent: "Logout",
+            title: "Logout " + (ch.name || "channel")
+          });
+          logoutBtn.addEventListener("click", function () {
+            if (!confirm("Logout from " + (ch.name || "channel") + "?")) return;
+            sendRpc("channels.logout", { channel: ch.name || ch.type }).then(function (r) {
+              if (r && r.ok) renderChannelList();
+            });
+          });
+          card.appendChild(logoutBtn);
+
+          listEl.appendChild(card);
+        });
+      });
+    }
+
+    refreshChannelsPage = renderChannelList;
+    renderChannelList();
+  }, function teardownChannels() {
+    refreshChannelsPage = null;
+  });
+
   // ── WebSocket ─────────────────────────────────────────────
   function connect() {
     setStatus("connecting", "connecting...");
