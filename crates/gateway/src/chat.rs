@@ -385,6 +385,7 @@ async fn run_with_tools(
         Some(history.to_vec())
     };
 
+    let provider_ref = provider.clone();
     match run_agent_loop(
         provider,
         tool_registry,
@@ -412,6 +413,8 @@ async fn run_with_tools(
                     "text": result.text,
                     "iterations": result.iterations,
                     "toolCallsMade": result.tool_calls_made,
+                    "model": provider_ref.id(),
+                    "provider": provider_name,
                 }),
                 BroadcastOpts::default(),
             )
@@ -490,6 +493,8 @@ async fn run_streaming(
                         "sessionKey": session_key,
                         "state": "final",
                         "text": accumulated,
+                        "model": provider.id(),
+                        "provider": provider_name,
                     }),
                     BroadcastOpts::default(),
                 )
