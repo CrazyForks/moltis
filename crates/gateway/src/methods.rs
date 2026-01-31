@@ -49,7 +49,9 @@ const READ_METHODS: &[&str] = &[
     "models.list",
     "agents.list",
     "agent.identity.get",
+    "skills.list",
     "skills.status",
+    "skills.repos.list",
     "voicewake.get",
     "sessions.list",
     "sessions.preview",
@@ -101,6 +103,12 @@ const WRITE_METHODS: &[&str] = &[
     "projects.upsert",
     "projects.delete",
     "projects.detect",
+    "skills.install",
+    "skills.remove",
+    "skills.repos.remove",
+    "skills.skill.enable",
+    "skills.skill.disable",
+    "skills.install_dep",
 ];
 
 const APPROVAL_METHODS: &[&str] = &["exec.approval.request", "exec.approval.resolve"];
@@ -1772,6 +1780,19 @@ impl MethodRegistry {
 
         // Skills
         self.register(
+            "skills.list",
+            Box::new(|ctx| {
+                Box::pin(async move {
+                    ctx.state
+                        .services
+                        .skills
+                        .list()
+                        .await
+                        .map_err(|e| ErrorShape::new(error_codes::UNAVAILABLE, e))
+                })
+            }),
+        );
+        self.register(
             "skills.status",
             Box::new(|ctx| {
                 Box::pin(async move {
@@ -1811,6 +1832,19 @@ impl MethodRegistry {
             }),
         );
         self.register(
+            "skills.remove",
+            Box::new(|ctx| {
+                Box::pin(async move {
+                    ctx.state
+                        .services
+                        .skills
+                        .remove(ctx.params.clone())
+                        .await
+                        .map_err(|e| ErrorShape::new(error_codes::UNAVAILABLE, e))
+                })
+            }),
+        );
+        self.register(
             "skills.update",
             Box::new(|ctx| {
                 Box::pin(async move {
@@ -1818,6 +1852,84 @@ impl MethodRegistry {
                         .services
                         .skills
                         .update(ctx.params.clone())
+                        .await
+                        .map_err(|e| ErrorShape::new(error_codes::UNAVAILABLE, e))
+                })
+            }),
+        );
+        self.register(
+            "skills.repos.list",
+            Box::new(|ctx| {
+                Box::pin(async move {
+                    ctx.state
+                        .services
+                        .skills
+                        .repos_list()
+                        .await
+                        .map_err(|e| ErrorShape::new(error_codes::UNAVAILABLE, e))
+                })
+            }),
+        );
+        self.register(
+            "skills.repos.remove",
+            Box::new(|ctx| {
+                Box::pin(async move {
+                    ctx.state
+                        .services
+                        .skills
+                        .repos_remove(ctx.params.clone())
+                        .await
+                        .map_err(|e| ErrorShape::new(error_codes::UNAVAILABLE, e))
+                })
+            }),
+        );
+        self.register(
+            "skills.skill.enable",
+            Box::new(|ctx| {
+                Box::pin(async move {
+                    ctx.state
+                        .services
+                        .skills
+                        .skill_enable(ctx.params.clone())
+                        .await
+                        .map_err(|e| ErrorShape::new(error_codes::UNAVAILABLE, e))
+                })
+            }),
+        );
+        self.register(
+            "skills.skill.disable",
+            Box::new(|ctx| {
+                Box::pin(async move {
+                    ctx.state
+                        .services
+                        .skills
+                        .skill_disable(ctx.params.clone())
+                        .await
+                        .map_err(|e| ErrorShape::new(error_codes::UNAVAILABLE, e))
+                })
+            }),
+        );
+        self.register(
+            "skills.skill.detail",
+            Box::new(|ctx| {
+                Box::pin(async move {
+                    ctx.state
+                        .services
+                        .skills
+                        .skill_detail(ctx.params.clone())
+                        .await
+                        .map_err(|e| ErrorShape::new(error_codes::UNAVAILABLE, e))
+                })
+            }),
+        );
+        self.register(
+            "skills.install_dep",
+            Box::new(|ctx| {
+                Box::pin(async move {
+                    ctx.state
+                        .services
+                        .skills
+                        .install_dep(ctx.params.clone())
                         .await
                         .map_err(|e| ErrorShape::new(error_codes::UNAVAILABLE, e))
                 })

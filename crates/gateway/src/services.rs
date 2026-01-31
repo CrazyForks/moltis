@@ -10,6 +10,19 @@ use {
 pub type ServiceError = String;
 pub type ServiceResult<T = Value> = Result<T, ServiceError>;
 
+/// Convert markdown to sanitized HTML using pulldown-cmark.
+fn markdown_to_html(md: &str) -> String {
+    use pulldown_cmark::{Options, Parser, html};
+    let mut opts = Options::empty();
+    opts.insert(Options::ENABLE_STRIKETHROUGH);
+    opts.insert(Options::ENABLE_TABLES);
+    opts.insert(Options::ENABLE_TASKLISTS);
+    let parser = Parser::new_ext(md, opts);
+    let mut html_output = String::new();
+    html::push_html(&mut html_output, parser);
+    html_output
+}
+
 // ── Agent ───────────────────────────────────────────────────────────────────
 
 #[async_trait]
@@ -325,6 +338,14 @@ pub trait SkillsService: Send + Sync {
     async fn bins(&self) -> ServiceResult;
     async fn install(&self, params: Value) -> ServiceResult;
     async fn update(&self, params: Value) -> ServiceResult;
+    async fn list(&self) -> ServiceResult;
+    async fn remove(&self, params: Value) -> ServiceResult;
+    async fn repos_list(&self) -> ServiceResult;
+    async fn repos_remove(&self, params: Value) -> ServiceResult;
+    async fn skill_enable(&self, params: Value) -> ServiceResult;
+    async fn skill_disable(&self, params: Value) -> ServiceResult;
+    async fn skill_detail(&self, params: Value) -> ServiceResult;
+    async fn install_dep(&self, params: Value) -> ServiceResult;
 }
 
 pub struct NoopSkillsService;
@@ -339,13 +360,327 @@ impl SkillsService for NoopSkillsService {
         Ok(serde_json::json!([]))
     }
 
-    async fn install(&self, _p: Value) -> ServiceResult {
-        Err("skills not available".into())
+    async fn install(&self, params: Value) -> ServiceResult {
+        let source = params
+            .get("source")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "missing 'source' parameter (owner/repo format)".to_string())?;
+        let install_dir =
+            moltis_skills::install::default_install_dir().map_err(|e| e.to_string())?;
+        let skills = moltis_skills::install::install_skill(source, &install_dir)
+            .await
+            .map_err(|e| e.to_string())?;
+        let installed: Vec<_> = skills
+            .iter()
+            .map(|m| {
+                serde_json::json!({
+                    "name": m.name,
+                    "description": m.description,
+                    "path": m.path.to_string_lossy(),
+                })
+            })
+            .collect();
+        Ok(serde_json::json!({ "installed": installed }))
     }
 
     async fn update(&self, _p: Value) -> ServiceResult {
         Err("skills not available".into())
     }
+
+    async fn list(&self) -> ServiceResult {
+        use moltis_skills::{
+            discover::{FsSkillDiscoverer, SkillDiscoverer},
+            requirements::check_requirements,
+        };
+        let cwd = std::env::current_dir().unwrap_or_default();
+        let search_paths = FsSkillDiscoverer::default_paths(&cwd);
+        let discoverer = FsSkillDiscoverer::new(search_paths);
+        let skills = discoverer.discover().await.map_err(|e| e.to_string())?;
+        let items: Vec<_> = skills
+            .iter()
+            .map(|s| {
+                let elig = check_requirements(s);
+                serde_json::json!({
+                    "name": s.name,
+                    "description": s.description,
+                    "license": s.license,
+                    "allowed_tools": s.allowed_tools,
+                    "path": s.path.to_string_lossy(),
+                    "source": s.source,
+                    "eligible": elig.eligible,
+                    "missing_bins": elig.missing_bins,
+                    "install_options": elig.install_options,
+                })
+            })
+            .collect();
+        Ok(serde_json::json!(items))
+    }
+
+    async fn remove(&self, params: Value) -> ServiceResult {
+        let source = params
+            .get("source")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "missing 'source' parameter".to_string())?;
+
+        let install_dir =
+            moltis_skills::install::default_install_dir().map_err(|e| e.to_string())?;
+        moltis_skills::install::remove_repo(source, &install_dir)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        Ok(serde_json::json!({ "removed": source }))
+    }
+
+    async fn repos_list(&self) -> ServiceResult {
+        use moltis_skills::requirements::check_requirements;
+
+        let manifest_path =
+            moltis_skills::manifest::ManifestStore::default_path().map_err(|e| e.to_string())?;
+        let store = moltis_skills::manifest::ManifestStore::new(manifest_path);
+        let manifest = store.load().map_err(|e| e.to_string())?;
+
+        let install_dir =
+            moltis_skills::install::default_install_dir().map_err(|e| e.to_string())?;
+
+        let repos: Vec<_> = manifest
+            .repos
+            .iter()
+            .map(|repo| {
+                let skills: Vec<_> = repo
+                    .skills
+                    .iter()
+                    .map(|s| {
+                        // Parse SKILL.md directly to get description & requirements
+                        let skill_dir = install_dir.join(&s.relative_path);
+                        let skill_md = skill_dir.join("SKILL.md");
+                        let meta_json = moltis_skills::parse::read_meta_json(&skill_dir);
+                        let (description, display_name, elig) =
+                            if let Ok(content) = std::fs::read_to_string(&skill_md) {
+                                if let Ok(meta) =
+                                    moltis_skills::parse::parse_metadata(&content, &skill_dir)
+                                {
+                                    let e = check_requirements(&meta);
+                                    let desc = if meta.description.is_empty() {
+                                        meta_json
+                                            .as_ref()
+                                            .and_then(|m| m.display_name.clone())
+                                            .unwrap_or_default()
+                                    } else {
+                                        meta.description
+                                    };
+                                    let dn =
+                                        meta_json.as_ref().and_then(|m| m.display_name.clone());
+                                    (desc, dn, Some(e))
+                                } else {
+                                    let dn =
+                                        meta_json.as_ref().and_then(|m| m.display_name.clone());
+                                    (dn.clone().unwrap_or_default(), dn, None)
+                                }
+                            } else {
+                                let dn = meta_json.as_ref().and_then(|m| m.display_name.clone());
+                                (dn.clone().unwrap_or_default(), dn, None)
+                            };
+                        serde_json::json!({
+                            "name": s.name,
+                            "description": description,
+                            "display_name": display_name,
+                            "relative_path": s.relative_path,
+                            "enabled": s.enabled,
+                            "eligible": elig.as_ref().map(|e| e.eligible).unwrap_or(true),
+                            "missing_bins": elig.as_ref().map(|e| e.missing_bins.clone()).unwrap_or_default(),
+                        })
+                    })
+                    .collect();
+                serde_json::json!({
+                    "source": repo.source,
+                    "repo_name": repo.repo_name,
+                    "installed_at_ms": repo.installed_at_ms,
+                    "skills": skills,
+                })
+            })
+            .collect();
+
+        Ok(serde_json::json!(repos))
+    }
+
+    async fn repos_remove(&self, params: Value) -> ServiceResult {
+        let source = params
+            .get("source")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "missing 'source' parameter".to_string())?;
+
+        let install_dir =
+            moltis_skills::install::default_install_dir().map_err(|e| e.to_string())?;
+        moltis_skills::install::remove_repo(source, &install_dir)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        Ok(serde_json::json!({ "removed": source }))
+    }
+
+    async fn skill_enable(&self, params: Value) -> ServiceResult {
+        toggle_skill(&params, true)
+    }
+
+    async fn skill_disable(&self, params: Value) -> ServiceResult {
+        toggle_skill(&params, false)
+    }
+
+    async fn skill_detail(&self, params: Value) -> ServiceResult {
+        use moltis_skills::requirements::check_requirements;
+
+        let source = params
+            .get("source")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "missing 'source' parameter".to_string())?;
+        let skill_name = params
+            .get("skill")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "missing 'skill' parameter".to_string())?;
+
+        let install_dir =
+            moltis_skills::install::default_install_dir().map_err(|e| e.to_string())?;
+        let manifest_path =
+            moltis_skills::manifest::ManifestStore::default_path().map_err(|e| e.to_string())?;
+        let store = moltis_skills::manifest::ManifestStore::new(manifest_path);
+        let manifest = store.load().map_err(|e| e.to_string())?;
+
+        let repo = manifest
+            .repos
+            .iter()
+            .find(|r| r.source == source)
+            .ok_or_else(|| format!("repo '{source}' not found"))?;
+        let skill_state = repo
+            .skills
+            .iter()
+            .find(|s| s.name == skill_name)
+            .ok_or_else(|| format!("skill '{skill_name}' not found in repo '{source}'"))?;
+
+        let skill_dir = install_dir.join(&skill_state.relative_path);
+        let skill_md = skill_dir.join("SKILL.md");
+        let raw = std::fs::read_to_string(&skill_md)
+            .map_err(|e| format!("failed to read SKILL.md: {e}"))?;
+
+        let content = moltis_skills::parse::parse_skill(&raw, &skill_dir)
+            .map_err(|e| format!("failed to parse SKILL.md: {e}"))?;
+
+        let elig = check_requirements(&content.metadata);
+        let meta_json = moltis_skills::parse::read_meta_json(&skill_dir);
+        let display_name = meta_json.as_ref().and_then(|m| m.display_name.clone());
+        let author = meta_json.as_ref().and_then(|m| m.owner.clone());
+        let version = meta_json
+            .as_ref()
+            .and_then(|m| m.latest.as_ref())
+            .and_then(|l| l.version.clone());
+
+        // Build a direct link to the skill source on GitHub
+        let source_url: Option<String> = {
+            let rel = &skill_state.relative_path;
+            // relative_path starts with repo_name/, strip it to get path within repo
+            rel.strip_prefix(&repo.repo_name)
+                .and_then(|p| p.strip_prefix('/'))
+                .map(|path_in_repo| {
+                    if source.starts_with("https://") || source.starts_with("http://") {
+                        format!("{}/tree/main/{}", source.trim_end_matches('/'), path_in_repo)
+                    } else {
+                        format!("https://github.com/{}/tree/main/{}", source, path_in_repo)
+                    }
+                })
+        };
+
+        Ok(serde_json::json!({
+            "name": content.metadata.name,
+            "display_name": display_name,
+            "description": content.metadata.description,
+            "author": author,
+            "homepage": content.metadata.homepage,
+            "version": version,
+            "license": content.metadata.license,
+            "compatibility": content.metadata.compatibility,
+            "allowed_tools": content.metadata.allowed_tools,
+            "requires": content.metadata.requires,
+            "eligible": elig.eligible,
+            "missing_bins": elig.missing_bins,
+            "install_options": elig.install_options,
+            "enabled": skill_state.enabled,
+            "source_url": source_url,
+            "body": content.body,
+            "body_html": markdown_to_html(&content.body),
+            "source": source,
+        }))
+    }
+
+    async fn install_dep(&self, params: Value) -> ServiceResult {
+        use moltis_skills::{
+            discover::{FsSkillDiscoverer, SkillDiscoverer},
+            requirements::{check_requirements, run_install},
+        };
+
+        let skill_name = params
+            .get("skill")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "missing 'skill' parameter".to_string())?;
+        let index = params.get("index").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+
+        // Discover the skill to get its requirements
+        let cwd = std::env::current_dir().unwrap_or_default();
+        let search_paths = FsSkillDiscoverer::default_paths(&cwd);
+        let discoverer = FsSkillDiscoverer::new(search_paths);
+        let skills = discoverer.discover().await.map_err(|e| e.to_string())?;
+
+        let meta = skills
+            .iter()
+            .find(|s| s.name == skill_name)
+            .ok_or_else(|| format!("skill '{skill_name}' not found"))?;
+
+        let elig = check_requirements(meta);
+        let spec = elig
+            .install_options
+            .get(index)
+            .ok_or_else(|| format!("install option index {index} out of range"))?;
+
+        let result = run_install(spec).await.map_err(|e| e.to_string())?;
+
+        if result.success {
+            Ok(serde_json::json!({
+                "success": true,
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+            }))
+        } else {
+            Err(format!(
+                "install failed: {}",
+                if result.stderr.is_empty() {
+                    result.stdout
+                } else {
+                    result.stderr
+                }
+            ))
+        }
+    }
+}
+
+fn toggle_skill(params: &Value, enabled: bool) -> ServiceResult {
+    let source = params
+        .get("source")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "missing 'source' parameter".to_string())?;
+    let skill_name = params
+        .get("skill")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "missing 'skill' parameter".to_string())?;
+
+    let manifest_path =
+        moltis_skills::manifest::ManifestStore::default_path().map_err(|e| e.to_string())?;
+    let store = moltis_skills::manifest::ManifestStore::new(manifest_path);
+    let mut manifest = store.load().map_err(|e| e.to_string())?;
+
+    if !manifest.set_skill_enabled(source, skill_name, enabled) {
+        return Err(format!("skill '{skill_name}' not found in repo '{source}'"));
+    }
+    store.save(&manifest).map_err(|e| e.to_string())?;
+
+    Ok(serde_json::json!({ "source": source, "skill": skill_name, "enabled": enabled }))
 }
 
 // ── Browser ─────────────────────────────────────────────────────────────────

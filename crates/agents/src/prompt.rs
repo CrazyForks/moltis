@@ -1,4 +1,4 @@
-use crate::tool_registry::ToolRegistry;
+use {crate::tool_registry::ToolRegistry, moltis_skills::types::SkillMetadata};
 
 /// Build the system prompt for an agent run, including available tools.
 ///
@@ -11,15 +11,16 @@ pub fn build_system_prompt(
     native_tools: bool,
     project_context: Option<&str>,
 ) -> String {
-    build_system_prompt_with_session(tools, native_tools, project_context, None)
+    build_system_prompt_with_session(tools, native_tools, project_context, None, &[])
 }
 
-/// Build the system prompt, optionally including session context stats.
+/// Build the system prompt, optionally including session context stats and skills.
 pub fn build_system_prompt_with_session(
     tools: &ToolRegistry,
     native_tools: bool,
     project_context: Option<&str>,
     session_context: Option<&str>,
+    skills: &[SkillMetadata],
 ) -> String {
     let tool_schemas = tools.list_schemas();
 
@@ -40,6 +41,11 @@ pub fn build_system_prompt_with_session(
         prompt.push_str("## Current Session\n\n");
         prompt.push_str(ctx);
         prompt.push_str("\n\n");
+    }
+
+    // Inject available skills so the LLM knows what skills can be activated.
+    if !skills.is_empty() {
+        prompt.push_str(&moltis_skills::prompt_gen::generate_skills_prompt(skills));
     }
 
     if !tool_schemas.is_empty() {
@@ -94,7 +100,6 @@ mod tests {
     #[test]
     fn test_fallback_prompt_includes_tool_call_format() {
         let mut tools = ToolRegistry::new();
-        // Register a dummy tool via a helper struct.
         struct Dummy;
         #[async_trait::async_trait]
         impl crate::tool_registry::AgentTool for Dummy {
@@ -119,5 +124,31 @@ mod tests {
         let prompt = build_system_prompt(&tools, false, None);
         assert!(prompt.contains("```tool_call"));
         assert!(prompt.contains("### test"));
+    }
+
+    #[test]
+    fn test_skills_injected_into_prompt() {
+        let tools = ToolRegistry::new();
+        let skills = vec![SkillMetadata {
+            name: "commit".into(),
+            description: "Create git commits".into(),
+            license: None,
+            compatibility: None,
+            allowed_tools: vec![],
+            homepage: None,
+            requires: Default::default(),
+            path: std::path::PathBuf::from("/skills/commit"),
+            source: None,
+        }];
+        let prompt = build_system_prompt_with_session(&tools, true, None, None, &skills);
+        assert!(prompt.contains("<available_skills>"));
+        assert!(prompt.contains("commit"));
+    }
+
+    #[test]
+    fn test_no_skills_block_when_empty() {
+        let tools = ToolRegistry::new();
+        let prompt = build_system_prompt_with_session(&tools, true, None, None, &[]);
+        assert!(!prompt.contains("<available_skills>"));
     }
 }

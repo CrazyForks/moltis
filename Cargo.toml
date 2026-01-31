@@ -19,6 +19,7 @@ members = [
   "crates/protocol",
   "crates/routing",
   "crates/sessions",
+  "crates/skills",
   "crates/telegram",
   "crates/tools",
 ]
@@ -93,5 +94,6 @@ moltis-projects   = { path = "crates/projects" }
 moltis-protocol   = { path = "crates/protocol" }
 moltis-routing    = { path = "crates/routing" }
 moltis-sessions   = { path = "crates/sessions" }
+moltis-skills     = { path = "crates/skills" }
 moltis-telegram   = { path = "crates/telegram" }
 moltis-tools      = { path = "crates/tools" }

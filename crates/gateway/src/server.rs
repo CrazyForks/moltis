@@ -445,6 +445,22 @@ pub async fn start_gateway(
     let addr: SocketAddr = format!("{bind}:{port}").parse()?;
     let listener = tokio::net::TcpListener::bind(addr).await?;
 
+    // Count enabled skills and repos for startup banner.
+    let (skill_count, repo_count) = {
+        use moltis_skills::discover::{FsSkillDiscoverer, SkillDiscoverer};
+        let cwd = std::env::current_dir().unwrap_or_default();
+        let discoverer = FsSkillDiscoverer::new(FsSkillDiscoverer::default_paths(&cwd));
+        let sc = discoverer.discover().await.map(|s| s.len()).unwrap_or(0);
+        let rc = moltis_skills::manifest::ManifestStore::default_path()
+            .ok()
+            .map(|p| {
+                let store = moltis_skills::manifest::ManifestStore::new(p);
+                store.load().map(|m| m.repos.len()).unwrap_or(0)
+            })
+            .unwrap_or(0);
+        (sc, rc)
+    };
+
     // Startup banner.
     let lines = [
         format!("moltis gateway v{}", state.version),
@@ -455,6 +471,16 @@ pub async fn start_gateway(
         ),
         format!("{} methods registered", methods.method_names().len()),
         format!("llm: {}", provider_summary),
+        format!(
+            "skills: {} enabled, {} repo{}",
+            skill_count,
+            repo_count,
+            if repo_count == 1 {
+                ""
+            } else {
+                "s"
+            }
+        ),
     ];
     let width = lines.iter().map(|l| l.len()).max().unwrap_or(0) + 4;
     info!("┌{}┐", "─".repeat(width));

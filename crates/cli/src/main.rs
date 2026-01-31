@@ -71,6 +71,11 @@ enum Commands {
         #[command(subcommand)]
         action: auth_commands::AuthAction,
     },
+    /// Skill management.
+    Skills {
+        #[command(subcommand)]
+        action: SkillAction,
+    },
 }
 
 #[derive(Subcommand)]
@@ -92,6 +97,27 @@ enum ConfigAction {
     Get { key: Option<String> },
     Set { key: String, value: String },
     Edit,
+}
+
+#[derive(Subcommand)]
+enum SkillAction {
+    /// List all discovered skills.
+    List,
+    /// Install a skill from a GitHub repository (owner/repo format).
+    Add {
+        /// Source in owner/repo format (e.g. vercel-labs/agent-skills).
+        source: String,
+    },
+    /// Remove an installed repo and all its skills.
+    Remove {
+        /// Source in owner/repo format.
+        source: String,
+    },
+    /// Show details about a skill.
+    Info {
+        /// Skill name.
+        name: String,
+    },
 }
 
 /// Initialise tracing and optionally attach a [`LogBroadcastLayer`] that
@@ -151,9 +177,71 @@ async fn main() -> anyhow::Result<()> {
         },
         Commands::Onboard => moltis_onboarding::wizard::run_onboarding().await,
         Commands::Auth { action } => auth_commands::handle_auth(action).await,
+        Commands::Skills { action } => handle_skills(action).await,
         _ => {
             eprintln!("command not yet implemented");
             Ok(())
         },
     }
+}
+
+async fn handle_skills(action: SkillAction) -> anyhow::Result<()> {
+    use moltis_skills::{
+        discover::FsSkillDiscoverer,
+        install,
+        registry::{InMemoryRegistry, SkillRegistry},
+    };
+
+    let cwd = std::env::current_dir()?;
+    let search_paths = FsSkillDiscoverer::default_paths(&cwd);
+    let discoverer = FsSkillDiscoverer::new(search_paths);
+
+    match action {
+        SkillAction::List => {
+            let registry = InMemoryRegistry::from_discoverer(&discoverer).await?;
+            let skills = registry.list_skills().await?;
+            if skills.is_empty() {
+                println!("No skills found.");
+            } else {
+                for skill in &skills {
+                    let source = skill
+                        .source
+                        .as_ref()
+                        .map(|s| format!("{s:?}"))
+                        .unwrap_or_default();
+                    println!("  {} — {} [{}]", skill.name, skill.description, source);
+                }
+            }
+        },
+        SkillAction::Add { source } => {
+            let install_dir = install::default_install_dir()?;
+            let skills = install::install_skill(&source, &install_dir).await?;
+            for meta in &skills {
+                println!("Installed skill '{}': {}", meta.name, meta.description);
+            }
+        },
+        SkillAction::Remove { source } => {
+            let install_dir = install::default_install_dir()?;
+            install::remove_repo(&source, &install_dir).await?;
+            println!("Removed repo '{source}' and all its skills.");
+        },
+        SkillAction::Info { name } => {
+            let registry = InMemoryRegistry::from_discoverer(&discoverer).await?;
+            let content = registry.load_skill(&name).await?;
+            let meta = &content.metadata;
+            println!("Name:        {}", meta.name);
+            println!("Description: {}", meta.description);
+            if let Some(ref license) = meta.license {
+                println!("License:     {license}");
+            }
+            if !meta.allowed_tools.is_empty() {
+                println!("Tools:       {}", meta.allowed_tools.join(", "));
+            }
+            println!("Path:        {}", meta.path.display());
+            println!("Source:      {:?}", meta.source);
+            println!("\n{}", content.body);
+        },
+    }
+
+    Ok(())
 }

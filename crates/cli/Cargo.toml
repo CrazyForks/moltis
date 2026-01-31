@@ -36,6 +36,7 @@ moltis-config      = { workspace = true }
 moltis-gateway     = { workspace = true }
 moltis-oauth       = { workspace = true }
 moltis-onboarding  = { workspace = true }
+moltis-skills      = { workspace = true }
 open               = { workspace = true }
 reqwest            = { workspace = true }
 tokio              = { workspace = true }

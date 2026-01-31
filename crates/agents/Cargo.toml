@@ -19,6 +19,7 @@ futures         = { workspace = true }
 moltis-common   = { workspace = true }
 moltis-config   = { workspace = true }
 moltis-sessions = { workspace = true }
+moltis-skills   = { workspace = true }
 reqwest         = { workspace = true }
 serde           = { workspace = true }
 serde_json      = { workspace = true }

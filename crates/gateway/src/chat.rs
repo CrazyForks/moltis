@@ -841,6 +841,7 @@ async fn run_with_tools(
         native_tools,
         project_context,
         session_context,
+        &[],
     );
 
     // Broadcast tool events to the UI as they happen.

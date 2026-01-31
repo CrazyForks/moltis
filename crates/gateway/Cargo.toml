@@ -23,8 +23,10 @@ moltis-projects       = { workspace = true }
 moltis-protocol       = { workspace = true }
 moltis-routing        = { workspace = true }
 moltis-sessions       = { workspace = true }
+moltis-skills         = { workspace = true }
 moltis-telegram       = { workspace = true }
 moltis-tools          = { workspace = true }
+pulldown-cmark        = { default-features = false, features = ["html"], version = "0.12" }
 reqwest               = { workspace = true }
 serde                 = { workspace = true }
 serde_json            = { workspace = true }

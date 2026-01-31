@@ -10,7 +10,27 @@ use serde::{Deserialize, Serialize};
 pub struct MoltisConfig {
     pub providers: ProvidersConfig,
     pub tools: ToolsConfig,
+    pub skills: SkillsConfig,
     pub channels: ChannelsConfig,
+}
+
+/// Skills configuration.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SkillsConfig {
+    /// Whether the skills system is enabled.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Extra directories to search for skills.
+    #[serde(default)]
+    pub search_paths: Vec<String>,
+    /// Skills to always load (by name) without explicit activation.
+    #[serde(default)]
+    pub auto_load: Vec<String>,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 /// Channel configuration.
