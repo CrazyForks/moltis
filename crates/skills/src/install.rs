@@ -63,7 +63,7 @@ pub async fn install_skill(source: &str, install_dir: &Path) -> anyhow::Result<V
         .as_millis() as u64;
 
     manifest.add_repo(RepoEntry {
-        source: source.to_string(),
+        source: format!("{owner}/{repo}"),
         repo_name: dir_name,
         installed_at_ms: now,
         skills: skill_states,
@@ -217,11 +217,21 @@ async fn scan_repo_skills(
 }
 
 /// Parse `owner/repo` from a source string.
+/// Accepts `owner/repo`, `https://github.com/owner/repo`, or with trailing slash/`.git`.
 fn parse_source(source: &str) -> anyhow::Result<(String, String)> {
-    let parts: Vec<&str> = source.trim().split('/').collect();
+    let s = source
+        .trim()
+        .trim_end_matches('/')
+        .trim_end_matches(".git");
+    let s = s
+        .strip_prefix("https://github.com/")
+        .or_else(|| s.strip_prefix("http://github.com/"))
+        .or_else(|| s.strip_prefix("github.com/"))
+        .unwrap_or(s);
+    let parts: Vec<&str> = s.split('/').collect();
     if parts.len() != 2 || parts[0].is_empty() || parts[1].is_empty() {
         anyhow::bail!(
-            "invalid skill source '{}': expected 'owner/repo' format",
+            "invalid skill source '{}': expected 'owner/repo' or GitHub URL",
             source
         );
     }
@@ -244,6 +254,25 @@ mod tests {
         let (owner, repo) = parse_source("vercel-labs/agent-skills").unwrap();
         assert_eq!(owner, "vercel-labs");
         assert_eq!(repo, "agent-skills");
+    }
+
+    #[test]
+    fn test_parse_source_github_url() {
+        let (o, r) = parse_source("https://github.com/remotion-dev/skills").unwrap();
+        assert_eq!(o, "remotion-dev");
+        assert_eq!(r, "skills");
+
+        let (o, r) = parse_source("https://github.com/owner/repo/").unwrap();
+        assert_eq!(o, "owner");
+        assert_eq!(r, "repo");
+
+        let (o, r) = parse_source("https://github.com/owner/repo.git").unwrap();
+        assert_eq!(o, "owner");
+        assert_eq!(r, "repo");
+
+        let (o, r) = parse_source("github.com/owner/repo").unwrap();
+        assert_eq!(o, "owner");
+        assert_eq!(r, "repo");
     }
 
     #[test]
