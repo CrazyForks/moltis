@@ -1393,8 +1393,9 @@ impl MethodRegistry {
                         .session
                         .resolve(serde_json::json!({ "key": key }))
                         .await
-                        .map_err(|_| {
-                            ErrorShape::new(error_codes::UNAVAILABLE, "session resolve failed")
+                        .map_err(|e| {
+                            tracing::error!("session resolve failed: {e}");
+                            ErrorShape::new(error_codes::UNAVAILABLE, format!("session resolve failed: {e}"))
                         })?;
 
                     if let Some(pid) = ctx.params.get("project_id").and_then(|v| v.as_str()) {

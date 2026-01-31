@@ -206,21 +206,36 @@ impl SqliteSessionMetadata {
         )
         .execute(pool)
         .await?;
+
+        // Migrations for columns added after initial release.
+        sqlx::query("ALTER TABLE sessions ADD COLUMN sandbox_enabled INTEGER")
+            .execute(pool)
+            .await
+            .ok(); // ignore if column already exists
+
         Ok(())
     }
 
     pub async fn get(&self, key: &str) -> Option<SessionEntry> {
-        sqlx::query_as::<_, SessionRow>("SELECT * FROM sessions WHERE key = ?")
+        match sqlx::query_as::<_, SessionRow>("SELECT * FROM sessions WHERE key = ?")
             .bind(key)
             .fetch_optional(&self.pool)
             .await
-            .ok()
-            .flatten()
-            .map(Into::into)
+        {
+            Ok(row) => row.map(Into::into),
+            Err(e) => {
+                tracing::error!("sessions.get failed: {e}");
+                None
+            }
+        }
     }
 
     /// Insert or update an entry. Returns the entry.
-    pub async fn upsert(&self, key: &str, label: Option<String>) -> SessionEntry {
+    pub async fn upsert(
+        &self,
+        key: &str,
+        label: Option<String>,
+    ) -> Result<SessionEntry, sqlx::Error> {
         let now = now_ms() as i64;
         let id = uuid::Uuid::new_v4().to_string();
         sqlx::query(
@@ -236,9 +251,10 @@ impl SqliteSessionMetadata {
         .bind(now)
         .bind(now)
         .execute(&self.pool)
-        .await
-        .ok();
-        self.get(key).await.unwrap()
+        .await?;
+        self.get(key).await.ok_or_else(|| {
+            sqlx::Error::RowNotFound
+        })
     }
 
     pub async fn set_model(&self, key: &str, model: Option<String>) {
@@ -378,9 +394,10 @@ mod tests {
         let pool = sqlite_pool().await;
         let meta = SqliteSessionMetadata::new(pool);
 
-        meta.upsert("main", None).await;
+        meta.upsert("main", None).await.unwrap();
         meta.upsert("session:abc", Some("My Chat".to_string()))
-            .await;
+            .await
+            .unwrap();
 
         let list = meta.list().await;
         assert_eq!(list.len(), 2);
@@ -393,7 +410,7 @@ mod tests {
         let pool = sqlite_pool().await;
         let meta = SqliteSessionMetadata::new(pool);
 
-        meta.upsert("main", None).await;
+        meta.upsert("main", None).await.unwrap();
         assert!(meta.get("main").await.is_some());
         meta.remove("main").await;
         assert!(meta.get("main").await.is_none());
@@ -404,7 +421,7 @@ mod tests {
         let pool = sqlite_pool().await;
         let meta = SqliteSessionMetadata::new(pool);
 
-        meta.upsert("main", None).await;
+        meta.upsert("main", None).await.unwrap();
         meta.touch("main", 5).await;
         assert_eq!(meta.get("main").await.unwrap().message_count, 5);
     }

@@ -163,7 +163,9 @@ pub async fn start_gateway(bind: &str, port: u16) -> anyhow::Result<()> {
         if let Ok(old_meta) = SessionMetadata::load(metadata_json_path.clone()) {
             let sqlite_meta = SqliteSessionMetadata::new(db_pool.clone());
             for entry in old_meta.list() {
-                sqlite_meta.upsert(&entry.key, entry.label.clone()).await;
+                if let Err(e) = sqlite_meta.upsert(&entry.key, entry.label.clone()).await {
+                    tracing::warn!("failed to migrate session {}: {e}", entry.key);
+                }
                 if entry.model.is_some() {
                     sqlite_meta.set_model(&entry.key, entry.model.clone()).await;
                 }

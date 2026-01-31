@@ -76,7 +76,7 @@ impl SessionService for LiveSessionService {
             .and_then(|v| v.as_str())
             .ok_or_else(|| "missing 'key' parameter".to_string())?;
 
-        let entry = self.metadata.upsert(key, None).await;
+        let entry = self.metadata.upsert(key, None).await.map_err(|e| e.to_string())?;
         let history = self.store.read(key).await.map_err(|e| e.to_string())?;
 
         Ok(serde_json::json!({
@@ -114,7 +114,7 @@ impl SessionService for LiveSessionService {
             return Err(format!("session '{key}' not found"));
         }
         if label.is_some() {
-            self.metadata.upsert(key, label).await;
+            let _ = self.metadata.upsert(key, label).await;
         }
         if model.is_some() {
             self.metadata.set_model(key, model).await;

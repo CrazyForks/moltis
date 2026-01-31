@@ -231,7 +231,7 @@ impl ChatService for LiveChatService {
         }
 
         // Update metadata.
-        self.session_metadata.upsert(&session_key, None).await;
+        let _ = self.session_metadata.upsert(&session_key, None).await;
         self.session_metadata
             .touch(&session_key, history.len() as u32)
             .await;
