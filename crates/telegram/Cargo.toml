@@ -1,0 +1,21 @@
+[package]
+edition.workspace = true
+name              = "moltis-telegram"
+version.workspace = true
+
+[dependencies]
+anyhow            = { workspace = true }
+async-trait       = "0.1"
+moltis-auto-reply = { workspace = true }
+moltis-channels   = { workspace = true }
+moltis-common     = { workspace = true }
+reqwest           = { workspace = true }
+serde             = { workspace = true }
+serde_json        = { workspace = true }
+teloxide          = { workspace = true }
+tokio             = { workspace = true }
+tokio-util        = { workspace = true }
+tracing           = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }

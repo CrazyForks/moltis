@@ -42,26 +42,46 @@ impl LiveSessionService {
 #[async_trait]
 impl SessionService for LiveSessionService {
     async fn list(&self) -> ServiceResult {
-        let entries: Vec<Value> = self
-            .metadata
-            .list()
-            .await
-            .into_iter()
-            .map(|e| {
-                serde_json::json!({
-                    "id": e.id,
-                    "key": e.key,
-                    "label": e.label,
-                    "model": e.model,
-                    "createdAt": e.created_at,
-                    "updatedAt": e.updated_at,
-                    "messageCount": e.message_count,
-                    "projectId": e.project_id,
-                    "sandbox_enabled": e.sandbox_enabled,
-                    "worktree_branch": e.worktree_branch,
-                })
-            })
-            .collect();
+        let all = self.metadata.list().await;
+
+        let mut entries: Vec<Value> = Vec::with_capacity(all.len());
+        for e in all {
+            // Check if this session is the active one for its channel binding.
+            let active_channel = if let Some(ref binding_json) = e.channel_binding {
+                if let Ok(target) =
+                    serde_json::from_str::<moltis_channels::ChannelReplyTarget>(binding_json)
+                {
+                    self.metadata
+                        .get_active_session(
+                            &target.channel_type,
+                            &target.account_id,
+                            &target.chat_id,
+                        )
+                        .await
+                        .map(|k| k == e.key)
+                        .unwrap_or(false)
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+
+            entries.push(serde_json::json!({
+                "id": e.id,
+                "key": e.key,
+                "label": e.label,
+                "model": e.model,
+                "createdAt": e.created_at,
+                "updatedAt": e.updated_at,
+                "messageCount": e.message_count,
+                "projectId": e.project_id,
+                "sandbox_enabled": e.sandbox_enabled,
+                "worktree_branch": e.worktree_branch,
+                "channelBinding": e.channel_binding,
+                "activeChannel": active_channel,
+            }));
+        }
         Ok(serde_json::json!(entries))
     }
 
@@ -125,10 +145,15 @@ impl SessionService for LiveSessionService {
             .and_then(|v| v.as_str())
             .map(String::from);
 
-        if self.metadata.get(key).await.is_none() {
-            return Err(format!("session '{key}' not found"));
-        }
+        let entry = self
+            .metadata
+            .get(key)
+            .await
+            .ok_or_else(|| format!("session '{key}' not found"))?;
         if label.is_some() {
+            if entry.channel_binding.is_some() {
+                return Err("cannot rename a channel-bound session".to_string());
+            }
             let _ = self.metadata.upsert(key, label).await;
         }
         if model.is_some() {

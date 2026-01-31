@@ -227,8 +227,17 @@ impl AgentTool for ExecTool {
 
         info!(command, timeout_secs, ?working_dir, "exec tool invoked");
 
+        // Skip approval when the session runs inside a sandbox — the sandbox
+        // itself is the security boundary.
+        let session_key = params.get("_session_key").and_then(|v| v.as_str());
+        let is_sandboxed = if let Some(ref router) = self.sandbox_router {
+            router.is_sandboxed(session_key.unwrap_or("main")).await
+        } else {
+            false
+        };
+
         // Approval gating.
-        if let Some(ref mgr) = self.approval_manager {
+        if !is_sandboxed && let Some(ref mgr) = self.approval_manager {
             let action = mgr.check_command(command).await?;
             if action == ApprovalAction::NeedsApproval {
                 info!(command, "command needs approval, waiting...");

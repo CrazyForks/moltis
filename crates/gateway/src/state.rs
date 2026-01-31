@@ -13,6 +13,8 @@ use moltis_protocol::ConnectParams;
 
 use moltis_tools::{approval::ApprovalManager, sandbox::SandboxRouter};
 
+use moltis_channels::ChannelReplyTarget;
+
 use crate::{
     auth::ResolvedAuth, nodes::NodeRegistry, pairing::PairingState, services::GatewayServices,
 };
@@ -158,6 +160,10 @@ pub struct GatewayState {
     pub active_projects: RwLock<HashMap<String, String>>,
     /// Per-session sandbox router (None if sandbox is not configured).
     pub sandbox_router: Option<Arc<SandboxRouter>>,
+    /// Pending channel reply targets: when a channel message triggers a chat
+    /// send, we queue the reply target so the "final" response can be routed
+    /// back to the originating channel.
+    pub channel_reply_queue: RwLock<HashMap<String, Vec<ChannelReplyTarget>>>,
 }
 
 impl GatewayState {
@@ -196,6 +202,7 @@ impl GatewayState {
             active_sessions: RwLock::new(HashMap::new()),
             active_projects: RwLock::new(HashMap::new()),
             sandbox_router,
+            channel_reply_queue: RwLock::new(HashMap::new()),
         })
     }
 
@@ -230,6 +237,21 @@ impl GatewayState {
     /// Number of connected clients.
     pub async fn client_count(&self) -> usize {
         self.clients.read().await.len()
+    }
+
+    /// Push a reply target for a session (used when a channel message triggers chat.send).
+    pub async fn push_channel_reply(&self, session_key: &str, target: ChannelReplyTarget) {
+        let mut queue = self.channel_reply_queue.write().await;
+        queue
+            .entry(session_key.to_string())
+            .or_default()
+            .push(target);
+    }
+
+    /// Drain all pending reply targets for a session.
+    pub async fn drain_channel_replies(&self, session_key: &str) -> Vec<ChannelReplyTarget> {
+        let mut queue = self.channel_reply_queue.write().await;
+        queue.remove(session_key).unwrap_or_default()
     }
 
     /// Close a client: remove from registry, abort if needed.

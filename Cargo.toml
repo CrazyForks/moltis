@@ -20,6 +20,7 @@ members = [
   "crates/routing",
   "crates/sessions",
   "crates/skills",
+  "crates/telegram",
   "crates/tools",
 ]
 resolver = "2"
@@ -70,6 +71,8 @@ fd-lock      = "4"
 genai        = "0.5"
 open         = "5.3"
 sha2         = "0.10"
+teloxide     = { features = ["macros"], version = "0.13" }
+tokio-util   = "0.7"
 
 # Workspace crates
 moltis-agents     = { features = ["provider-github-copilot", "provider-kimi-code", "provider-openai-codex"], path = "crates/agents" }
@@ -92,4 +95,5 @@ moltis-protocol   = { path = "crates/protocol" }
 moltis-routing    = { path = "crates/routing" }
 moltis-sessions   = { path = "crates/sessions" }
 moltis-skills     = { path = "crates/skills" }
+moltis-telegram   = { path = "crates/telegram" }
 moltis-tools      = { path = "crates/tools" }

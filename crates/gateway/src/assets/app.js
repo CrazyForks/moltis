@@ -26,6 +26,22 @@
   // Session token usage tracking (cumulative for the current session)
   var sessionTokens = { input: 0, output: 0 };
 
+  // ── Shared icons ─────────────────────────────────────────────
+  function makeTelegramIcon() {
+    var ns = "http://www.w3.org/2000/svg";
+    var svg = document.createElementNS(ns, "svg");
+    svg.setAttribute("width", "16");
+    svg.setAttribute("height", "16");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("fill", "none");
+    svg.setAttribute("stroke", "currentColor");
+    svg.setAttribute("stroke-width", "1.5");
+    var path = document.createElementNS(ns, "path");
+    path.setAttribute("d", "M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z");
+    svg.appendChild(path);
+    return svg;
+  }
+
   // ── Theme ────────────────────────────────────────────────────
   function getSystemTheme() {
     return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
@@ -485,7 +501,36 @@
 
       var label = document.createElement("div");
       label.className = "session-label";
-      label.textContent = s.label || s.key;
+      label.style.display = "flex";
+      label.style.alignItems = "center";
+      label.style.gap = "5px";
+      if (s.channelBinding) {
+        try {
+          var binding = JSON.parse(s.channelBinding);
+          if (binding.channel_type === "telegram") {
+            var iconWrap = document.createElement("span");
+            iconWrap.style.display = "inline-flex";
+            iconWrap.style.alignItems = "center";
+            iconWrap.style.color = s.activeChannel ? "var(--accent)" : "var(--muted)";
+            iconWrap.style.opacity = s.activeChannel ? "1" : "0.5";
+            iconWrap.title = s.activeChannel ? "Active Telegram session" : "Telegram session (inactive)";
+            iconWrap.appendChild(makeTelegramIcon());
+            label.appendChild(iconWrap);
+          }
+        } catch (e) { /* ignore bad JSON */ }
+      }
+      var labelText = document.createElement("span");
+      labelText.textContent = s.label || s.key;
+      label.appendChild(labelText);
+      var dots = document.createElement("span");
+      dots.className = "session-dots";
+      var ping = document.createElement("span");
+      ping.className = "dot-ping";
+      var core = document.createElement("span");
+      core.className = "dot-core";
+      dots.appendChild(ping);
+      dots.appendChild(core);
+      label.appendChild(dots);
       info.appendChild(label);
 
       var meta = document.createElement("div");
@@ -505,18 +550,20 @@
       actions.className = "session-actions";
 
       if (s.key !== "main") {
-        var renameBtn = document.createElement("button");
-        renameBtn.className = "session-action-btn";
-        renameBtn.textContent = "\u270F";
-        renameBtn.title = "Rename";
-        renameBtn.addEventListener("click", function (e) {
-          e.stopPropagation();
-          var newLabel = prompt("Rename session:", s.label || s.key);
-          if (newLabel !== null) {
-            sendRpc("sessions.patch", { key: s.key, label: newLabel }).then(fetchSessions);
-          }
-        });
-        actions.appendChild(renameBtn);
+        if (!s.channelBinding) {
+          var renameBtn = document.createElement("button");
+          renameBtn.className = "session-action-btn";
+          renameBtn.textContent = "\u270F";
+          renameBtn.title = "Rename";
+          renameBtn.addEventListener("click", function (e) {
+            e.stopPropagation();
+            var newLabel = prompt("Rename session:", s.label || s.key);
+            if (newLabel !== null) {
+              sendRpc("sessions.patch", { key: s.key, label: newLabel }).then(fetchSessions);
+            }
+          });
+          actions.appendChild(renameBtn);
+        }
 
         var deleteBtn = document.createElement("button");
         deleteBtn.className = "session-action-btn session-delete";
@@ -1593,6 +1640,20 @@
     return el;
   }
 
+  function stripChannelPrefix(text) {
+    return text.replace(/^\[Telegram(?:\s+from\s+[^\]]+)?\]\s*/, "");
+  }
+
+  function appendChannelFooter(el, channel) {
+    var ft = document.createElement("div");
+    ft.className = "msg-channel-footer";
+    var label = channel.channel_type || "channel";
+    var who = channel.username ? "@" + channel.username : channel.sender_name;
+    if (who) label += " \u00b7 " + who;
+    ft.textContent = "via " + label;
+    el.appendChild(ft);
+  }
+
   function removeThinking() {
     var el = document.getElementById("thinkingIndicator");
     if (el) el.remove();
@@ -1766,7 +1827,11 @@
         chatBatchLoading = true;
         history.forEach(function (msg) {
           if (msg.role === "user") {
-            msgEls.push(chatAddMsg("user", renderMarkdown(msg.content || ""), true));
+            var userContent = msg.content || "";
+            if (msg.channel) userContent = stripChannelPrefix(userContent);
+            var userEl = chatAddMsg("user", renderMarkdown(userContent), true);
+            if (userEl && msg.channel) appendChannelFooter(userEl, msg.channel);
+            msgEls.push(userEl);
           } else if (msg.role === "assistant") {
             var el = chatAddMsg("assistant", renderMarkdown(msg.content || ""), true);
             if (el && msg.model) {
@@ -3073,20 +3138,321 @@
   var channelModalBody = $("channelModalBody");
   var channelModalClose = $("channelModalClose");
 
-  function openChannelModal() {
+  function openChannelModal(onAdded) {
     channelModal.classList.remove("hidden");
-    channelModalTitle.textContent = "Add Channel";
+    channelModalTitle.textContent = "Add Telegram Bot";
     channelModalBody.textContent = "";
-    var msg = createEl("div", {
-      className: "text-sm text-[var(--muted)]",
-      style: "padding:12px 0;",
-      textContent: "Channel creation is not yet available. Channels are configured externally."
+
+    var form = createEl("div", { style: "display:flex;flex-direction:column;gap:12px;padding:8px 0;" });
+
+    // Instructions
+    var helpBox = createEl("div", {
+      style: "background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:10px 12px;display:flex;flex-direction:column;gap:6px;"
     });
-    channelModalBody.appendChild(msg);
+    var helpTitle = createEl("span", {
+      className: "text-xs font-medium text-[var(--text-strong)]",
+      textContent: "How to create a Telegram bot"
+    });
+    helpBox.appendChild(helpTitle);
+
+    var step1 = createEl("div", { className: "text-xs text-[var(--muted)]", style: "display:flex;gap:4px;" });
+    step1.appendChild(document.createTextNode("1. Open "));
+    var bfLink = createEl("a", {
+      href: "https://t.me/BotFather",
+      target: "_blank",
+      className: "text-[var(--accent)]",
+      style: "text-decoration:underline;",
+      textContent: "@BotFather"
+    });
+    step1.appendChild(bfLink);
+    step1.appendChild(document.createTextNode(" in Telegram"));
+    helpBox.appendChild(step1);
+
+    helpBox.appendChild(createEl("div", {
+      className: "text-xs text-[var(--muted)]",
+      textContent: "2. Send /newbot and follow the prompts to choose a name and username"
+    }));
+    helpBox.appendChild(createEl("div", {
+      className: "text-xs text-[var(--muted)]",
+      textContent: "3. Copy the bot token (looks like 123456:ABC-DEF...) and paste it below"
+    }));
+
+    var helpTip = createEl("div", { className: "text-xs text-[var(--muted)]", style: "display:flex;gap:4px;margin-top:2px;" });
+    helpTip.appendChild(document.createTextNode("See the "));
+    var docsLink = createEl("a", {
+      href: "https://core.telegram.org/bots/tutorial",
+      target: "_blank",
+      className: "text-[var(--accent)]",
+      style: "text-decoration:underline;",
+      textContent: "Telegram Bot Tutorial"
+    });
+    helpTip.appendChild(docsLink);
+    helpTip.appendChild(document.createTextNode(" for more details."));
+    helpBox.appendChild(helpTip);
+
+    form.appendChild(helpBox);
+
+    // Bot username
+    var idLabel = createEl("label", { className: "text-xs text-[var(--muted)]", textContent: "Bot username" });
+    var idInput = createEl("input", {
+      type: "text",
+      placeholder: "e.g. my_assistant_bot",
+      className: "text-sm bg-[var(--surface2)] border border-[var(--border)] rounded px-3 py-2 text-[var(--text)] focus:outline-none focus:border-[var(--border-strong)]",
+      style: "font-family:var(--font-body);"
+    });
+
+    // Bot Token
+    var tokenLabel = createEl("label", { className: "text-xs text-[var(--muted)]", textContent: "Bot Token (from @BotFather)" });
+    var tokenInput = createEl("input", {
+      type: "password",
+      placeholder: "123456:ABC-DEF...",
+      className: "text-sm bg-[var(--surface2)] border border-[var(--border)] rounded px-3 py-2 text-[var(--text)] focus:outline-none focus:border-[var(--border-strong)]",
+      style: "font-family:var(--font-body);"
+    });
+
+    // DM Policy
+    var dmLabel = createEl("label", { className: "text-xs text-[var(--muted)]", textContent: "DM Policy" });
+    var dmSelect = createEl("select", {
+      className: "text-sm bg-[var(--surface2)] border border-[var(--border)] rounded px-3 py-2 text-[var(--text)] cursor-pointer",
+      style: "font-family:var(--font-body);"
+    });
+    [["open", "Open (anyone)"], ["allowlist", "Allowlist only"], ["disabled", "Disabled"]].forEach(function (opt) {
+      var o = createEl("option", { value: opt[0], textContent: opt[1] });
+      dmSelect.appendChild(o);
+    });
+
+    // Mention Mode
+    var mentionLabel = createEl("label", { className: "text-xs text-[var(--muted)]", textContent: "Group Mention Mode" });
+    var mentionSelect = createEl("select", {
+      className: "text-sm bg-[var(--surface2)] border border-[var(--border)] rounded px-3 py-2 text-[var(--text)] cursor-pointer",
+      style: "font-family:var(--font-body);"
+    });
+    [["mention", "Must @mention bot"], ["always", "Always respond"], ["none", "Don't respond in groups"]].forEach(function (opt) {
+      var o = createEl("option", { value: opt[0], textContent: opt[1] });
+      mentionSelect.appendChild(o);
+    });
+
+    // Default Model
+    var modelLabel = createEl("label", { className: "text-xs text-[var(--muted)]", textContent: "Default Model" });
+    var modelSelect = createEl("select", {
+      className: "text-sm bg-[var(--surface2)] border border-[var(--border)] rounded px-3 py-2 text-[var(--text)] cursor-pointer",
+      style: "font-family:var(--font-body);"
+    });
+    var defaultOpt = createEl("option", { value: "", textContent: "(server default)" });
+    modelSelect.appendChild(defaultOpt);
+    models.forEach(function (m) {
+      var o = createEl("option", { value: m.id, textContent: m.displayName || m.id });
+      modelSelect.appendChild(o);
+    });
+
+    // Allowlist
+    var allowLabel = createEl("label", { className: "text-xs text-[var(--muted)]", textContent: "DM Allowlist (one username per line)" });
+    var allowInput = createEl("textarea", {
+      placeholder: "user1\nuser2",
+      rows: 3,
+      className: "text-sm bg-[var(--surface2)] border border-[var(--border)] rounded px-3 py-2 text-[var(--text)] focus:outline-none focus:border-[var(--border-strong)]",
+      style: "font-family:var(--font-body);resize:vertical;"
+    });
+
+    // Error display
+    var errorEl = createEl("div", {
+      className: "text-xs text-[var(--error)]",
+      style: "display:none;padding:4px 0;"
+    });
+
+    // Submit button
+    var submitBtn = createEl("button", {
+      className: "bg-[var(--accent-dim)] text-white border-none px-4 py-2 rounded text-sm cursor-pointer hover:bg-[var(--accent)] transition-colors",
+      textContent: "Connect Bot"
+    });
+
+    submitBtn.addEventListener("click", function () {
+      var accountId = idInput.value.trim();
+      var token = tokenInput.value.trim();
+
+      if (!accountId) {
+        errorEl.textContent = "Bot username is required.";
+        errorEl.style.display = "block";
+        return;
+      }
+      if (!token) {
+        errorEl.textContent = "Bot token is required.";
+        errorEl.style.display = "block";
+        return;
+      }
+
+      var allowlist = allowInput.value.trim().split(/\n/).map(function(s){ return s.trim(); }).filter(Boolean);
+
+      errorEl.style.display = "none";
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Connecting...";
+
+      var addConfig = {
+          token: token,
+          dm_policy: dmSelect.value,
+          mention_mode: mentionSelect.value,
+          allowlist: allowlist
+      };
+      if (modelSelect.value) addConfig.model = modelSelect.value;
+
+      sendRpc("channels.add", {
+        type: "telegram",
+        account_id: accountId,
+        config: addConfig
+      }).then(function (res) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Connect Bot";
+        if (res && res.ok) {
+          closeChannelModal();
+          if (onAdded) onAdded();
+        } else {
+          var msg = (res && res.error && (res.error.message || res.error.detail)) || "Failed to connect bot.";
+          errorEl.textContent = msg;
+          errorEl.style.display = "block";
+        }
+      });
+    });
+
+    form.appendChild(idLabel);
+    form.appendChild(idInput);
+    form.appendChild(tokenLabel);
+    form.appendChild(tokenInput);
+    form.appendChild(dmLabel);
+    form.appendChild(dmSelect);
+    form.appendChild(mentionLabel);
+    form.appendChild(mentionSelect);
+    form.appendChild(modelLabel);
+    form.appendChild(modelSelect);
+    form.appendChild(allowLabel);
+    form.appendChild(allowInput);
+    form.appendChild(errorEl);
+    form.appendChild(submitBtn);
+
+    channelModalBody.appendChild(form);
+    idInput.focus();
   }
 
   function closeChannelModal() {
     channelModal.classList.add("hidden");
+  }
+
+  function openEditChannelModal(ch, onUpdated) {
+    channelModal.classList.remove("hidden");
+    channelModalTitle.textContent = "Edit Telegram Bot";
+    channelModalBody.textContent = "";
+
+    var cfg = ch.config || {};
+    var form = createEl("div", { style: "display:flex;flex-direction:column;gap:12px;padding:8px 0;" });
+
+    var nameEl = createEl("div", {
+      className: "text-sm text-[var(--text-strong)]",
+      textContent: ch.name || ch.account_id
+    });
+    form.appendChild(nameEl);
+
+    // DM Policy
+    var dmLabel = createEl("label", { className: "text-xs text-[var(--muted)]", textContent: "DM Policy" });
+    var dmSelect = createEl("select", {
+      className: "text-sm bg-[var(--surface2)] border border-[var(--border)] rounded px-3 py-2 text-[var(--text)] cursor-pointer",
+      style: "font-family:var(--font-body);"
+    });
+    [["open", "Open (anyone)"], ["allowlist", "Allowlist only"], ["disabled", "Disabled"]].forEach(function (opt) {
+      var o = createEl("option", { value: opt[0], textContent: opt[1] });
+      if (opt[0] === cfg.dm_policy) o.selected = true;
+      dmSelect.appendChild(o);
+    });
+
+    // Mention Mode
+    var mentionLabel = createEl("label", { className: "text-xs text-[var(--muted)]", textContent: "Group Mention Mode" });
+    var mentionSelect = createEl("select", {
+      className: "text-sm bg-[var(--surface2)] border border-[var(--border)] rounded px-3 py-2 text-[var(--text)] cursor-pointer",
+      style: "font-family:var(--font-body);"
+    });
+    [["mention", "Must @mention bot"], ["always", "Always respond"], ["none", "Don't respond in groups"]].forEach(function (opt) {
+      var o = createEl("option", { value: opt[0], textContent: opt[1] });
+      if (opt[0] === cfg.mention_mode) o.selected = true;
+      mentionSelect.appendChild(o);
+    });
+
+    // Default Model
+    var editModelLabel = createEl("label", { className: "text-xs text-[var(--muted)]", textContent: "Default Model" });
+    var editModelSelect = createEl("select", {
+      className: "text-sm bg-[var(--surface2)] border border-[var(--border)] rounded px-3 py-2 text-[var(--text)] cursor-pointer",
+      style: "font-family:var(--font-body);"
+    });
+    var editDefaultOpt = createEl("option", { value: "", textContent: "(server default)" });
+    editModelSelect.appendChild(editDefaultOpt);
+    models.forEach(function (m) {
+      var o = createEl("option", { value: m.id, textContent: m.displayName || m.id });
+      if (m.id === cfg.model) o.selected = true;
+      editModelSelect.appendChild(o);
+    });
+
+    // Allowlist
+    var allowLabel = createEl("label", { className: "text-xs text-[var(--muted)]", textContent: "DM Allowlist (one username per line)" });
+    var allowInput = createEl("textarea", {
+      rows: 3,
+      className: "text-sm bg-[var(--surface2)] border border-[var(--border)] rounded px-3 py-2 text-[var(--text)] focus:outline-none focus:border-[var(--border-strong)]",
+      style: "font-family:var(--font-body);resize:vertical;"
+    });
+    allowInput.value = (cfg.allowlist || []).join("\n");
+
+    // Error display
+    var errorEl = createEl("div", {
+      className: "text-xs text-[var(--error)]",
+      style: "display:none;padding:4px 0;"
+    });
+
+    // Save button
+    var saveBtn = createEl("button", {
+      className: "bg-[var(--accent-dim)] text-white border-none px-4 py-2 rounded text-sm cursor-pointer hover:bg-[var(--accent)] transition-colors",
+      textContent: "Save Changes"
+    });
+
+    saveBtn.addEventListener("click", function () {
+      var allowlist = allowInput.value.trim().split(/\n/).map(function(s){ return s.trim(); }).filter(Boolean);
+
+      errorEl.style.display = "none";
+      saveBtn.disabled = true;
+      saveBtn.textContent = "Saving...";
+
+      var updateConfig = {
+          token: cfg.token || "",
+          dm_policy: dmSelect.value,
+          mention_mode: mentionSelect.value,
+          allowlist: allowlist
+      };
+      if (editModelSelect.value) updateConfig.model = editModelSelect.value;
+
+      sendRpc("channels.update", {
+        account_id: ch.account_id,
+        config: updateConfig
+      }).then(function (res) {
+        saveBtn.disabled = false;
+        saveBtn.textContent = "Save Changes";
+        if (res && res.ok) {
+          closeChannelModal();
+          if (onUpdated) onUpdated();
+        } else {
+          var msg = (res && res.error && (res.error.message || res.error.detail)) || "Failed to update bot.";
+          errorEl.textContent = msg;
+          errorEl.style.display = "block";
+        }
+      });
+    });
+
+    form.appendChild(dmLabel);
+    form.appendChild(dmSelect);
+    form.appendChild(mentionLabel);
+    form.appendChild(mentionSelect);
+    form.appendChild(editModelLabel);
+    form.appendChild(editModelSelect);
+    form.appendChild(allowLabel);
+    form.appendChild(allowInput);
+    form.appendChild(errorEl);
+    form.appendChild(saveBtn);
+
+    channelModalBody.appendChild(form);
   }
 
   channelModalClose.addEventListener("click", closeChannelModal);
@@ -3099,23 +3465,199 @@
     '<div class="flex-1 flex flex-col min-w-0 p-4 gap-4 overflow-y-auto">' +
       '<div class="flex items-center gap-3">' +
         '<h2 class="text-lg font-medium text-[var(--text-strong)]">Channels</h2>' +
-        '<button id="chanAddBtn" class="bg-[var(--accent-dim)] text-white border-none px-3 py-1.5 rounded text-xs cursor-pointer hover:bg-[var(--accent)] transition-colors">+ Add Channel</button>' +
+        '<div style="display:flex;gap:4px;margin-left:12px;">' +
+          '<button id="chanTabChannels" class="session-action-btn" style="font-weight:600;">Channels</button>' +
+          '<button id="chanTabSenders" class="session-action-btn">Senders</button>' +
+        '</div>' +
+        '<button id="chanAddBtn" class="bg-[var(--accent-dim)] text-white border-none px-3 py-1.5 rounded text-xs cursor-pointer hover:bg-[var(--accent)] transition-colors">+ Add Telegram Bot</button>' +
       '</div>' +
       '<div id="channelPageList"></div>' +
+      '<div id="sendersPageContent" style="display:none;">' +
+        '<div style="margin-bottom:12px;">' +
+          '<label class="text-xs text-[var(--muted)]" style="margin-right:6px;">Account:</label>' +
+          '<select id="sendersAccountSelect" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;font-size:12px;"></select>' +
+        '</div>' +
+        '<div id="sendersTableWrap"></div>' +
+      '</div>' +
     '</div>';
 
   var refreshChannelsPage = null;
+  var channelEventUnsub = null;
 
   registerPage("/channels", function initChannels(container) {
-    container.innerHTML = channelsPageHTML;
+    // Safe: static hardcoded HTML template, no user input.
+    container.innerHTML = channelsPageHTML; // eslint-disable-line -- safe: hardcoded template
 
     var addBtn = $("chanAddBtn");
     var listEl = $("channelPageList");
+    var sendersContent = $("sendersPageContent");
+    var tabChannels = $("chanTabChannels");
+    var tabSenders = $("chanTabSenders");
+    var sendersSelect = $("sendersAccountSelect");
+    var sendersTableWrap = $("sendersTableWrap");
+    var activeTab = "channels";
 
-    addBtn.addEventListener("click", function () {
-      if (connected) openChannelModal();
+    // Real-time channel event listener (replaces polling).
+    channelEventUnsub = onEvent("channel", function (p) {
+      if (p.kind === "inbound_message" && activeTab === "senders" && sendersSelect.value === p.account_id) {
+        loadSenders();
+      }
     });
 
+    function switchTab(tab) {
+      activeTab = tab;
+      if (tab === "channels") {
+        listEl.style.display = "";
+        sendersContent.style.display = "none";
+        addBtn.style.display = "";
+        tabChannels.style.fontWeight = "600";
+        tabSenders.style.fontWeight = "";
+        renderChannelList();
+      } else {
+        listEl.style.display = "none";
+        sendersContent.style.display = "";
+        addBtn.style.display = "none";
+        tabChannels.style.fontWeight = "";
+        tabSenders.style.fontWeight = "600";
+        loadSendersAccounts();
+      }
+    }
+
+    tabChannels.addEventListener("click", function () { switchTab("channels"); });
+    tabSenders.addEventListener("click", function () { switchTab("senders"); });
+
+    addBtn.addEventListener("click", function () {
+      if (connected) openChannelModal(renderChannelList);
+    });
+
+    // ── Senders tab ──────────────────────────────────────────
+    function loadSendersAccounts() {
+      sendRpc("channels.status", {}).then(function (res) {
+        if (!res || !res.ok) return;
+        var channels = (res.payload && res.payload.channels) || [];
+        while (sendersSelect.firstChild) sendersSelect.removeChild(sendersSelect.firstChild);
+        if (channels.length === 0) {
+          sendersTableWrap.textContent = "No channels configured.";
+          return;
+        }
+        channels.forEach(function (ch) {
+          var opt = document.createElement("option");
+          opt.value = ch.account_id;
+          opt.textContent = ch.name || ch.account_id;
+          sendersSelect.appendChild(opt);
+        });
+        loadSenders();
+      });
+    }
+
+    sendersSelect.addEventListener("change", loadSenders);
+
+    function loadSenders() {
+      var accountId = sendersSelect.value;
+      if (!accountId) return;
+      sendRpc("channels.senders.list", { account_id: accountId }).then(function (res) {
+        if (!res || !res.ok) { sendersTableWrap.textContent = "Failed to load senders."; return; }
+        var senders = (res.payload && res.payload.senders) || [];
+        while (sendersTableWrap.firstChild) sendersTableWrap.removeChild(sendersTableWrap.firstChild);
+
+        if (senders.length === 0) {
+          sendersTableWrap.appendChild(createEl("div", {
+            className: "text-sm text-[var(--muted)]",
+            style: "text-align:center;padding:30px 0;",
+            textContent: "No messages received yet for this account."
+          }));
+          return;
+        }
+
+        var table = createEl("table", {
+          style: "width:100%;border-collapse:collapse;font-size:13px;"
+        });
+        var thead = document.createElement("thead");
+        var headerRow = document.createElement("tr");
+        ["Sender", "Username", "Messages", "Last Seen", "Status", "Action"].forEach(function (h) {
+          var th = createEl("th", {
+            textContent: h,
+            style: "text-align:left;padding:6px 10px;border-bottom:1px solid var(--border);font-weight:500;color:var(--muted);font-size:11px;text-transform:uppercase;"
+          });
+          headerRow.appendChild(th);
+        });
+        thead.appendChild(headerRow);
+        table.appendChild(thead);
+
+        var tbody = document.createElement("tbody");
+        senders.forEach(function (s) {
+          var tr = document.createElement("tr");
+          tr.style.cssText = "border-bottom:1px solid var(--border);";
+
+          tr.appendChild(createEl("td", {
+            style: "padding:8px 10px;",
+            textContent: s.sender_name || s.peer_id
+          }));
+
+          tr.appendChild(createEl("td", {
+            style: "padding:8px 10px;color:var(--muted);",
+            textContent: s.username ? "@" + s.username : "\u2014"
+          }));
+
+          tr.appendChild(createEl("td", {
+            style: "padding:8px 10px;",
+            textContent: String(s.message_count)
+          }));
+
+          var lastSeen = s.last_seen ? new Date(s.last_seen * 1000).toLocaleString() : "\u2014";
+          tr.appendChild(createEl("td", {
+            style: "padding:8px 10px;color:var(--muted);font-size:12px;",
+            textContent: lastSeen
+          }));
+
+          var statusTd = document.createElement("td");
+          statusTd.style.cssText = "padding:8px 10px;";
+          statusTd.appendChild(createEl("span", {
+            className: "provider-item-badge " + (s.allowed ? "configured" : "oauth"),
+            textContent: s.allowed ? "Allowed" : "Denied"
+          }));
+          tr.appendChild(statusTd);
+
+          var actionTd = document.createElement("td");
+          actionTd.style.cssText = "padding:8px 10px;";
+          var identifier = s.username || s.peer_id;
+          if (s.allowed) {
+            var denyBtn = createEl("button", {
+              className: "session-action-btn session-delete",
+              textContent: "Deny",
+              title: "Remove from allowlist"
+            });
+            denyBtn.addEventListener("click", function () {
+              sendRpc("channels.senders.deny", {
+                account_id: accountId,
+                identifier: identifier
+              }).then(function () { loadSenders(); });
+            });
+            actionTd.appendChild(denyBtn);
+          } else {
+            var approveBtn = createEl("button", {
+              className: "session-action-btn",
+              textContent: "Approve",
+              title: "Add to allowlist"
+            });
+            approveBtn.style.cssText = "background:var(--accent-dim);color:white;";
+            approveBtn.addEventListener("click", function () {
+              sendRpc("channels.senders.approve", {
+                account_id: accountId,
+                identifier: identifier
+              }).then(function () { loadSenders(); });
+            });
+            actionTd.appendChild(approveBtn);
+          }
+          tr.appendChild(actionTd);
+          tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+        sendersTableWrap.appendChild(table);
+      });
+    }
+
+    // ── Channels tab ─────────────────────────────────────────
     function renderChannelList() {
       sendRpc("channels.status", {}).then(function (res) {
         if (!res || !res.ok) return;
@@ -3123,43 +3665,98 @@
         while (listEl.firstChild) listEl.removeChild(listEl.firstChild);
 
         if (channels.length === 0) {
-          listEl.appendChild(createEl("div", {
+          var empty = createEl("div", {
+            style: "text-align:center;padding:40px 0;"
+          });
+          empty.appendChild(createEl("div", {
             className: "text-sm text-[var(--muted)]",
-            textContent: "No channels connected."
+            style: "margin-bottom:12px;",
+            textContent: "No Telegram bots connected."
           }));
+          empty.appendChild(createEl("div", {
+            className: "text-xs text-[var(--muted)]",
+            textContent: "Click \"+ Add Telegram Bot\" to connect one using a token from @BotFather."
+          }));
+          listEl.appendChild(empty);
           return;
         }
 
         channels.forEach(function (ch) {
           var card = createEl("div", {
-            style: "display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border:1px solid var(--border);border-radius:6px;margin-bottom:6px;"
+            style: "display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border:1px solid var(--border);border-radius:8px;margin-bottom:8px;"
           });
 
-          var left = createEl("div", { style: "display:flex;align-items:center;gap:8px;" });
-          left.appendChild(createEl("span", {
+          var left = createEl("div", { style: "display:flex;align-items:center;gap:10px;" });
+
+          // Telegram icon
+          var icon = createEl("span", {
+            style: "display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:6px;background:var(--surface2);"
+          });
+          icon.appendChild(makeTelegramIcon());
+          left.appendChild(icon);
+
+          var info = createEl("div", { style: "display:flex;flex-direction:column;gap:2px;" });
+          info.appendChild(createEl("span", {
             className: "text-sm text-[var(--text-strong)]",
-            textContent: ch.name || ch.type || "channel"
+            textContent: ch.name || ch.account_id || "Telegram"
           }));
 
+          if (ch.details) {
+            info.appendChild(createEl("span", {
+              className: "text-xs text-[var(--muted)]",
+              textContent: ch.details
+            }));
+          }
+
+          if (ch.sessions && ch.sessions.length > 0) {
+            var active = ch.sessions.filter(function(s) { return s.active; });
+            var sessionLine = active.length > 0
+              ? active.map(function(s) { return (s.label || s.key) + " (" + s.messageCount + " msgs)"; }).join(", ")
+              : "No active session";
+            info.appendChild(createEl("span", {
+              className: "text-xs text-[var(--muted)]",
+              textContent: sessionLine
+            }));
+          }
+
+          left.appendChild(info);
+
+          // Status badge
+          var statusClass = ch.status === "connected" ? "configured" : "oauth";
           var statusBadge = createEl("span", {
-            className: "provider-item-badge " + (ch.status === "connected" ? "configured" : "oauth"),
+            className: "provider-item-badge " + statusClass,
             textContent: ch.status || "unknown"
           });
           left.appendChild(statusBadge);
           card.appendChild(left);
 
-          var logoutBtn = createEl("button", {
-            className: "session-action-btn session-delete",
-            textContent: "Logout",
-            title: "Logout " + (ch.name || "channel")
+          var actions = createEl("div", { style: "display:flex;gap:6px;" });
+
+          // Edit button
+          var editBtn = createEl("button", {
+            className: "session-action-btn",
+            textContent: "Edit",
+            title: "Edit " + (ch.account_id || "channel")
           });
-          logoutBtn.addEventListener("click", function () {
-            if (!confirm("Logout from " + (ch.name || "channel") + "?")) return;
-            sendRpc("channels.logout", { channel: ch.name || ch.type }).then(function (r) {
+          editBtn.addEventListener("click", function () {
+            openEditChannelModal(ch, renderChannelList);
+          });
+          actions.appendChild(editBtn);
+
+          // Remove button
+          var removeBtn = createEl("button", {
+            className: "session-action-btn session-delete",
+            textContent: "Remove",
+            title: "Remove " + (ch.account_id || "channel")
+          });
+          removeBtn.addEventListener("click", function () {
+            if (!confirm("Remove " + (ch.name || ch.account_id) + "?")) return;
+            sendRpc("channels.remove", { account_id: ch.account_id }).then(function (r) {
               if (r && r.ok) renderChannelList();
             });
           });
-          card.appendChild(logoutBtn);
+          actions.appendChild(removeBtn);
+          card.appendChild(actions);
 
           listEl.appendChild(card);
         });
@@ -3170,6 +3767,26 @@
     renderChannelList();
   }, function teardownChannels() {
     refreshChannelsPage = null;
+    if (channelEventUnsub) { channelEventUnsub(); channelEventUnsub = null; }
+  });
+
+  // ── Event bus (pub/sub for WebSocket events) ─────────────
+  var eventListeners = {};
+
+  function onEvent(eventName, handler) {
+    (eventListeners[eventName] = eventListeners[eventName] || []).push(handler);
+    return function off() {
+      var arr = eventListeners[eventName];
+      if (arr) {
+        var idx = arr.indexOf(handler);
+        if (idx !== -1) arr.splice(idx, 1);
+      }
+    };
+  }
+
+  // ── Session events (refresh list on channel-originated changes) ──
+  onEvent("session", function () {
+    fetchSessions();
   });
 
   // ── Logs page ──────────────────────────────────────────────
@@ -4167,11 +4784,18 @@
       }
 
       if (frame.type === "event") {
+        var listeners = eventListeners[frame.event] || [];
+        listeners.forEach(function(h) { h(frame.payload || {}); });
         if (frame.event === "chat") {
           var p = frame.payload || {};
           var eventSession = p.sessionKey || activeSessionKey;
           var isActive = eventSession === activeSessionKey;
           var isChatPage = currentPage === "/";
+
+          // Refresh the session sidebar when we see a session key we don't know about yet.
+          if (p.sessionKey && !sessions.find(function (s) { return s.key === p.sessionKey; })) {
+            fetchSessions();
+          }
 
           if (p.state === "thinking" && isActive && isChatPage) {
             removeThinking();
@@ -4255,6 +4879,18 @@
                 errMsg.textContent = p.error.detail;
                 toolCard.appendChild(errMsg);
               }
+            }
+          } else if (p.state === "channel_user" && isChatPage) {
+            // Switch to the channel session if sessionKey is provided.
+            if (p.sessionKey && p.sessionKey !== activeSessionKey) {
+              switchSession(p.sessionKey);
+            }
+            var isActive = p.sessionKey ? (p.sessionKey === activeSessionKey) : isActive;
+            if (!isActive) return;
+            var cleanText = stripChannelPrefix(p.text || "");
+            var el = chatAddMsg("user", renderMarkdown(cleanText), true);
+            if (el && p.channel) {
+              appendChannelFooter(el, p.channel);
             }
           } else if (p.state === "delta" && p.text && isActive && isChatPage) {
             removeThinking();

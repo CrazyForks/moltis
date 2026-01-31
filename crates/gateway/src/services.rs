@@ -2,7 +2,9 @@
 //! Each trait has a `Noop` implementation that returns empty/default responses,
 //! allowing the gateway to run standalone before domain crates are wired in.
 
-use {async_trait::async_trait, serde_json::Value, std::sync::Arc};
+use {
+    async_trait::async_trait, moltis_channels::ChannelOutbound, serde_json::Value, std::sync::Arc,
+};
 
 /// Error type returned by service methods.
 pub type ServiceError = String;
@@ -110,6 +112,12 @@ pub trait ChannelService: Send + Sync {
     async fn status(&self) -> ServiceResult;
     async fn logout(&self, params: Value) -> ServiceResult;
     async fn send(&self, params: Value) -> ServiceResult;
+    async fn add(&self, params: Value) -> ServiceResult;
+    async fn remove(&self, params: Value) -> ServiceResult;
+    async fn update(&self, params: Value) -> ServiceResult;
+    async fn senders_list(&self, params: Value) -> ServiceResult;
+    async fn sender_approve(&self, params: Value) -> ServiceResult;
+    async fn sender_deny(&self, params: Value) -> ServiceResult;
 }
 
 pub struct NoopChannelService;
@@ -126,6 +134,30 @@ impl ChannelService for NoopChannelService {
 
     async fn send(&self, _p: Value) -> ServiceResult {
         Err("no channels configured".into())
+    }
+
+    async fn add(&self, _p: Value) -> ServiceResult {
+        Err("no channel service configured".into())
+    }
+
+    async fn remove(&self, _p: Value) -> ServiceResult {
+        Err("no channel service configured".into())
+    }
+
+    async fn update(&self, _p: Value) -> ServiceResult {
+        Err("no channel service configured".into())
+    }
+
+    async fn senders_list(&self, _p: Value) -> ServiceResult {
+        Err("no channel service configured".into())
+    }
+
+    async fn sender_approve(&self, _p: Value) -> ServiceResult {
+        Err("no channel service configured".into())
+    }
+
+    async fn sender_deny(&self, _p: Value) -> ServiceResult {
+        Err("no channel service configured".into())
     }
 }
 
@@ -980,6 +1012,10 @@ pub struct GatewayServices {
     pub logs: Arc<dyn LogsService>,
     pub provider_setup: Arc<dyn ProviderSetupService>,
     pub project: Arc<dyn ProjectService>,
+    /// Optional channel outbound for sending replies back to channels.
+    channel_outbound: Option<Arc<dyn ChannelOutbound>>,
+    /// Optional session metadata for cross-service access (e.g. channel binding).
+    pub session_metadata: Option<Arc<moltis_sessions::metadata::SqliteSessionMetadata>>,
 }
 
 impl GatewayServices {
@@ -1001,6 +1037,15 @@ impl GatewayServices {
     pub fn with_provider_setup(mut self, ps: Arc<dyn ProviderSetupService>) -> Self {
         self.provider_setup = ps;
         self
+    }
+
+    pub fn with_channel_outbound(mut self, outbound: Arc<dyn ChannelOutbound>) -> Self {
+        self.channel_outbound = Some(outbound);
+        self
+    }
+
+    pub fn channel_outbound_arc(&self) -> Option<Arc<dyn ChannelOutbound>> {
+        self.channel_outbound.clone()
     }
 
     /// Create a service bundle with all noop implementations.
@@ -1025,11 +1070,21 @@ impl GatewayServices {
             logs: Arc::new(NoopLogsService),
             provider_setup: Arc::new(NoopProviderSetupService),
             project: Arc::new(NoopProjectService),
+            channel_outbound: None,
+            session_metadata: None,
         }
     }
 
     pub fn with_project(mut self, project: Arc<dyn ProjectService>) -> Self {
         self.project = project;
+        self
+    }
+
+    pub fn with_session_metadata(
+        mut self,
+        meta: Arc<moltis_sessions::metadata::SqliteSessionMetadata>,
+    ) -> Self {
+        self.session_metadata = Some(meta);
         self
     }
 }

@@ -11,6 +11,7 @@ pub struct MoltisConfig {
     pub providers: ProvidersConfig,
     pub tools: ToolsConfig,
     pub skills: SkillsConfig,
+    pub channels: ChannelsConfig,
 }
 
 /// Skills configuration.
@@ -30,6 +31,15 @@ pub struct SkillsConfig {
 
 fn default_true() -> bool {
     true
+}
+
+/// Channel configuration.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ChannelsConfig {
+    /// Telegram bot accounts, keyed by account ID.
+    #[serde(default)]
+    pub telegram: HashMap<String, serde_json::Value>,
 }
 
 /// Tools configuration (exec, sandbox, policy).

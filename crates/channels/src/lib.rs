@@ -5,7 +5,13 @@
 //! messaging, status, and gateway lifecycle.
 
 pub mod gating;
+pub mod message_log;
 pub mod plugin;
 pub mod registry;
+pub mod store;
 
-pub use plugin::{ChannelOutbound, ChannelPlugin, ChannelStatus};
+pub use plugin::{
+    ChannelEvent, ChannelEventSink, ChannelHealthSnapshot, ChannelMessageMeta, ChannelOutbound,
+    ChannelPlugin, ChannelReplyTarget, ChannelStatus, ChannelStreamOutbound, StreamEvent,
+    StreamReceiver, StreamSender,
+};

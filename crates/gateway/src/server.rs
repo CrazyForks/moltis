@@ -16,7 +16,7 @@ use {
 #[cfg(feature = "web-ui")]
 use axum::http::StatusCode;
 
-use moltis_protocol::TICK_INTERVAL_MS;
+use {moltis_channels::ChannelPlugin, moltis_protocol::TICK_INTERVAL_MS};
 
 use moltis_agents::providers::ProviderRegistry;
 
@@ -146,6 +146,13 @@ pub async fn start_gateway(
     SqliteSessionMetadata::init(&db_pool)
         .await
         .expect("failed to init sessions table");
+
+    crate::message_log_store::SqliteMessageLog::init(&db_pool)
+        .await
+        .expect("failed to init message_log table");
+    let message_log: Arc<dyn moltis_channels::message_log::MessageLog> = Arc::new(
+        crate::message_log_store::SqliteMessageLog::new(db_pool.clone()),
+    );
 
     // Migrate from projects.toml if it exists.
     let config_dir = directories::ProjectDirs::from("", "", "moltis")
@@ -315,6 +322,88 @@ pub async fn start_gateway(
             .with_sandbox_router(Arc::clone(&sandbox_router))
             .with_project_store(Arc::clone(&project_store)),
     );
+
+    // Wire channel store and Telegram channel service.
+    {
+        use moltis_channels::store::ChannelStore;
+
+        crate::channel_store::SqliteChannelStore::init(&db_pool)
+            .await
+            .expect("failed to init channels table");
+        let channel_store: Arc<dyn ChannelStore> = Arc::new(
+            crate::channel_store::SqliteChannelStore::new(db_pool.clone()),
+        );
+
+        let channel_sink = Arc::new(crate::channel_events::GatewayChannelEventSink::new(
+            Arc::clone(&deferred_state),
+        ));
+        let mut tg_plugin = moltis_telegram::TelegramPlugin::new()
+            .with_message_log(Arc::clone(&message_log))
+            .with_event_sink(channel_sink);
+
+        // Start channels from config file (these take precedence).
+        let tg_accounts = &config.channels.telegram;
+        let mut started: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for (account_id, account_config) in tg_accounts {
+            if let Err(e) = tg_plugin
+                .start_account(account_id, account_config.clone())
+                .await
+            {
+                tracing::warn!(account_id, "failed to start telegram account: {e}");
+            } else {
+                started.insert(account_id.clone());
+            }
+        }
+
+        // Load persisted channels that weren't in the config file.
+        match channel_store.list().await {
+            Ok(stored) => {
+                info!("{} stored channel(s) found in database", stored.len());
+                for ch in stored {
+                    if started.contains(&ch.account_id) {
+                        info!(
+                            account_id = ch.account_id,
+                            "skipping stored channel (already started from config)"
+                        );
+                        continue;
+                    }
+                    info!(
+                        account_id = ch.account_id,
+                        channel_type = ch.channel_type,
+                        "starting stored channel"
+                    );
+                    if let Err(e) = tg_plugin.start_account(&ch.account_id, ch.config).await {
+                        tracing::warn!(
+                            account_id = ch.account_id,
+                            "failed to start stored telegram account: {e}"
+                        );
+                    } else {
+                        started.insert(ch.account_id);
+                    }
+                }
+            },
+            Err(e) => {
+                tracing::warn!("failed to load stored channels: {e}");
+            },
+        }
+
+        if !started.is_empty() {
+            info!("{} telegram account(s) started", started.len());
+        }
+
+        // Grab shared outbound before moving tg_plugin into the channel service.
+        let tg_outbound = tg_plugin.shared_outbound();
+        services = services.with_channel_outbound(tg_outbound);
+
+        services.channel = Arc::new(crate::channel::LiveChannelService::new(
+            tg_plugin,
+            channel_store,
+            Arc::clone(&message_log),
+            Arc::clone(&session_metadata),
+        ));
+    }
+
+    services = services.with_session_metadata(Arc::clone(&session_metadata));
 
     let state = GatewayState::with_sandbox_router(
         resolved_auth,

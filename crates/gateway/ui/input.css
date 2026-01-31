@@ -797,16 +797,35 @@
   .session-delete:hover {
     color: var(--error);
   }
-  .session-item.replying .session-label::after {
-    content: "";
-    display: inline-block;
-    width: 6px;
-    height: 6px;
+  .session-item.replying .session-dots {
+    display: inline-flex;
+    position: relative;
+    width: 8px;
+    height: 8px;
     margin-left: 6px;
-    border-radius: 50%;
-    background: var(--accent);
     vertical-align: middle;
-    animation: pulse 1s infinite;
+    flex-shrink: 0;
+  }
+  .session-item.replying .session-dots .dot-ping {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: var(--warn);
+    opacity: 0.75;
+    animation: ping 1s linear infinite;
+  }
+  .session-item.replying .session-dots .dot-core {
+    position: relative;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--warn);
+  }
+  .session-item:not(.replying) .session-dots {
+    display: none;
+  }
+  @keyframes ping {
+    75%, 100% { transform: scale(2); opacity: 0; }
   }
   .session-item.unread .session-label::before {
     content: "";
