@@ -489,6 +489,8 @@ impl Sandbox for AppleContainerSandbox {
         let image = image_override.unwrap_or_else(|| self.image());
 
         // Check if container exists and parse its state.
+        // Note: `container inspect` returns exit 0 with empty `[]` for nonexistent
+        // containers, so we must also check the output content.
         let check = tokio::process::Command::new("container")
             .args(["inspect", &name])
             .output()
@@ -498,8 +500,17 @@ impl Sandbox for AppleContainerSandbox {
             && output.status.success()
         {
             let stdout = String::from_utf8_lossy(&output.stdout);
-            // If the container exists but is stopped, restart it.
-            if stdout.contains("stopped") || stdout.contains("exited") {
+
+            // Empty array means container doesn't exist — fall through to create.
+            if stdout.trim() == "[]" || stdout.trim().is_empty() {
+                info!(
+                    name,
+                    "apple container not found (inspect returned empty), creating"
+                );
+            } else if stdout.contains("\"running\"") {
+                info!(name, "apple container already running");
+                return Ok(());
+            } else if stdout.contains("stopped") || stdout.contains("exited") {
                 info!(name, "apple container stopped, restarting");
                 let start = tokio::process::Command::new("container")
                     .args(["start", &name])
@@ -508,7 +519,6 @@ impl Sandbox for AppleContainerSandbox {
                 if !start.status.success() {
                     let stderr = String::from_utf8_lossy(&start.stderr);
                     warn!(name, %stderr, "container start failed, removing and recreating");
-                    // Remove the broken container and fall through to create a new one.
                     let _ = tokio::process::Command::new("container")
                         .args(["rm", &name])
                         .output()
@@ -518,11 +528,15 @@ impl Sandbox for AppleContainerSandbox {
                     return Ok(());
                 }
             } else {
-                debug!(name, "apple container already running");
-                return Ok(());
+                // Unknown state — log and recreate.
+                info!(name, state = %stdout.chars().take(200).collect::<String>(), "apple container in unknown state, removing and recreating");
+                let _ = tokio::process::Command::new("container")
+                    .args(["rm", "-f", &name])
+                    .output()
+                    .await;
             }
         } else {
-            debug!(name, "apple container not found, creating");
+            info!(name, "apple container not found, creating");
         }
 
         // Container doesn't exist — create it.
