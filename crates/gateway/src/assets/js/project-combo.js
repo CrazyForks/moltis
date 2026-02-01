@@ -19,7 +19,7 @@ export function renderProjectDropdownList() {
 	S.projectDropdownList.textContent = "";
 	// "No project" option
 	var none = document.createElement("div");
-	none.className = `model-dropdown-item${!S.activeProjectId ? " selected" : ""}`;
+	none.className = `model-dropdown-item${S.activeProjectId ? "" : " selected"}`;
 	var noneLabel = document.createElement("span");
 	noneLabel.className = "model-item-label";
 	noneLabel.textContent = "No project";
@@ -67,7 +67,7 @@ export function renderSessionProjectSelect() {
 }
 
 export function bindProjectComboEvents() {
-	if (!S.projectComboBtn || !S.projectCombo) return;
+	if (!(S.projectComboBtn && S.projectCombo)) return;
 	S.projectComboBtn.addEventListener("click", () => {
 		if (S.projectDropdown.classList.contains("hidden")) {
 			openProjectDropdown();

@@ -5,7 +5,7 @@ import * as S from "./state.js";
 
 export function updateSandboxUI(enabled) {
 	S.setSessionSandboxEnabled(!!enabled);
-	if (!S.sandboxLabel || !S.sandboxToggleBtn) return;
+	if (!(S.sandboxLabel && S.sandboxToggleBtn)) return;
 	if (S.sessionSandboxEnabled) {
 		S.sandboxLabel.textContent = "sandboxed";
 		S.sandboxToggleBtn.style.borderColor = "var(--accent, #f59e0b)";

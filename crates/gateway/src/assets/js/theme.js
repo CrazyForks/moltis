@@ -2,9 +2,7 @@
 import { $ } from "./state.js";
 
 function getSystemTheme() {
-	return window.matchMedia("(prefers-color-scheme: dark)").matches
-		? "dark"
-		: "light";
+	return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
 function applyTheme(mode) {
@@ -17,22 +15,17 @@ function applyTheme(mode) {
 function updateThemeButtons(activeMode) {
 	var buttons = document.querySelectorAll(".theme-btn");
 	buttons.forEach((btn) => {
-		btn.classList.toggle(
-			"active",
-			btn.getAttribute("data-theme-val") === activeMode,
-		);
+		btn.classList.toggle("active", btn.getAttribute("data-theme-val") === activeMode);
 	});
 }
 
 export function initTheme() {
 	var saved = localStorage.getItem("moltis-theme") || "system";
 	applyTheme(saved);
-	window
-		.matchMedia("(prefers-color-scheme: dark)")
-		.addEventListener("change", () => {
-			var current = localStorage.getItem("moltis-theme") || "system";
-			if (current === "system") applyTheme("system");
-		});
+	window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+		var current = localStorage.getItem("moltis-theme") || "system";
+		if (current === "system") applyTheme("system");
+	});
 	$("themeToggle").addEventListener("click", (e) => {
 		var btn = e.target.closest(".theme-btn");
 		if (!btn) return;

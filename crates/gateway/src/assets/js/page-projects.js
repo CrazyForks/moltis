@@ -1,377 +1,190 @@
-// ── Projects page ────────────────────────────────────────
+// ── Projects page (Preact + HTM + Signals) ──────────────────
 
-import { createEl, sendRpc } from "./helpers.js";
+import { signal } from "@preact/signals";
+import { html } from "htm/preact";
+import { render } from "preact";
+import { useEffect, useRef } from "preact/hooks";
+import { sendRpc } from "./helpers.js";
 import { fetchProjects } from "./projects.js";
 import { registerPage } from "./router.js";
+import { projects as projectsSig } from "./signals.js";
 import * as S from "./state.js";
 
-registerPage("/projects", function initProjects(container) {
-	var wrapper = createEl("div", {
-		className: "flex-1 flex flex-col min-w-0 p-4 gap-4 overflow-y-auto",
-	});
+var completions = signal([]);
+var editingProject = signal(null);
+var detecting = signal(false);
 
-	var header = createEl("div", { className: "flex items-center gap-3" }, [
-		createEl("h2", {
-			className: "text-lg font-medium text-[var(--text-strong)]",
-			textContent: "Projects",
-		}),
-	]);
+function PathInput(props) {
+	var inputRef = useRef(null);
+	var timerRef = useRef(null);
 
-	var desc = createEl("p", {
-		className: "text-xs text-[var(--muted)] leading-relaxed",
-		style: "max-width:600px;margin:0;",
-		textContent:
-			"Projects bind sessions to a codebase directory. When a session is linked to a project, context files (CLAUDE.md, AGENTS.md) are loaded automatically and a custom system prompt can be injected. Enable auto-worktree to give each session its own git branch for isolated work.",
-	});
-	wrapper.appendChild(header);
-	wrapper.appendChild(desc);
-
-	var detectBtn = createEl("button", {
-		className:
-			"text-xs text-[var(--muted)] border border-[var(--border)] px-2.5 py-1 rounded-md hover:text-[var(--text)] hover:border-[var(--border-strong)] transition-colors cursor-pointer bg-transparent",
-		textContent: "Auto-detect",
-	});
-	header.appendChild(detectBtn);
-
-	var formRow = createEl("div", { className: "project-form-row" });
-	var dirGroup = createEl("div", { className: "project-dir-group" });
-	var dirLabel = createEl("div", {
-		className: "text-xs text-[var(--muted)]",
-		textContent: "Directory",
-		style: "margin-bottom:4px;",
-	});
-	dirGroup.appendChild(dirLabel);
-	var dirInput = createEl("input", {
-		type: "text",
-		className: "provider-key-input",
-		placeholder: "/path/to/project",
-		style: "font-family:var(--font-mono);width:100%;",
-	});
-	dirGroup.appendChild(dirInput);
-
-	var completionList = createEl("div", { className: "project-completion" });
-	dirGroup.appendChild(completionList);
-	formRow.appendChild(dirGroup);
-
-	var addBtn = createEl("button", {
-		className:
-			"bg-[var(--accent-dim)] text-white border-none px-3 py-1.5 rounded text-xs cursor-pointer hover:bg-[var(--accent)] transition-colors",
-		textContent: "Add",
-		style: "height:34px;",
-	});
-	formRow.appendChild(addBtn);
-	wrapper.appendChild(formRow);
-
-	var listEl = createEl("div", { style: "max-width:600px;margin-top:8px;" });
-	wrapper.appendChild(listEl);
-	container.appendChild(wrapper);
-
-	var completeTimer = null;
-	dirInput.addEventListener("input", () => {
-		clearTimeout(completeTimer);
-		completeTimer = setTimeout(() => {
-			var val = dirInput.value;
+	function onInput() {
+		clearTimeout(timerRef.current);
+		timerRef.current = setTimeout(() => {
+			var val = inputRef.current?.value || "";
 			if (val.length < 2) {
-				completionList.style.display = "none";
+				completions.value = [];
 				return;
 			}
 			sendRpc("projects.complete_path", { partial: val }).then((res) => {
-				if (!res || !res.ok) {
-					completionList.style.display = "none";
+				if (!res?.ok) {
+					completions.value = [];
 					return;
 				}
-				var paths = res.payload || [];
-				while (completionList.firstChild)
-					completionList.removeChild(completionList.firstChild);
-				if (paths.length === 0) {
-					completionList.style.display = "none";
-					return;
-				}
-				paths.forEach((p) => {
-					var item = createEl("div", {
-						textContent: p,
-						className: "project-completion-item",
-					});
-					item.addEventListener("click", () => {
-						dirInput.value = `${p}/`;
-						completionList.style.display = "none";
-						dirInput.focus();
-						dirInput.dispatchEvent(new Event("input"));
-					});
-					completionList.appendChild(item);
-				});
-				completionList.style.display = "block";
+				completions.value = res.payload || [];
 			});
 		}, 200);
-	});
+	}
 
-	function renderList() {
-		while (listEl.firstChild) listEl.removeChild(listEl.firstChild);
-		if (S.projects.length === 0) {
-			listEl.appendChild(
-				createEl("div", {
-					className: "text-xs text-[var(--muted)]",
-					textContent:
-						"No projects configured. Add a directory above or use auto-detect.",
-					style: "padding:12px 0;",
-				}),
-			);
-			return;
+	function selectPath(p) {
+		if (inputRef.current) {
+			inputRef.current.value = `${p}/`;
+			inputRef.current.focus();
 		}
-		S.projects.forEach((p) => {
-			var card = createEl("div", {
-				className: "provider-item",
-				style: "margin-bottom:6px;",
-			});
+		completions.value = [];
+		onInput();
+	}
 
-			var info = createEl("div", { style: "flex:1;min-width:0;" });
-			var nameRow = createEl("div", { className: "flex items-center gap-2" });
-			nameRow.appendChild(
-				createEl("div", {
-					className: "provider-item-name",
-					textContent: p.label || p.id,
-				}),
-			);
-			if (p.detected) {
-				nameRow.appendChild(
-					createEl("span", {
-						className: "provider-item-badge api-key",
-						textContent: "auto",
-					}),
-				);
-			}
-			if (p.auto_worktree) {
-				nameRow.appendChild(
-					createEl("span", {
-						className: "provider-item-badge oauth",
-						textContent: "worktree",
-					}),
-				);
-			}
-			info.appendChild(nameRow);
-
-			info.appendChild(
-				createEl("div", {
-					textContent: p.directory,
-					style:
-						"font-size:.72rem;color:var(--muted);font-family:var(--font-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;",
-				}),
-			);
-
-			if (p.setup_command) {
-				nameRow.appendChild(
-					createEl("span", {
-						className: "provider-item-badge api-key",
-						textContent: "setup",
-					}),
-				);
-			}
-			if (p.teardown_command) {
-				nameRow.appendChild(
-					createEl("span", {
-						className: "provider-item-badge api-key",
-						textContent: "teardown",
-					}),
-				);
-			}
-			if (p.branch_prefix) {
-				nameRow.appendChild(
-					createEl("span", {
-						className: "provider-item-badge oauth",
-						textContent: `${p.branch_prefix}/*`,
-					}),
-				);
-			}
-
-			if (p.system_prompt) {
-				info.appendChild(
-					createEl("div", {
-						textContent:
-							"System prompt: " +
-							p.system_prompt.substring(0, 80) +
-							(p.system_prompt.length > 80 ? "..." : ""),
-						style:
-							"font-size:.7rem;color:var(--muted);margin-top:2px;font-style:italic;",
-					}),
-				);
-			}
-
-			card.appendChild(info);
-
-			var actions = createEl("div", {
-				style: "display:flex;gap:4px;flex-shrink:0;",
-			});
-
-			var editBtn = createEl("button", {
-				className: "session-action-btn",
-				textContent: "edit",
-				title: "Edit project",
-			});
-			editBtn.addEventListener("click", (e) => {
-				e.stopPropagation();
-				showEditForm(p, card);
-			});
-			actions.appendChild(editBtn);
-
-			var delBtn = createEl("button", {
-				className: "session-action-btn session-delete",
-				textContent: "x",
-				title: "Remove project",
-			});
-			delBtn.addEventListener("click", (e) => {
-				e.stopPropagation();
-				sendRpc("projects.delete", { id: p.id }).then(() => {
-					fetchProjects();
-					setTimeout(renderList, 200);
+	return html`<div class="project-dir-group">
+    <div class="text-xs text-[var(--muted)]" style="margin-bottom:4px;">Directory</div>
+    <input ref=${inputRef} type="text" class="provider-key-input"
+      placeholder="/path/to/project" style="font-family:var(--font-mono);width:100%;"
+      onInput=${onInput} />
+    ${
+			completions.value.length > 0 &&
+			html`
+      <div class="project-completion" style="display:block;">
+        ${completions.value.map(
+					(p) => html`
+          <div key=${p} class="project-completion-item" onClick=${() => selectPath(p)}>${p}</div>
+        `,
+				)}
+      </div>
+    `
+		}
+    <button class="bg-[var(--accent-dim)] text-white border-none px-3 py-1.5 rounded text-xs cursor-pointer hover:bg-[var(--accent)] transition-colors"
+      style="height:34px;margin-top:8px;"
+      onClick=${() => {
+				var dir = inputRef.current?.value.trim();
+				if (!dir) return;
+				props.onAdd(dir).then(() => {
+					if (inputRef.current) inputRef.current.value = "";
 				});
-			});
-			actions.appendChild(delBtn);
+			}}>Add</button>
+  </div>`;
+}
 
-			card.appendChild(actions);
-			listEl.appendChild(card);
+function ProjectEditForm(props) {
+	var p = props.project;
+	var labelRef = useRef(null);
+	var dirRef = useRef(null);
+	var promptRef = useRef(null);
+	var setupRef = useRef(null);
+	var teardownRef = useRef(null);
+	var prefixRef = useRef(null);
+	var wtRef = useRef(null);
+
+	function onSave() {
+		var updated = JSON.parse(JSON.stringify(p));
+		updated.label = labelRef.current?.value.trim() || p.label;
+		updated.directory = dirRef.current?.value.trim() || p.directory;
+		updated.system_prompt = promptRef.current?.value.trim() || null;
+		updated.setup_command = setupRef.current?.value.trim() || null;
+		updated.teardown_command = teardownRef.current?.value.trim() || null;
+		updated.branch_prefix = prefixRef.current?.value.trim() || null;
+		updated.auto_worktree = wtRef.current?.checked;
+		updated.updated_at = Date.now();
+		sendRpc("projects.upsert", updated).then(() => {
+			editingProject.value = null;
+			fetchProjects();
 		});
 	}
 
-	function showEditForm(p, cardEl) {
-		var form = createEl("div", { className: "project-edit-form" });
-
-		function labeledInput(labelText, value, placeholder, mono) {
-			var group = createEl("div", { className: "project-edit-group" });
-			group.appendChild(
-				createEl("div", {
-					className: "text-xs text-[var(--muted)] project-edit-label",
-					textContent: labelText,
-				}),
-			);
-			var input = createEl("input", {
-				type: "text",
-				className: "provider-key-input",
-				value: value || "",
-				placeholder: placeholder || "",
-				style: mono
-					? "font-family:var(--font-mono);width:100%;"
-					: "width:100%;",
-			});
-			group.appendChild(input);
-			return { group: group, input: input };
-		}
-
-		var labelField = labeledInput("Label", p.label, "Project name");
-		form.appendChild(labelField.group);
-
-		var dirField = labeledInput(
-			"Directory",
-			p.directory,
-			"/path/to/project",
-			true,
-		);
-		form.appendChild(dirField.group);
-
-		var promptGroup = createEl("div", { className: "project-edit-group" });
-		promptGroup.appendChild(
-			createEl("div", {
-				className: "text-xs text-[var(--muted)] project-edit-label",
-				textContent: "System prompt (optional)",
-			}),
-		);
-		var promptInput = createEl("textarea", {
-			className: "provider-key-input",
-			placeholder:
-				"Extra instructions for the LLM when working on this project...",
-			style: "width:100%;min-height:60px;resize-y;font-size:.8rem;",
-		});
-		promptInput.value = p.system_prompt || "";
-		promptGroup.appendChild(promptInput);
-		form.appendChild(promptGroup);
-
-		var setupField = labeledInput(
-			"Setup command",
-			p.setup_command,
-			"e.g. pnpm install",
-			true,
-		);
-		form.appendChild(setupField.group);
-
-		var teardownField = labeledInput(
-			"Teardown command",
-			p.teardown_command,
-			"e.g. docker compose down",
-			true,
-		);
-		form.appendChild(teardownField.group);
-
-		var prefixField = labeledInput(
-			"Branch prefix",
-			p.branch_prefix,
-			"default: moltis",
-			true,
-		);
-		form.appendChild(prefixField.group);
-
-		var wtGroup = createEl("div", {
-			style: "margin-bottom:10px;display:flex;align-items:center;gap:8px;",
-		});
-		var wtCheckbox = createEl("input", { type: "checkbox" });
-		wtCheckbox.checked = p.auto_worktree;
-		wtGroup.appendChild(wtCheckbox);
-		wtGroup.appendChild(
-			createEl("span", {
-				className: "text-xs text-[var(--text)]",
-				textContent: "Auto-create git worktree per session",
-			}),
-		);
-		form.appendChild(wtGroup);
-
-		var btnRow = createEl("div", { style: "display:flex;gap:8px;" });
-		var saveBtn = createEl("button", {
-			className: "provider-btn",
-			textContent: "Save",
-		});
-		var cancelBtn = createEl("button", {
-			className: "provider-btn provider-btn-secondary",
-			textContent: "Cancel",
-		});
-
-		saveBtn.addEventListener("click", () => {
-			var updated = JSON.parse(JSON.stringify(p));
-			updated.label = labelField.input.value.trim() || p.label;
-			updated.directory = dirField.input.value.trim() || p.directory;
-			updated.system_prompt = promptInput.value.trim() || null;
-			updated.setup_command = setupField.input.value.trim() || null;
-			updated.teardown_command = teardownField.input.value.trim() || null;
-			updated.branch_prefix = prefixField.input.value.trim() || null;
-			updated.auto_worktree = wtCheckbox.checked;
-			updated.updated_at = Date.now();
-
-			sendRpc("projects.upsert", updated).then(() => {
-				fetchProjects();
-				setTimeout(renderList, 200);
-			});
-		});
-
-		cancelBtn.addEventListener("click", () => {
-			listEl.replaceChild(cardEl, form);
-		});
-
-		btnRow.appendChild(saveBtn);
-		btnRow.appendChild(cancelBtn);
-		form.appendChild(btnRow);
-
-		listEl.replaceChild(form, cardEl);
+	function field(label, ref, value, placeholder, mono) {
+		return html`<div class="project-edit-group">
+      <div class="text-xs text-[var(--muted)] project-edit-label">${label}</div>
+      <input ref=${ref} type="text" class="provider-key-input"
+        value=${value || ""} placeholder=${placeholder || ""}
+        style=${mono ? "font-family:var(--font-mono);width:100%;" : "width:100%;"} />
+    </div>`;
 	}
 
-	addBtn.addEventListener("click", () => {
-		var dir = dirInput.value.trim();
-		if (!dir) return;
-		addBtn.disabled = true;
-		sendRpc("projects.detect", { directories: [dir] }).then((res) => {
-			addBtn.disabled = false;
+	return html`<div class="project-edit-form">
+    ${field("Label", labelRef, p.label, "Project name")}
+    ${field("Directory", dirRef, p.directory, "/path/to/project", true)}
+    <div class="project-edit-group">
+      <div class="text-xs text-[var(--muted)] project-edit-label">System prompt (optional)</div>
+      <textarea ref=${promptRef} class="provider-key-input"
+        placeholder="Extra instructions for the LLM when working on this project..."
+        style="width:100%;min-height:60px;resize-y;font-size:.8rem;">${p.system_prompt || ""}</textarea>
+    </div>
+    ${field("Setup command", setupRef, p.setup_command, "e.g. pnpm install", true)}
+    ${field("Teardown command", teardownRef, p.teardown_command, "e.g. docker compose down", true)}
+    ${field("Branch prefix", prefixRef, p.branch_prefix, "default: moltis", true)}
+    <div style="margin-bottom:10px;display:flex;align-items:center;gap:8px;">
+      <input ref=${wtRef} type="checkbox" checked=${p.auto_worktree} />
+      <span class="text-xs text-[var(--text)]">Auto-create git worktree per session</span>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button class="provider-btn" onClick=${onSave}>Save</button>
+      <button class="provider-btn provider-btn-secondary" onClick=${() => {
+				editingProject.value = null;
+			}}>Cancel</button>
+    </div>
+  </div>`;
+}
+
+function ProjectCard(props) {
+	var p = props.project;
+
+	function onDelete() {
+		sendRpc("projects.delete", { id: p.id }).then(() => fetchProjects());
+	}
+
+	return html`<div class="provider-item" style="margin-bottom:6px;">
+    <div style="flex:1;min-width:0;">
+      <div class="flex items-center gap-2">
+        <div class="provider-item-name">${p.label || p.id}</div>
+        ${p.detected && html`<span class="provider-item-badge api-key">auto</span>`}
+        ${p.auto_worktree && html`<span class="provider-item-badge oauth">worktree</span>`}
+        ${p.setup_command && html`<span class="provider-item-badge api-key">setup</span>`}
+        ${p.teardown_command && html`<span class="provider-item-badge api-key">teardown</span>`}
+        ${p.branch_prefix && html`<span class="provider-item-badge oauth">${p.branch_prefix}/*</span>`}
+      </div>
+      <div style="font-size:.72rem;color:var(--muted);font-family:var(--font-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;">
+        ${p.directory}
+      </div>
+      ${
+				p.system_prompt &&
+				html`<div style="font-size:.7rem;color:var(--muted);margin-top:2px;font-style:italic;">
+        System prompt: ${p.system_prompt.substring(0, 80)}${p.system_prompt.length > 80 ? "..." : ""}
+      </div>`
+			}
+    </div>
+    <div style="display:flex;gap:4px;flex-shrink:0;">
+      <button class="session-action-btn" title="Edit project" onClick=${() => {
+				editingProject.value = p.id;
+			}}>edit</button>
+      <button class="session-action-btn session-delete" title="Remove project" onClick=${onDelete}>x</button>
+    </div>
+  </div>`;
+}
+
+function ProjectsPage() {
+	useEffect(() => {
+		sendRpc("projects.list", {}).then((res) => {
+			if (res?.ok) S.setProjects(res.payload || []);
+		});
+	}, []);
+
+	function onAdd(dir) {
+		return sendRpc("projects.detect", { directories: [dir] }).then((res) => {
 			if (res?.ok) {
 				var detected = res.payload || [];
 				if (detected.length === 0) {
 					var slug = dir.split("/").filter(Boolean).pop() || "project";
 					var now = Date.now();
-					sendRpc("projects.upsert", {
+					return sendRpc("projects.upsert", {
 						id: slug.toLowerCase().replace(/[^a-z0-9-]/g, "-"),
 						label: slug,
 						directory: dir,
@@ -379,36 +192,68 @@ registerPage("/projects", function initProjects(container) {
 						detected: false,
 						created_at: now,
 						updated_at: now,
-					}).then(() => {
-						dirInput.value = "";
-						fetchProjects();
-						setTimeout(renderList, 200);
-					});
-				} else {
-					dirInput.value = "";
-					fetchProjects();
-					setTimeout(renderList, 200);
+					}).then(() => fetchProjects());
 				}
+				fetchProjects();
 			}
 		});
-	});
+	}
 
-	detectBtn.addEventListener("click", () => {
-		detectBtn.disabled = true;
-		detectBtn.textContent = "Detecting...";
+	function onDetect() {
+		detecting.value = true;
 		sendRpc("projects.detect", { directories: [] }).then(() => {
-			detectBtn.disabled = false;
-			detectBtn.textContent = "Auto-detect";
+			detecting.value = false;
 			fetchProjects();
-			setTimeout(renderList, 200);
 		});
-	});
+	}
 
-	// Fetch projects then render — needed for direct navigation
-	sendRpc("projects.list", {}).then((res) => {
-		if (res?.ok) {
-			S.setProjects(res.payload || []);
-		}
-		renderList();
-	});
-});
+	var list = projectsSig.value;
+
+	return html`
+    <div class="flex-1 flex flex-col min-w-0 p-4 gap-4 overflow-y-auto">
+      <div class="flex items-center gap-3">
+        <h2 class="text-lg font-medium text-[var(--text-strong)]">Projects</h2>
+        <button class="text-xs text-[var(--muted)] border border-[var(--border)] px-2.5 py-1 rounded-md hover:text-[var(--text)] hover:border-[var(--border-strong)] transition-colors cursor-pointer bg-transparent"
+          onClick=${onDetect} disabled=${detecting.value}>
+          ${detecting.value ? "Detecting\u2026" : "Auto-detect"}
+        </button>
+      </div>
+      <p class="text-xs text-[var(--muted)] leading-relaxed" style="max-width:600px;margin:0;">
+        Projects bind sessions to a codebase directory. When a session is linked to a project, context files (CLAUDE.md, AGENTS.md) are loaded automatically and a custom system prompt can be injected. Enable auto-worktree to give each session its own git branch for isolated work.
+      </p>
+      <div class="project-form-row">
+        <${PathInput} onAdd=${onAdd} />
+      </div>
+      <div style="max-width:600px;margin-top:8px;">
+        ${
+					list.length === 0 &&
+					html`
+          <div class="text-xs text-[var(--muted)]" style="padding:12px 0;">
+            No projects configured. Add a directory above or use auto-detect.
+          </div>
+        `
+				}
+        ${list.map((p) =>
+					editingProject.value === p.id
+						? html`<${ProjectEditForm} key=${p.id} project=${p} />`
+						: html`<${ProjectCard} key=${p.id} project=${p} />`,
+				)}
+      </div>
+    </div>
+  `;
+}
+
+registerPage(
+	"/projects",
+	function initProjects(container) {
+		container.style.cssText = "flex-direction:column;padding:0;overflow:hidden;";
+		editingProject.value = null;
+		completions.value = [];
+		detecting.value = false;
+		render(html`<${ProjectsPage} />`, container);
+	},
+	function teardownProjects() {
+		var container = S.$("pageContent");
+		if (container) render(null, container);
+	},
+);

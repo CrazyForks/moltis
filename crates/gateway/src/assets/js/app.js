@@ -41,8 +41,7 @@ connect();
 fetch("/api/bootstrap")
 	.then((r) => r.json())
 	.then((boot) => {
-		if (boot.channels)
-			S.setCachedChannels(boot.channels.channels || boot.channels || []);
+		if (boot.channels) S.setCachedChannels(boot.channels.channels || boot.channels || []);
 		if (boot.sessions) {
 			S.setSessions(boot.sessions || []);
 			renderSessionList();

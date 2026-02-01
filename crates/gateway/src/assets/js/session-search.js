@@ -19,12 +19,12 @@ function debounceSearch() {
 
 function doSearch() {
 	var q = searchInput.value.trim();
-	if (!q || !S.connected) {
+	if (!(q && S.connected)) {
 		hideSearch();
 		return;
 	}
 	sendRpc("sessions.search", { query: q }).then((res) => {
-		if (!res || !res.ok) {
+		if (!res?.ok) {
 			hideSearch();
 			return;
 		}
@@ -66,10 +66,7 @@ function renderSearchResults(query) {
 		snip.className = "search-hit-snippet";
 		var escaped = esc(hit.snippet);
 		var qEsc = esc(query);
-		var re = new RegExp(
-			`(${qEsc.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`,
-			"gi",
-		);
+		var re = new RegExp(`(${qEsc.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "gi");
 		// Safe: both `escaped` and `qEsc` are HTML-entity-escaped by esc(),
 		// so <mark> wrapping cannot introduce script injection.
 		snip.innerHTML = escaped.replace(re, "<mark>$1</mark>");
@@ -142,7 +139,7 @@ searchInput.addEventListener("keydown", (e) => {
 });
 
 document.addEventListener("click", (e) => {
-	if (!searchInput.contains(e.target) && !searchResults.contains(e.target)) {
+	if (!(searchInput.contains(e.target) || searchResults.contains(e.target))) {
 		hideSearch();
 	}
 });

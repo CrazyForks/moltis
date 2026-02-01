@@ -1,11 +1,6 @@
 // ── Chat UI ─────────────────────────────────────────────────
 
-import {
-	formatTokens,
-	parseErrorMessage,
-	sendRpc,
-	updateCountdown,
-} from "./helpers.js";
+import { formatTokens, parseErrorMessage, sendRpc, updateCountdown } from "./helpers.js";
 import * as S from "./state.js";
 
 // Scroll chat to bottom and keep it pinned until layout settles.
@@ -189,24 +184,14 @@ export function resolveApproval(requestId, decision, command, card) {
 
 export function highlightAndScroll(msgEls, messageIndex, query) {
 	var target = null;
-	if (
-		messageIndex >= 0 &&
-		messageIndex < msgEls.length &&
-		msgEls[messageIndex]
-	) {
+	if (messageIndex >= 0 && messageIndex < msgEls.length && msgEls[messageIndex]) {
 		target = msgEls[messageIndex];
 	}
 	var lowerQ = query.toLowerCase();
-	if (
-		!target ||
-		(target.textContent || "").toLowerCase().indexOf(lowerQ) === -1
-	) {
-		for (var i = 0; i < msgEls.length; i++) {
-			if (
-				msgEls[i] &&
-				(msgEls[i].textContent || "").toLowerCase().indexOf(lowerQ) !== -1
-			) {
-				target = msgEls[i];
+	if (!target || (target.textContent || "").toLowerCase().indexOf(lowerQ) === -1) {
+		for (var candidate of msgEls) {
+			if (candidate && (candidate.textContent || "").toLowerCase().indexOf(lowerQ) !== -1) {
+				target = candidate;
 				break;
 			}
 		}
@@ -243,8 +228,7 @@ export function highlightTermInElement(el, query) {
 		var frag = document.createDocumentFragment();
 		var pos = 0;
 		while (idx !== -1) {
-			if (idx > pos)
-				frag.appendChild(document.createTextNode(text.substring(pos, idx)));
+			if (idx > pos) frag.appendChild(document.createTextNode(text.substring(pos, idx)));
 			var mark = document.createElement("mark");
 			mark.className = "search-term-highlight";
 			mark.textContent = text.substring(idx, idx + query.length);
@@ -252,8 +236,7 @@ export function highlightTermInElement(el, query) {
 			pos = idx + query.length;
 			idx = lowerText.indexOf(lowerQ, pos);
 		}
-		if (pos < text.length)
-			frag.appendChild(document.createTextNode(text.substring(pos)));
+		if (pos < text.length) frag.appendChild(document.createTextNode(text.substring(pos)));
 		textNode.parentNode.replaceChild(frag, textNode);
 	});
 }
@@ -280,10 +263,7 @@ export function updateTokenBar() {
 		formatTokens(total) +
 		" tokens";
 	if (S.sessionContextWindow > 0) {
-		var pct = Math.max(
-			0,
-			100 - Math.round((total / S.sessionContextWindow) * 100),
-		);
+		var pct = Math.max(0, 100 - Math.round((total / S.sessionContextWindow) * 100));
 		text += ` \u00b7 Context left before auto-compact: ${pct}%`;
 	}
 	bar.textContent = text;

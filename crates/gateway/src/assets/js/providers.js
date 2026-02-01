@@ -14,7 +14,7 @@ export function openProviderModal() {
 	providerModalTitle.textContent = "Add Provider";
 	providerModalBody.textContent = "Loading...";
 	sendRpc("providers.available", {}).then((res) => {
-		if (!res || !res.ok) {
+		if (!res?.ok) {
 			providerModalBody.textContent = "Failed to load providers.";
 			return;
 		}
@@ -148,36 +148,34 @@ export function showOAuthFlow(provider) {
 	connectBtn.addEventListener("click", () => {
 		connectBtn.disabled = true;
 		connectBtn.textContent = "Starting...";
-		sendRpc("providers.oauth.start", { provider: provider.name }).then(
-			(res) => {
-				if (res?.ok && res.payload && res.payload.authUrl) {
-					window.open(res.payload.authUrl, "_blank");
-					connectBtn.textContent = "Waiting for auth...";
-					pollOAuthStatus(provider);
-				} else if (res?.ok && res.payload && res.payload.deviceFlow) {
-					connectBtn.textContent = "Waiting for auth...";
-					desc.classList.remove("text-error");
-					desc.textContent = "";
-					var linkEl = document.createElement("a");
-					linkEl.href = res.payload.verificationUri;
-					linkEl.target = "_blank";
-					linkEl.className = "oauth-link";
-					linkEl.textContent = res.payload.verificationUri;
-					var codeEl = document.createElement("strong");
-					codeEl.textContent = res.payload.userCode;
-					desc.appendChild(document.createTextNode("Go to "));
-					desc.appendChild(linkEl);
-					desc.appendChild(document.createTextNode(" and enter code: "));
-					desc.appendChild(codeEl);
-					pollOAuthStatus(provider);
-				} else {
-					connectBtn.disabled = false;
-					connectBtn.textContent = "Connect";
-					desc.textContent = res?.error?.message || "Failed to start OAuth";
-					desc.classList.add("text-error");
-				}
-			},
-		);
+		sendRpc("providers.oauth.start", { provider: provider.name }).then((res) => {
+			if (res?.ok && res.payload && res.payload.authUrl) {
+				window.open(res.payload.authUrl, "_blank");
+				connectBtn.textContent = "Waiting for auth...";
+				pollOAuthStatus(provider);
+			} else if (res?.ok && res.payload && res.payload.deviceFlow) {
+				connectBtn.textContent = "Waiting for auth...";
+				desc.classList.remove("text-error");
+				desc.textContent = "";
+				var linkEl = document.createElement("a");
+				linkEl.href = res.payload.verificationUri;
+				linkEl.target = "_blank";
+				linkEl.className = "oauth-link";
+				linkEl.textContent = res.payload.verificationUri;
+				var codeEl = document.createElement("strong");
+				codeEl.textContent = res.payload.userCode;
+				desc.appendChild(document.createTextNode("Go to "));
+				desc.appendChild(linkEl);
+				desc.appendChild(document.createTextNode(" and enter code: "));
+				desc.appendChild(codeEl);
+				pollOAuthStatus(provider);
+			} else {
+				connectBtn.disabled = false;
+				connectBtn.textContent = "Connect";
+				desc.textContent = res?.error?.message || "Failed to start OAuth";
+				desc.classList.add("text-error");
+			}
+		});
 	});
 	btns.appendChild(connectBtn);
 	wrapper.appendChild(btns);
@@ -198,21 +196,19 @@ function pollOAuthStatus(provider) {
 			providerModalBody.appendChild(timeout);
 			return;
 		}
-		sendRpc("providers.oauth.status", { provider: provider.name }).then(
-			(res) => {
-				if (res?.ok && res.payload && res.payload.authenticated) {
-					clearInterval(timer);
-					providerModalBody.textContent = "";
-					var status = document.createElement("div");
-					status.className = "provider-status";
-					status.textContent = `${provider.displayName} connected successfully!`;
-					providerModalBody.appendChild(status);
-					fetchModels();
-					if (S.refreshProvidersPage) S.refreshProvidersPage();
-					setTimeout(closeProviderModal, 1500);
-				}
-			},
-		);
+		sendRpc("providers.oauth.status", { provider: provider.name }).then((res) => {
+			if (res?.ok && res.payload && res.payload.authenticated) {
+				clearInterval(timer);
+				providerModalBody.textContent = "";
+				var status = document.createElement("div");
+				status.className = "provider-status";
+				status.textContent = `${provider.displayName} connected successfully!`;
+				providerModalBody.appendChild(status);
+				fetchModels();
+				if (S.refreshProvidersPage) S.refreshProvidersPage();
+				setTimeout(closeProviderModal, 1500);
+			}
+		});
 	}, 2000);
 }
 

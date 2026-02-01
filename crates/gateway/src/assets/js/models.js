@@ -9,30 +9,27 @@ function setSessionModel(sessionKey, modelId) {
 
 export { setSessionModel };
 
+function updateModelComboLabel(model) {
+	if (S.modelComboLabel) S.modelComboLabel.textContent = model.displayName || model.id;
+}
+
 export function fetchModels() {
 	sendRpc("models.list", {}).then((res) => {
-		if (!res || !res.ok) return;
+		if (!res?.ok) return;
 		S.setModels(res.payload || []);
 		if (S.models.length === 0) return;
 		var saved = localStorage.getItem("moltis-model") || "";
 		var found = S.models.find((m) => m.id === saved);
-		if (found) {
-			S.setSelectedModelId(found.id);
-			if (S.modelComboLabel)
-				S.modelComboLabel.textContent = found.displayName || found.id;
-		} else {
-			S.setSelectedModelId(S.models[0].id);
-			if (S.modelComboLabel)
-				S.modelComboLabel.textContent =
-					S.models[0].displayName || S.models[0].id;
-			localStorage.setItem("moltis-model", S.selectedModelId);
-		}
+		var model = found || S.models[0];
+		S.setSelectedModelId(model.id);
+		updateModelComboLabel(model);
+		if (!found) localStorage.setItem("moltis-model", S.selectedModelId);
 	});
 }
 
 export function selectModel(m) {
 	S.setSelectedModelId(m.id);
-	if (S.modelComboLabel) S.modelComboLabel.textContent = m.displayName || m.id;
+	updateModelComboLabel(m);
 	localStorage.setItem("moltis-model", m.id);
 	setSessionModel(S.activeSessionKey, m.id);
 	closeModelDropdown();
@@ -63,12 +60,7 @@ export function renderModelList(query) {
 	var filtered = S.models.filter((m) => {
 		var label = (m.displayName || m.id).toLowerCase();
 		var provider = (m.provider || "").toLowerCase();
-		return (
-			!q ||
-			label.indexOf(q) !== -1 ||
-			provider.indexOf(q) !== -1 ||
-			m.id.toLowerCase().indexOf(q) !== -1
-		);
+		return !q || label.indexOf(q) !== -1 || provider.indexOf(q) !== -1 || m.id.toLowerCase().indexOf(q) !== -1;
 	});
 	if (filtered.length === 0) {
 		var empty = document.createElement("div");
@@ -110,13 +102,7 @@ function updateModelActive() {
 }
 
 export function bindModelComboEvents() {
-	if (
-		!S.modelComboBtn ||
-		!S.modelSearchInput ||
-		!S.modelDropdownList ||
-		!S.modelCombo
-	)
-		return;
+	if (!(S.modelComboBtn && S.modelSearchInput && S.modelDropdownList && S.modelCombo)) return;
 
 	S.modelComboBtn.addEventListener("click", () => {
 		if (S.modelDropdown.classList.contains("hidden")) {

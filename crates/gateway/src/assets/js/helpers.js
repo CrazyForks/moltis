@@ -7,19 +7,12 @@ export function nextId() {
 }
 
 export function esc(s) {
-	return s
-		.replace(/&/g, "&amp;")
-		.replace(/</g, "&lt;")
-		.replace(/>/g, "&gt;")
-		.replace(/"/g, "&quot;");
+	return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
 export function renderMarkdown(raw) {
 	var s = esc(raw);
-	s = s.replace(
-		/```(\w*)\n([\s\S]*?)```/g,
-		(_, _lang, code) => `<pre><code>${code}</code></pre>`,
-	);
+	s = s.replace(/```(\w*)\n([\s\S]*?)```/g, (_, _lang, code) => `<pre><code>${code}</code></pre>`);
 	s = s.replace(/`([^`]+)`/g, "<code>$1</code>");
 	s = s.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
 	return s;
@@ -29,9 +22,7 @@ export function sendRpc(method, params) {
 	return new Promise((resolve) => {
 		var id = nextId();
 		S.pending[id] = resolve;
-		S.ws.send(
-			JSON.stringify({ type: "req", id: id, method: method, params: params }),
-		);
+		S.ws.send(JSON.stringify({ type: "req", id: id, method: method, params: params }));
 	});
 }
 
@@ -46,49 +37,43 @@ export function formatBytes(b) {
 	return `${b} B`;
 }
 
-export function parseErrorMessage(message) {
-	var jsonMatch = message.match(/\{[\s\S]*\}$/);
-	if (jsonMatch) {
-		try {
-			var err = JSON.parse(jsonMatch[0]);
-			var errObj = err.error || err;
-			if (
-				errObj.type === "usage_limit_reached" ||
-				(errObj.message && errObj.message.indexOf("usage limit") !== -1)
-			) {
-				return {
-					icon: "",
-					title: "Usage limit reached",
-					detail:
-						"Your " +
-						(errObj.plan_type || "current") +
-						" plan limit has been reached.",
-					resetsAt: errObj.resets_at ? errObj.resets_at * 1000 : null,
-				};
-			}
-			if (
-				errObj.type === "rate_limit_exceeded" ||
-				(errObj.message && errObj.message.indexOf("rate limit") !== -1)
-			) {
-				return {
-					icon: "\u26A0\uFE0F",
-					title: "Rate limited",
-					detail: errObj.message || "Too many requests. Please wait a moment.",
-					resetsAt: errObj.resets_at ? errObj.resets_at * 1000 : null,
-				};
-			}
-			if (errObj.message) {
-				return {
-					icon: "\u26A0\uFE0F",
-					title: "Error",
-					detail: errObj.message,
-					resetsAt: null,
-				};
-			}
-		} catch (_e) {
-			/* fall through */
-		}
+function classifyJsonErrorObj(errObj) {
+	var resetsAt = errObj.resets_at ? errObj.resets_at * 1000 : null;
+	if (errObj.type === "usage_limit_reached" || (errObj.message && errObj.message.indexOf("usage limit") !== -1)) {
+		return {
+			icon: "",
+			title: "Usage limit reached",
+			detail: `Your ${errObj.plan_type || "current"} plan limit has been reached.`,
+			resetsAt: resetsAt,
+		};
 	}
+	if (errObj.type === "rate_limit_exceeded" || (errObj.message && errObj.message.indexOf("rate limit") !== -1)) {
+		return {
+			icon: "\u26A0\uFE0F",
+			title: "Rate limited",
+			detail: errObj.message || "Too many requests. Please wait a moment.",
+			resetsAt: resetsAt,
+		};
+	}
+	if (errObj.message) {
+		return { icon: "\u26A0\uFE0F", title: "Error", detail: errObj.message, resetsAt: null };
+	}
+	return null;
+}
+
+function parseJsonError(message) {
+	var jsonMatch = message.match(/\{[\s\S]*\}$/);
+	if (!jsonMatch) return null;
+	try {
+		var err = JSON.parse(jsonMatch[0]);
+		return classifyJsonErrorObj(err.error || err);
+	} catch (_e) {
+		/* fall through */
+	}
+	return null;
+}
+
+function parseHttpStatusError(message) {
 	var statusMatch = message.match(/HTTP (\d{3})/);
 	var code = statusMatch ? parseInt(statusMatch[1], 10) : 0;
 	if (code === 401 || code === 403)
@@ -112,12 +97,19 @@ export function parseErrorMessage(message) {
 			detail: "The upstream provider returned an error.",
 			resetsAt: null,
 		};
-	return {
-		icon: "\u26A0\uFE0F",
-		title: "Error",
-		detail: message,
-		resetsAt: null,
-	};
+	return null;
+}
+
+export function parseErrorMessage(message) {
+	return (
+		parseJsonError(message) ||
+		parseHttpStatusError(message) || {
+			icon: "\u26A0\uFE0F",
+			title: "Error",
+			detail: message,
+			resetsAt: null,
+		}
+	);
 }
 
 export function updateCountdown(el, resetsAtMs) {

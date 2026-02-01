@@ -1,20 +1,11 @@
 // ── Chat page ────────────────────────────────────────────
 
 import { chatAddMsg, updateTokenBar } from "./chat-ui.js";
-import {
-	formatBytes,
-	formatTokens,
-	renderMarkdown,
-	sendRpc,
-} from "./helpers.js";
+import { formatBytes, formatTokens, renderMarkdown, sendRpc } from "./helpers.js";
 import { bindModelComboEvents, setSessionModel } from "./models.js";
 import { registerPrefix, sessionPath } from "./router.js";
 import { bindSandboxToggleEvents, updateSandboxUI } from "./sandbox.js";
-import {
-	bumpSessionCount,
-	setSessionReplying,
-	switchSession,
-} from "./sessions.js";
+import { bumpSessionCount, setSessionReplying, switchSession } from "./sessions.js";
 import * as S from "./state.js";
 
 // ── Slash commands ───────────────────────────────────────
@@ -71,8 +62,7 @@ function slashShowMenu(filter) {
 		slashMenuEl = document.createElement("div");
 		slashMenuEl.className = "slash-menu";
 	}
-	while (slashMenuEl.firstChild)
-		slashMenuEl.removeChild(slashMenuEl.firstChild);
+	while (slashMenuEl.firstChild) slashMenuEl.removeChild(slashMenuEl.firstChild);
 	matches.forEach((cmd, i) => {
 		var item = document.createElement("div");
 		item.className = `slash-menu-item${i === 0 ? " active" : ""}`;
@@ -123,12 +113,10 @@ function slashHandleInput() {
 }
 
 function slashHandleKeydown(e) {
-	if (!slashMenuEl || !slashMenuEl.parentElement || slashMenuItems.length === 0)
-		return false;
+	if (!slashMenuEl?.parentElement || slashMenuItems.length === 0) return false;
 	if (e.key === "ArrowUp") {
 		e.preventDefault();
-		slashMenuIdx =
-			(slashMenuIdx - 1 + slashMenuItems.length) % slashMenuItems.length;
+		slashMenuIdx = (slashMenuIdx - 1 + slashMenuItems.length) % slashMenuItems.length;
 		slashUpdateActive();
 		return true;
 	}
@@ -180,6 +168,91 @@ function ctxSection(title) {
 	return sec;
 }
 
+// ── Context card per-section renderers ───────────────────
+function renderContextSessionSection(card, data) {
+	var sess = data.session || {};
+	var sessSection = ctxSection("Session");
+	sessSection.appendChild(ctxRow("Key", sess.key || "unknown", true));
+	sessSection.appendChild(ctxRow("Messages", String(sess.messageCount || 0)));
+	sessSection.appendChild(ctxRow("Model", sess.model || "default", true));
+	if (sess.label) sessSection.appendChild(ctxRow("Label", sess.label));
+	card.appendChild(sessSection);
+}
+
+function renderContextProjectSection(card, data) {
+	var proj = data.project;
+	var projSection = ctxSection("Project");
+	if (proj && proj !== null) {
+		projSection.appendChild(ctxRow("Name", proj.label || "(unnamed)"));
+		if (proj.directory) projSection.appendChild(ctxRow("Directory", proj.directory, true));
+		if (proj.systemPrompt) projSection.appendChild(ctxRow("System Prompt", `${proj.systemPrompt.length} chars`));
+		var ctxFiles = proj.contextFiles || [];
+		if (ctxFiles.length > 0) {
+			var filesLabel = ctxEl("div", "ctx-section-title", `Context Files (${ctxFiles.length})`);
+			filesLabel.classList.add("spaced");
+			projSection.appendChild(filesLabel);
+			ctxFiles.forEach((f) => {
+				var row = ctxEl("div", "ctx-file");
+				row.appendChild(ctxEl("span", "ctx-file-path", f.path));
+				row.appendChild(ctxEl("span", "ctx-file-size", formatBytes(f.size)));
+				projSection.appendChild(row);
+			});
+		}
+	} else {
+		projSection.appendChild(ctxEl("div", "ctx-empty", "No project bound to this session"));
+	}
+	card.appendChild(projSection);
+}
+
+function renderContextToolsSection(card, data) {
+	var tools = data.tools || [];
+	var toolsSection = ctxSection("Tools");
+	if (tools.length > 0) {
+		var toolWrap = ctxEl("div", "");
+		toolWrap.className = "ctx-tool-wrap";
+		tools.forEach((t) => {
+			var tag = ctxEl("span", "ctx-tag");
+			var dot = ctxEl("span", "ctx-tag-dot");
+			tag.appendChild(dot);
+			tag.appendChild(document.createTextNode(t.name));
+			tag.title = t.description;
+			toolWrap.appendChild(tag);
+		});
+		toolsSection.appendChild(toolWrap);
+	} else {
+		toolsSection.appendChild(ctxEl("div", "ctx-empty", "No tools registered"));
+	}
+	card.appendChild(toolsSection);
+}
+
+function renderContextSandboxSection(card, data) {
+	var sb = data.sandbox || {};
+	var sandboxSection = ctxSection("Sandbox");
+	sandboxSection.appendChild(ctxRow("Enabled", sb.enabled ? "yes" : "no", true));
+	if (sb.backend) {
+		sandboxSection.appendChild(ctxRow("Backend", sb.backend));
+		if (sb.mode) sandboxSection.appendChild(ctxRow("Mode", sb.mode));
+		if (sb.scope) sandboxSection.appendChild(ctxRow("Scope", sb.scope));
+		if (sb.workspaceMount) sandboxSection.appendChild(ctxRow("Workspace Mount", sb.workspaceMount));
+		if (sb.image) sandboxSection.appendChild(ctxRow("Image", sb.image, true));
+	}
+	card.appendChild(sandboxSection);
+}
+
+function renderContextTokensSection(card, data) {
+	var tu = data.tokenUsage || {};
+	var tokenSection = ctxSection("Token Usage (estimated)");
+	tokenSection.appendChild(ctxRow("Conversation", formatTokens(tu.conversationTokens || 0)));
+	if (tu.contextFileTokens > 0) {
+		tokenSection.appendChild(ctxRow("Context Files", formatTokens(tu.contextFileTokens)));
+	}
+	if (tu.systemPromptTokens > 0) {
+		tokenSection.appendChild(ctxRow("System Prompt", formatTokens(tu.systemPromptTokens)));
+	}
+	tokenSection.appendChild(ctxRow("Total", formatTokens(tu.estimatedTotal || 0), true));
+	card.appendChild(tokenSection);
+}
+
 function renderContextCard(data) {
 	if (!S.chatMsgBox) return;
 	slashInjectStyles();
@@ -211,100 +284,11 @@ function renderContextCard(data) {
 	header.appendChild(ctxEl("span", "ctx-header-title", "Context"));
 	card.appendChild(header);
 
-	var sess = data.session || {};
-	var sessSection = ctxSection("Session");
-	sessSection.appendChild(ctxRow("Key", sess.key || "unknown", true));
-	sessSection.appendChild(ctxRow("Messages", String(sess.messageCount || 0)));
-	sessSection.appendChild(ctxRow("Model", sess.model || "default", true));
-	if (sess.label) sessSection.appendChild(ctxRow("Label", sess.label));
-	card.appendChild(sessSection);
-
-	var proj = data.project;
-	var projSection = ctxSection("Project");
-	if (proj && proj !== null) {
-		projSection.appendChild(ctxRow("Name", proj.label || "(unnamed)"));
-		if (proj.directory)
-			projSection.appendChild(ctxRow("Directory", proj.directory, true));
-		if (proj.systemPrompt)
-			projSection.appendChild(
-				ctxRow("System Prompt", `${proj.systemPrompt.length} chars`),
-			);
-		var ctxFiles = proj.contextFiles || [];
-		if (ctxFiles.length > 0) {
-			var filesLabel = ctxEl(
-				"div",
-				"ctx-section-title",
-				`Context Files (${ctxFiles.length})`,
-			);
-			filesLabel.classList.add("spaced");
-			projSection.appendChild(filesLabel);
-			ctxFiles.forEach((f) => {
-				var row = ctxEl("div", "ctx-file");
-				row.appendChild(ctxEl("span", "ctx-file-path", f.path));
-				row.appendChild(ctxEl("span", "ctx-file-size", formatBytes(f.size)));
-				projSection.appendChild(row);
-			});
-		}
-	} else {
-		projSection.appendChild(
-			ctxEl("div", "ctx-empty", "No project bound to this session"),
-		);
-	}
-	card.appendChild(projSection);
-
-	var tools = data.tools || [];
-	var toolsSection = ctxSection("Tools");
-	if (tools.length > 0) {
-		var toolWrap = ctxEl("div", "");
-		toolWrap.className = "ctx-tool-wrap";
-		tools.forEach((t) => {
-			var tag = ctxEl("span", "ctx-tag");
-			var dot = ctxEl("span", "ctx-tag-dot");
-			tag.appendChild(dot);
-			tag.appendChild(document.createTextNode(t.name));
-			tag.title = t.description;
-			toolWrap.appendChild(tag);
-		});
-		toolsSection.appendChild(toolWrap);
-	} else {
-		toolsSection.appendChild(ctxEl("div", "ctx-empty", "No tools registered"));
-	}
-	card.appendChild(toolsSection);
-
-	var sb = data.sandbox || {};
-	var sandboxSection = ctxSection("Sandbox");
-	sandboxSection.appendChild(
-		ctxRow("Enabled", sb.enabled ? "yes" : "no", true),
-	);
-	if (sb.backend) {
-		sandboxSection.appendChild(ctxRow("Backend", sb.backend));
-		if (sb.mode) sandboxSection.appendChild(ctxRow("Mode", sb.mode));
-		if (sb.scope) sandboxSection.appendChild(ctxRow("Scope", sb.scope));
-		if (sb.workspaceMount)
-			sandboxSection.appendChild(ctxRow("Workspace Mount", sb.workspaceMount));
-		if (sb.image) sandboxSection.appendChild(ctxRow("Image", sb.image, true));
-	}
-	card.appendChild(sandboxSection);
-
-	var tu = data.tokenUsage || {};
-	var tokenSection = ctxSection("Token Usage (estimated)");
-	tokenSection.appendChild(
-		ctxRow("Conversation", formatTokens(tu.conversationTokens || 0)),
-	);
-	if (tu.contextFileTokens > 0) {
-		tokenSection.appendChild(
-			ctxRow("Context Files", formatTokens(tu.contextFileTokens)),
-		);
-	}
-	if (tu.systemPromptTokens > 0) {
-		tokenSection.appendChild(
-			ctxRow("System Prompt", formatTokens(tu.systemPromptTokens)),
-		);
-	}
-	tokenSection.appendChild(
-		ctxRow("Total", formatTokens(tu.estimatedTotal || 0), true),
-	);
-	card.appendChild(tokenSection);
+	renderContextSessionSection(card, data);
+	renderContextProjectSection(card, data);
+	renderContextToolsSection(card, data);
+	renderContextSandboxSection(card, data);
+	renderContextTokensSection(card, data);
 
 	S.chatMsgBox.appendChild(card);
 	S.chatMsgBox.scrollTop = S.chatMsgBox.scrollHeight;
@@ -345,44 +329,74 @@ export function renderCompactCard(data) {
 	svg.appendChild(l1);
 	svg.appendChild(l2);
 	header.appendChild(svg);
-	header.appendChild(
-		ctxEl("span", "ctx-header-title", "Conversation compacted"),
-	);
+	header.appendChild(ctxEl("span", "ctx-header-title", "Conversation compacted"));
 	card.appendChild(header);
 
 	var statsSection = ctxSection("Before compact");
 	statsSection.appendChild(ctxRow("Messages", String(data.messageCount || 0)));
-	statsSection.appendChild(
-		ctxRow("Total tokens", formatTokens(data.totalTokens || 0)),
-	);
+	statsSection.appendChild(ctxRow("Total tokens", formatTokens(data.totalTokens || 0)));
 	if (data.contextWindow) {
-		var pctUsed = Math.round(
-			((data.totalTokens || 0) / data.contextWindow) * 100,
-		);
-		statsSection.appendChild(
-			ctxRow(
-				"Context usage",
-				`${pctUsed}% of ${formatTokens(data.contextWindow)}`,
-			),
-		);
+		var pctUsed = Math.round(((data.totalTokens || 0) / data.contextWindow) * 100);
+		statsSection.appendChild(ctxRow("Context usage", `${pctUsed}% of ${formatTokens(data.contextWindow)}`));
 	}
 	card.appendChild(statsSection);
 
 	var afterSection = ctxSection("After compact");
 	afterSection.appendChild(ctxRow("Messages", "1 (summary)"));
-	afterSection.appendChild(
-		ctxRow("Status", "Conversation history replaced with a summary"),
-	);
+	afterSection.appendChild(ctxRow("Status", "Conversation history replaced with a summary"));
 	card.appendChild(afterSection);
 
 	S.chatMsgBox.appendChild(card);
 	S.chatMsgBox.scrollTop = S.chatMsgBox.scrollHeight;
 }
 
+// ── Slash command handlers ───────────────────────────────
+function handleSlashCommand(cmdName) {
+	if (cmdName === "clear") {
+		sendRpc("chat.clear", {}).then((res) => {
+			if (res?.ok) {
+				if (S.chatMsgBox) S.chatMsgBox.textContent = "";
+				S.setSessionTokens({ input: 0, output: 0 });
+				updateTokenBar();
+				bumpSessionCount(S.activeSessionKey, 0);
+			} else {
+				chatAddMsg("error", res?.error?.message || "Clear failed");
+			}
+		});
+		return;
+	}
+	if (cmdName === "compact") {
+		chatAddMsg("system", "Compacting conversation\u2026");
+		sendRpc("chat.compact", {}).then((res) => {
+			if (res?.ok) {
+				switchSession(S.activeSessionKey);
+			} else {
+				chatAddMsg("error", res?.error?.message || "Compact failed");
+			}
+		});
+		return;
+	}
+	if (cmdName === "context") {
+		chatAddMsg("system", "Loading context\u2026");
+		sendRpc("chat.context", {}).then((res) => {
+			if (S.chatMsgBox?.lastChild) S.chatMsgBox.removeChild(S.chatMsgBox.lastChild);
+			if (res?.ok && res.payload) {
+				try {
+					renderContextCard(res.payload);
+				} catch (err) {
+					chatAddMsg("error", `Render error: ${err.message}`);
+				}
+			} else {
+				chatAddMsg("error", res?.error?.message || "Context failed");
+			}
+		});
+	}
+}
+
 // ── Send chat message ────────────────────────────────────
 function sendChat() {
 	var text = S.chatInput.value.trim();
-	if (!text || !S.connected) return;
+	if (!(text && S.connected)) return;
 
 	if (text.charAt(0) === "/") {
 		var cmdName = text.substring(1).toLowerCase();
@@ -391,42 +405,7 @@ function sendChat() {
 			S.chatInput.value = "";
 			chatAutoResize();
 			slashHideMenu();
-			if (cmdName === "clear") {
-				sendRpc("chat.clear", {}).then((res) => {
-					if (res?.ok) {
-						if (S.chatMsgBox) S.chatMsgBox.textContent = "";
-						S.setSessionTokens({ input: 0, output: 0 });
-						updateTokenBar();
-						bumpSessionCount(S.activeSessionKey, 0);
-					} else {
-						chatAddMsg("error", res?.error?.message || "Clear failed");
-					}
-				});
-			} else if (cmdName === "compact") {
-				chatAddMsg("system", "Compacting conversation\u2026");
-				sendRpc("chat.compact", {}).then((res) => {
-					if (res?.ok) {
-						switchSession(S.activeSessionKey);
-					} else {
-						chatAddMsg("error", res?.error?.message || "Compact failed");
-					}
-				});
-			} else if (cmdName === "context") {
-				chatAddMsg("system", "Loading context\u2026");
-				sendRpc("chat.context", {}).then((res) => {
-					if (S.chatMsgBox?.lastChild)
-						S.chatMsgBox.removeChild(S.chatMsgBox.lastChild);
-					if (res?.ok && res.payload) {
-						try {
-							renderContextCard(res.payload);
-						} catch (err) {
-							chatAddMsg("error", `Render error: ${err.message}`);
-						}
-					} else {
-						chatAddMsg("error", res?.error?.message || "Context failed");
-					}
-				});
-			}
+			handleSlashCommand(cmdName);
 			return;
 		}
 	}
@@ -458,6 +437,31 @@ function chatAutoResize() {
 	if (!S.chatInput) return;
 	S.chatInput.style.height = "auto";
 	S.chatInput.style.height = `${Math.min(S.chatInput.scrollHeight, 120)}px`;
+}
+
+// ── History navigation helpers ───────────────────────────
+function handleHistoryUp() {
+	if (S.chatHistory.length === 0) return;
+	if (S.chatHistoryIdx === -1) {
+		S.setChatHistoryDraft(S.chatInput.value);
+		S.setChatHistoryIdx(S.chatHistory.length - 1);
+	} else if (S.chatHistoryIdx > 0) {
+		S.setChatHistoryIdx(S.chatHistoryIdx - 1);
+	}
+	S.chatInput.value = S.chatHistory[S.chatHistoryIdx];
+	chatAutoResize();
+}
+
+function handleHistoryDown() {
+	if (S.chatHistoryIdx === -1) return;
+	if (S.chatHistoryIdx < S.chatHistory.length - 1) {
+		S.setChatHistoryIdx(S.chatHistoryIdx + 1);
+		S.chatInput.value = S.chatHistory[S.chatHistoryIdx];
+	} else {
+		S.setChatHistoryIdx(-1);
+		S.chatInput.value = S.chatHistoryDraft;
+	}
+	chatAutoResize();
 }
 
 // Safe: static hardcoded HTML template string — no user input is interpolated.
@@ -517,8 +521,7 @@ registerPrefix(
 			if (found) {
 				S.modelComboLabel.textContent = found.displayName || found.id;
 			} else if (S.models[0]) {
-				S.modelComboLabel.textContent =
-					S.models[0].displayName || S.models[0].id;
+				S.modelComboLabel.textContent = S.models[0].displayName || S.models[0].id;
 			}
 		}
 
@@ -547,38 +550,14 @@ registerPrefix(
 				sendChat();
 				return;
 			}
-			if (
-				e.key === "ArrowUp" &&
-				S.chatInput.selectionStart === 0 &&
-				!e.shiftKey
-			) {
-				if (S.chatHistory.length === 0) return;
+			if (e.key === "ArrowUp" && S.chatInput.selectionStart === 0 && !e.shiftKey) {
 				e.preventDefault();
-				if (S.chatHistoryIdx === -1) {
-					S.setChatHistoryDraft(S.chatInput.value);
-					S.setChatHistoryIdx(S.chatHistory.length - 1);
-				} else if (S.chatHistoryIdx > 0) {
-					S.setChatHistoryIdx(S.chatHistoryIdx - 1);
-				}
-				S.chatInput.value = S.chatHistory[S.chatHistoryIdx];
-				chatAutoResize();
+				handleHistoryUp();
 				return;
 			}
-			if (
-				e.key === "ArrowDown" &&
-				S.chatInput.selectionStart === S.chatInput.value.length &&
-				!e.shiftKey
-			) {
-				if (S.chatHistoryIdx === -1) return;
+			if (e.key === "ArrowDown" && S.chatInput.selectionStart === S.chatInput.value.length && !e.shiftKey) {
 				e.preventDefault();
-				if (S.chatHistoryIdx < S.chatHistory.length - 1) {
-					S.setChatHistoryIdx(S.chatHistoryIdx + 1);
-					S.chatInput.value = S.chatHistory[S.chatHistoryIdx];
-				} else {
-					S.setChatHistoryIdx(-1);
-					S.chatInput.value = S.chatHistoryDraft;
-				}
-				chatAutoResize();
+				handleHistoryDown();
 				return;
 			}
 		});

@@ -12,7 +12,7 @@ var manageProjectsBtn = S.$("manageProjectsBtn");
 
 export function fetchProjects() {
 	sendRpc("projects.list", {}).then((res) => {
-		if (!res || !res.ok) return;
+		if (!res?.ok) return;
 		S.setProjects(res.payload || []);
 		renderProjectSelect();
 		renderSessionProjectSelect();
@@ -20,8 +20,7 @@ export function fetchProjects() {
 }
 
 export function renderProjectSelect() {
-	while (projectSelect.firstChild)
-		projectSelect.removeChild(projectSelect.firstChild);
+	while (projectSelect.firstChild) projectSelect.removeChild(projectSelect.firstChild);
 	var defaultOpt = document.createElement("option");
 	defaultOpt.value = "";
 	defaultOpt.textContent = "All sessions";
@@ -59,8 +58,7 @@ projectModal.addEventListener("click", (e) => {
 });
 
 function renderProjectModal() {
-	while (projectModalBody.firstChild)
-		projectModalBody.removeChild(projectModalBody.firstChild);
+	while (projectModalBody.firstChild) projectModalBody.removeChild(projectModalBody.firstChild);
 
 	var detectBtn = document.createElement("button");
 	detectBtn.className = "provider-btn provider-btn-secondary";
@@ -156,13 +154,12 @@ function renderProjectModal() {
 				return;
 			}
 			sendRpc("projects.complete_path", { partial: val }).then((res) => {
-				if (!res || !res.ok) {
+				if (!res?.ok) {
 					completionList.style.display = "none";
 					return;
 				}
 				var paths = res.payload || [];
-				while (completionList.firstChild)
-					completionList.removeChild(completionList.firstChild);
+				while (completionList.firstChild) completionList.removeChild(completionList.firstChild);
 				if (paths.length === 0) {
 					completionList.style.display = "none";
 					return;

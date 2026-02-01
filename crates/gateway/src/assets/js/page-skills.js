@@ -44,9 +44,7 @@ var skillRepoMap = computed(() => {
 // ── Helpers ──────────────────────────────────────────────────
 function showToast(message, type) {
 	var id = ++toastId;
-	toasts.value = toasts.value.concat([
-		{ id: id, message: message, type: type },
-	]);
+	toasts.value = toasts.value.concat([{ id: id, message: message, type: type }]);
 	setTimeout(() => {
 		toasts.value = toasts.value.filter((t) => t.id !== id);
 	}, 4000);
@@ -67,7 +65,7 @@ function fetchAll() {
 }
 
 function doInstall(source) {
-	if (!source || !S.connected) {
+	if (!(source && S.connected)) {
 		if (!S.connected) showToast("Not connected to gateway.", "error");
 		return Promise.resolve();
 	}
@@ -75,16 +73,7 @@ function doInstall(source) {
 		if (res?.ok) {
 			var p = res.payload || {};
 			var count = (p.installed || []).length;
-			showToast(
-				"Installed " +
-					source +
-					" (" +
-					count +
-					" skill" +
-					(count !== 1 ? "s" : "") +
-					")",
-				"success",
-			);
+			showToast(`Installed ${source} (${count} skill${count !== 1 ? "s" : ""})`, "success");
 			fetchAll();
 		} else {
 			showToast(`Failed: ${res?.error || "unknown error"}`, "error");
@@ -94,12 +83,7 @@ function doInstall(source) {
 
 // Debounced server-side search for skills within a repo
 function searchSkills(source, query) {
-	return fetch(
-		"/api/skills/search?source=" +
-			encodeURIComponent(source) +
-			"&q=" +
-			encodeURIComponent(query),
-	)
+	return fetch(`/api/skills/search?source=${encodeURIComponent(source)}&q=${encodeURIComponent(query)}`)
 		.then((r) => r.json())
 		.then((data) => data.skills || []);
 }
@@ -126,9 +110,7 @@ function Toasts() {
 }
 
 function SecurityWarning() {
-	var dismissed = signal(
-		!!localStorage.getItem("moltis-skills-warning-dismissed"),
-	);
+	var dismissed = signal(!!localStorage.getItem("moltis-skills-warning-dismissed"));
 	if (dismissed.value) return null;
 	var threats = [
 		"Execute arbitrary shell commands on your machine (install malware, cryptominers, backdoors)",
@@ -185,9 +167,7 @@ var featuredSkills = [
 function FeaturedCard(props) {
 	var f = props.skill;
 	var installing = signal(false);
-	var href = /^https?:\/\//.test(f.repo)
-		? f.repo
-		: `https://github.com/${f.repo}`;
+	var href = /^https?:\/\//.test(f.repo) ? f.repo : `https://github.com/${f.repo}`;
 	function onInstall() {
 		installing.value = true;
 		doInstall(f.repo).then(() => {
@@ -216,21 +196,59 @@ function FeaturedSection() {
   </div>`;
 }
 
+// ── Skill detail sub-components ──────────────────────────────
+
+function eligibilityBadge(d) {
+	var hasReqs = d.requires && (d.requires.bins?.length || d.requires.any_bins?.length);
+	if (d.eligible === false)
+		return html`<span style="font-size:.65rem;padding:1px 5px;border-radius:9999px;background:var(--error, #e55);color:#fff;font-weight:500">blocked</span>`;
+	if (hasReqs)
+		return html`<span style="font-size:.65rem;padding:1px 5px;border-radius:9999px;background:var(--success, #4a4);color:#fff;font-weight:500">eligible</span>`;
+	return html`<span style="font-size:.65rem;padding:1px 5px;border-radius:9999px;background:var(--surface2);color:var(--muted);font-weight:500">no deps declared</span>`;
+}
+
+function SkillMetadata(props) {
+	var d = props.detail;
+	if (!(d.author || d.version || d.homepage || d.source_url)) return null;
+	return html`<div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;font-size:.75rem;color:var(--muted);flex-wrap:wrap">
+    ${d.author && html`<span>Author: ${d.author}</span>`}
+    ${d.version && html`<span>v${d.version}</span>`}
+    ${d.homepage && html`<a href=${d.homepage} target="_blank" rel="noopener noreferrer" style="color:var(--accent);text-decoration:none;font-size:.75rem">${d.homepage.replace(/^https?:\/\//, "")}</a>`}
+    ${d.source_url && html`<a href=${d.source_url} target="_blank" rel="noopener noreferrer" style="color:var(--accent);text-decoration:none;font-size:.75rem">View source</a>`}
+  </div>`;
+}
+
+function MissingDepsSection(props) {
+	var d = props.detail;
+	if (!(d.eligible === false && d.missing_bins && d.missing_bins.length > 0)) return null;
+	return html`<div style="margin-bottom:8px;font-size:.78rem">
+    <span style="color:var(--error, #e55);font-weight:500">Missing: ${d.missing_bins.map((b) => `bin:${b}`).join(", ")}</span>
+    ${(d.install_options || []).map(
+			(opt, idx) =>
+				html`<button onClick=${() => {
+					sendRpc("skills.install_dep", { skill: d.name, index: idx }).then((r) => {
+						if (r?.ok) {
+							showToast(`Installed dependency for ${d.name}`, "success");
+							props.onReload?.();
+						} else showToast(`Install failed: ${r?.error || "unknown"}`, "error");
+					});
+				}} style="margin-left:6px;background:var(--accent);color:#fff;border:none;border-radius:var(--radius-sm);font-size:.7rem;padding:2px 8px;cursor:pointer">${opt.label || `Install via ${opt.kind}`}</button>`,
+		)}
+  </div>`;
+}
+
 // ── Skill detail panel ───────────────────────────────────────
 function SkillDetail(props) {
 	var d = props.detail;
 	var onClose = props.onClose;
-	if (!d) return null;
-
-	var hasReqs =
-		d.requires && (d.requires.bins?.length || d.requires.any_bins?.length);
 
 	var bodyRef = useRef(null);
 	useEffect(() => {
-		if (bodyRef.current && d.body_html) {
+		if (bodyRef.current && d?.body_html) {
 			// Safe: body_html is rendered server-side by the Rust gateway from SKILL.md
 			bodyRef.current.textContent = "";
 			var tpl = document.createElement("template");
+			// eslint-disable-next-line no-unsanitized/property -- server-rendered trusted HTML from Rust gateway
 			tpl.innerHTML = d.body_html;
 			bodyRef.current.appendChild(tpl.content);
 			bodyRef.current.querySelectorAll("a").forEach((a) => {
@@ -238,7 +256,9 @@ function SkillDetail(props) {
 				a.setAttribute("rel", "noopener");
 			});
 		}
-	}, [d.body_html]);
+	}, [d?.body_html]);
+
+	if (!d) return null;
 
 	function onToggle() {
 		if (!S.connected) return;
@@ -248,21 +268,13 @@ function SkillDetail(props) {
 		});
 	}
 
-	function eligibilityBadge() {
-		if (d.eligible === false)
-			return html`<span style="font-size:.65rem;padding:1px 5px;border-radius:9999px;background:var(--error, #e55);color:#fff;font-weight:500">blocked</span>`;
-		if (hasReqs)
-			return html`<span style="font-size:.65rem;padding:1px 5px;border-radius:9999px;background:var(--success, #4a4);color:#fff;font-weight:500">eligible</span>`;
-		return html`<span style="font-size:.65rem;padding:1px 5px;border-radius:9999px;background:var(--surface2);color:var(--muted);font-weight:500">no deps declared</span>`;
-	}
-
 	return html`<div class="skills-detail-panel" style="display:block">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
       <div style="display:flex;align-items:center;gap:8px">
         <span style="font-family:var(--font-mono);font-size:.9rem;font-weight:600;color:var(--text-strong)">${d.display_name || d.name}</span>
         ${d.display_name && html`<span style="font-family:var(--font-mono);font-size:.72rem;color:var(--muted)">${d.name}</span>`}
         ${d.license && html`<span style="font-size:.65rem;padding:1px 6px;border-radius:9999px;background:var(--surface2);color:var(--muted)">${d.license}</span>`}
-        ${eligibilityBadge()}
+        ${eligibilityBadge(d)}
       </div>
       <div style="display:flex;align-items:center;gap:6px">
         <button onClick=${onToggle} style=${{
@@ -278,45 +290,9 @@ function SkillDetail(props) {
         <button onClick=${onClose} style="background:none;border:none;color:var(--muted);font-size:.9rem;cursor:pointer;padding:2px 4px">\u2715</button>
       </div>
     </div>
-    ${
-			(d.author || d.version || d.homepage || d.source_url) &&
-			html`
-      <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;font-size:.75rem;color:var(--muted);flex-wrap:wrap">
-        ${d.author && html`<span>Author: ${d.author}</span>`}
-        ${d.version && html`<span>v${d.version}</span>`}
-        ${d.homepage && html`<a href=${d.homepage} target="_blank" rel="noopener noreferrer" style="color:var(--accent);text-decoration:none;font-size:.75rem">${d.homepage.replace(/^https?:\/\//, "")}</a>`}
-        ${d.source_url && html`<a href=${d.source_url} target="_blank" rel="noopener noreferrer" style="color:var(--accent);text-decoration:none;font-size:.75rem">View source</a>`}
-      </div>
-    `
-		}
+    <${SkillMetadata} detail=${d} />
     ${d.description && html`<p style="margin:0 0 8px;font-size:.82rem;color:var(--text)">${d.description}</p>`}
-    ${
-			d.eligible === false &&
-			d.missing_bins &&
-			d.missing_bins.length > 0 &&
-			html`
-      <div style="margin-bottom:8px;font-size:.78rem">
-        <span style="color:var(--error, #e55);font-weight:500">Missing: ${d.missing_bins.map((b) => `bin:${b}`).join(", ")}</span>
-        ${(d.install_options || []).map(
-					(opt, idx) =>
-						html`<button onClick=${() => {
-							sendRpc("skills.install_dep", { skill: d.name, index: idx }).then(
-								(r) => {
-									if (r?.ok) {
-										showToast(`Installed dependency for ${d.name}`, "success");
-										props.onReload?.();
-									} else
-										showToast(
-											`Install failed: ${r?.error || "unknown"}`,
-											"error",
-										);
-								},
-							);
-						}} style="margin-left:6px;background:var(--accent);color:#fff;border:none;border-radius:var(--radius-sm);font-size:.7rem;padding:2px 8px;cursor:pointer">${opt.label || `Install via ${opt.kind}`}</button>`,
-				)}
-      </div>
-    `
-		}
+    <${MissingDepsSection} detail=${d} onReload=${props.onReload} />
     ${d.compatibility && html`<div style="margin-bottom:8px;font-size:.75rem;color:var(--muted);font-style:italic">${d.compatibility}</div>`}
     ${d.allowed_tools && d.allowed_tools.length > 0 && html`<div style="margin-bottom:8px;font-size:.75rem;color:var(--muted)">Allowed tools: ${d.allowed_tools.join(", ")}</div>`}
     ${d.body_html && html`<div ref=${bodyRef} class="skill-body-md" style="border-top:1px solid var(--border);padding-top:8px;margin-top:8px;max-height:400px;overflow-y:auto;font-size:.8rem;color:var(--text);line-height:1.5" />`}
@@ -335,9 +311,7 @@ function RepoCard(props) {
 	var detailLoading = signal(false);
 	var searchTimer = null;
 
-	var href = /^https?:\/\//.test(repo.source)
-		? repo.source
-		: `https://github.com/${repo.source}`;
+	var href = /^https?:\/\//.test(repo.source) ? repo.source : `https://github.com/${repo.source}`;
 
 	function toggleExpand() {
 		expanded.value = !expanded.value;
@@ -387,9 +361,7 @@ function RepoCard(props) {
     <div class="skills-repo-header" onClick=${toggleExpand}>
       <div style="display:flex;align-items:center;gap:8px">
         <span style=${{ fontSize: ".65rem", color: "var(--muted)", transition: "transform .15s", transform: expanded.value ? "rotate(90deg)" : "" }}>\u25B6</span>
-        <a href=${href} target="_blank" rel="noopener noreferrer" onClick=${(
-					e,
-				) => {
+        <a href=${href} target="_blank" rel="noopener noreferrer" onClick=${(e) => {
 					e.stopPropagation();
 				}}
            style="font-family:var(--font-mono);font-size:.82rem;font-weight:500;color:var(--text-strong);text-decoration:none">${repo.source}</a>
@@ -412,9 +384,7 @@ function RepoCard(props) {
 					html`
           <div class="skills-ac-dropdown" style="display:block">
             ${searchResults.value.map(
-							(
-								skill,
-							) => html`<div key=${skill.name} class="skills-ac-item" onClick=${() => {
+							(skill) => html`<div key=${skill.name} class="skills-ac-item" onClick=${() => {
 								loadDetail(skill);
 							}}>
                 <div style="display:flex;align-items:center;gap:6px;min-width:0">
@@ -481,12 +451,10 @@ function EnabledSkillsTable() {
 
 	function onDisable(skill) {
 		var source = map[skill.name] || skill.source;
-		if (!source || !S.connected) return;
-		sendRpc("skills.skill.disable", { source: source, skill: skill.name }).then(
-			(res) => {
-				if (res?.ok) fetchAll();
-			},
-		);
+		if (!(source && S.connected)) return;
+		sendRpc("skills.skill.disable", { source: source, skill: skill.name }).then((res) => {
+			if (res?.ok) fetchAll();
+		});
 	}
 
 	return html`<div>
@@ -502,9 +470,7 @@ function EnabledSkillsTable() {
         </thead>
         <tbody>
           ${s.map(
-						(
-							skill,
-						) => html`<tr key=${skill.name} style="border-bottom:1px solid var(--border)"
+						(skill) => html`<tr key=${skill.name} style="border-bottom:1px solid var(--border)"
               onMouseEnter=${(e) => {
 								e.currentTarget.style.background = "var(--bg-hover)";
 							}}
@@ -556,8 +522,7 @@ function SkillsPage() {
 registerPage(
 	"/skills",
 	function initSkills(container) {
-		container.style.cssText =
-			"flex-direction:column;padding:0;overflow:hidden;";
+		container.style.cssText = "flex-direction:column;padding:0;overflow:hidden;";
 		render(html`<${SkillsPage} />`, container);
 	},
 	function teardownSkills() {

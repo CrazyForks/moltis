@@ -29,6 +29,21 @@ jobs:
           advanced-security: false
           online-audits: false
 
+  biome:
+    name: Biome
+    needs: zizmor
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - uses: biomejs/setup-biome@1cbe33ead22c7a2fded3b52fa2893611c815c9b5 # v2
+        with:
+          version: "2.3.13"
+      - run: biome check crates/gateway/src/assets/js/
+
   fmt:
     name: Format
     needs: zizmor

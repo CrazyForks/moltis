@@ -1,4 +1,5 @@
 // ── Shared mutable state ────────────────────────────────────
+import * as sig from "./signals.js";
 
 export var ws = null;
 export var reqId = 0;
@@ -15,9 +16,7 @@ export var projects = [];
 export var streamEl = null;
 export var streamText = "";
 export var lastToolOutput = "";
-export var chatHistory = JSON.parse(
-	localStorage.getItem("moltis-chat-history") || "[]",
-);
+export var chatHistory = JSON.parse(localStorage.getItem("moltis-chat-history") || "[]");
 export var chatHistoryIdx = -1;
 export var chatHistoryDraft = "";
 
@@ -66,6 +65,7 @@ export var channelEventUnsub = null;
 export var cachedChannels = null;
 export function setCachedChannels(v) {
 	cachedChannels = v;
+	sig.cachedChannels.value = v;
 }
 
 // Logs
@@ -74,8 +74,7 @@ export var unseenErrors = 0;
 export var unseenWarns = 0;
 
 // Project filter
-export var projectFilterId =
-	localStorage.getItem("moltis-project-filter") || "";
+export var projectFilterId = localStorage.getItem("moltis-project-filter") || "";
 
 // DOM shorthand
 export function $(id) {
@@ -91,24 +90,29 @@ export function setReqId(v) {
 }
 export function setConnected(v) {
 	connected = v;
+	sig.connected.value = v;
 }
 export function setReconnectDelay(v) {
 	reconnectDelay = v;
 }
 export function setModels(v) {
 	models = v;
+	sig.models.value = v;
 }
 export function setActiveSessionKey(v) {
 	activeSessionKey = v;
+	sig.activeSessionKey.value = v;
 }
 export function setActiveProjectId(v) {
 	activeProjectId = v;
 }
 export function setSessions(v) {
 	sessions = v;
+	sig.sessions.value = v;
 }
 export function setProjects(v) {
 	projects = v;
+	sig.projects.value = v;
 }
 export function setStreamEl(v) {
 	streamEl = v;
@@ -151,6 +155,7 @@ export function setModelDropdownList(v) {
 }
 export function setSelectedModelId(v) {
 	selectedModelId = v;
+	sig.selectedModelId.value = v;
 }
 export function setModelIdx(v) {
 	modelIdx = v;
@@ -214,9 +219,11 @@ export function setLogsEventHandler(v) {
 }
 export function setUnseenErrors(v) {
 	unseenErrors = v;
+	sig.unseenErrors.value = v;
 }
 export function setUnseenWarns(v) {
 	unseenWarns = v;
+	sig.unseenWarns.value = v;
 }
 export function setProjectFilterId(v) {
 	projectFilterId = v;

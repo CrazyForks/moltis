@@ -18,14 +18,300 @@ import { prefetchChannels } from "./page-channels.js";
 import { renderCompactCard } from "./page-chat.js";
 import { fetchProjects } from "./projects.js";
 import { currentPage, currentPrefix, mount } from "./router.js";
-import {
-	bumpSessionCount,
-	fetchSessions,
-	setSessionReplying,
-	setSessionUnread,
-	switchSession,
-} from "./sessions.js";
+import { bumpSessionCount, fetchSessions, setSessionReplying, setSessionUnread, switchSession } from "./sessions.js";
 import * as S from "./state.js";
+
+// ── Chat event handlers ──────────────────────────────────────
+
+function makeThinkingDots() {
+	var thinkDots = document.createElement("span");
+	thinkDots.className = "thinking-dots";
+	thinkDots.appendChild(document.createElement("span"));
+	thinkDots.appendChild(document.createElement("span"));
+	thinkDots.appendChild(document.createElement("span"));
+	return thinkDots;
+}
+
+function handleChatThinking(_p, isActive, isChatPage) {
+	if (!(isActive && isChatPage)) return;
+	removeThinking();
+	var thinkEl = document.createElement("div");
+	thinkEl.className = "msg assistant thinking";
+	thinkEl.id = "thinkingIndicator";
+	thinkEl.appendChild(makeThinkingDots());
+	S.chatMsgBox.appendChild(thinkEl);
+	S.chatMsgBox.scrollTop = S.chatMsgBox.scrollHeight;
+}
+
+function handleChatThinkingText(p, isActive, isChatPage) {
+	if (!(isActive && isChatPage)) return;
+	var indicator = document.getElementById("thinkingIndicator");
+	if (indicator) {
+		while (indicator.firstChild) indicator.removeChild(indicator.firstChild);
+		var textEl = document.createElement("span");
+		textEl.className = "thinking-text";
+		textEl.textContent = p.text;
+		indicator.appendChild(textEl);
+		S.chatMsgBox.scrollTop = S.chatMsgBox.scrollHeight;
+	}
+}
+
+function handleChatThinkingDone(_p, isActive, isChatPage) {
+	if (isActive && isChatPage) removeThinking();
+}
+
+function handleChatToolCallStart(p, isActive, isChatPage) {
+	if (!(isActive && isChatPage)) return;
+	removeThinking();
+	var card = document.createElement("div");
+	card.className = "msg exec-card running";
+	card.id = `tool-${p.toolCallId}`;
+	var prompt = document.createElement("div");
+	prompt.className = "exec-prompt";
+	var cmd = p.toolName === "exec" && p.arguments && p.arguments.command ? p.arguments.command : p.toolName || "tool";
+	var promptChar = document.createElement("span");
+	promptChar.className = "exec-prompt-char";
+	promptChar.textContent = "$";
+	prompt.appendChild(promptChar);
+	var cmdSpan = document.createElement("span");
+	cmdSpan.textContent = ` ${cmd}`;
+	prompt.appendChild(cmdSpan);
+	card.appendChild(prompt);
+	var spin = document.createElement("div");
+	spin.className = "exec-status";
+	spin.textContent = "running\u2026";
+	card.appendChild(spin);
+	S.chatMsgBox.appendChild(card);
+	S.chatMsgBox.scrollTop = S.chatMsgBox.scrollHeight;
+}
+
+function appendToolResult(toolCard, result) {
+	var out = (result.stdout || "").replace(/\n+$/, "");
+	S.setLastToolOutput(out);
+	if (out) {
+		var outEl = document.createElement("pre");
+		outEl.className = "exec-output";
+		outEl.textContent = out;
+		toolCard.appendChild(outEl);
+	}
+	var stderrText = (result.stderr || "").replace(/\n+$/, "");
+	if (stderrText) {
+		var errEl = document.createElement("pre");
+		errEl.className = "exec-output exec-stderr";
+		errEl.textContent = stderrText;
+		toolCard.appendChild(errEl);
+	}
+	if (result.exit_code !== undefined && result.exit_code !== 0) {
+		var codeEl = document.createElement("div");
+		codeEl.className = "exec-exit";
+		codeEl.textContent = `exit ${result.exit_code}`;
+		toolCard.appendChild(codeEl);
+	}
+}
+
+function handleChatToolCallEnd(p, isActive, isChatPage) {
+	if (!(isActive && isChatPage)) return;
+	var toolCard = document.getElementById(`tool-${p.toolCallId}`);
+	if (!toolCard) return;
+	toolCard.className = `msg exec-card ${p.success ? "exec-ok" : "exec-err"}`;
+	var toolSpin = toolCard.querySelector(".exec-status");
+	if (toolSpin) toolSpin.remove();
+	if (p.success && p.result) {
+		appendToolResult(toolCard, p.result);
+	} else if (!p.success && p.error && p.error.detail) {
+		var errMsg = document.createElement("div");
+		errMsg.className = "exec-error-detail";
+		errMsg.textContent = p.error.detail;
+		toolCard.appendChild(errMsg);
+	}
+}
+
+function handleChatChannelUser(p, _isActive, isChatPage) {
+	if (!isChatPage) return;
+	if (p.sessionKey && p.sessionKey !== S.activeSessionKey) {
+		switchSession(p.sessionKey);
+	}
+	var active = p.sessionKey ? p.sessionKey === S.activeSessionKey : p.sessionKey === undefined;
+	if (!active) return;
+	if (p.messageIndex !== undefined && p.messageIndex <= S.lastHistoryIndex) return;
+	var cleanText = stripChannelPrefix(p.text || "");
+	var el = chatAddMsg("user", renderMarkdown(cleanText), true);
+	if (el && p.channel) {
+		appendChannelFooter(el, p.channel);
+	}
+}
+
+// Safe: renderMarkdown calls esc() first — all user input is HTML-escaped before
+// being passed to innerHTML. This is the standard rendering path for chat messages.
+function setSafeMarkdownHtml(el, text) {
+	el.innerHTML = renderMarkdown(text); // eslint-disable-line no-unsanitized/property
+}
+
+function handleChatDelta(p, isActive, isChatPage) {
+	if (!(p.text && isActive && isChatPage)) return;
+	removeThinking();
+	if (!S.streamEl) {
+		S.setStreamText("");
+		S.setStreamEl(document.createElement("div"));
+		S.streamEl.className = "msg assistant";
+		S.chatMsgBox.appendChild(S.streamEl);
+	}
+	S.setStreamText(S.streamText + p.text);
+	setSafeMarkdownHtml(S.streamEl, S.streamText);
+	S.chatMsgBox.scrollTop = S.chatMsgBox.scrollHeight;
+}
+
+function resolveFinalMessageEl(p) {
+	var isEcho =
+		S.lastToolOutput &&
+		p.text &&
+		p.text.replace(/[`\s]/g, "").indexOf(S.lastToolOutput.replace(/\s/g, "").substring(0, 80)) !== -1;
+	if (!isEcho) {
+		if (p.text && S.streamEl) {
+			setSafeMarkdownHtml(S.streamEl, p.text);
+			return S.streamEl;
+		}
+		if (p.text) return chatAddMsg("assistant", renderMarkdown(p.text), true);
+		return null;
+	}
+	if (S.streamEl) S.streamEl.remove();
+	return null;
+}
+
+function appendFinalFooter(msgEl, p) {
+	if (!(msgEl && p.model)) return;
+	var footer = document.createElement("div");
+	footer.className = "msg-model-footer";
+	var footerText = p.provider ? `${p.provider} / ${p.model}` : p.model;
+	if (p.inputTokens || p.outputTokens) {
+		footerText += ` \u00b7 ${formatTokens(p.inputTokens || 0)} in / ${formatTokens(p.outputTokens || 0)} out`;
+	}
+	footer.textContent = footerText;
+	msgEl.appendChild(footer);
+}
+
+function handleChatFinal(p, isActive, isChatPage, eventSession) {
+	if (p.messageIndex !== undefined && p.messageIndex <= S.lastHistoryIndex) {
+		setSessionReplying(eventSession, false);
+		return;
+	}
+	bumpSessionCount(eventSession, 1);
+	setSessionReplying(eventSession, false);
+	if (!isActive) {
+		setSessionUnread(eventSession, true);
+	}
+	if (!(isActive && isChatPage)) return;
+	removeThinking();
+	var msgEl = resolveFinalMessageEl(p);
+	appendFinalFooter(msgEl, p);
+	if (p.inputTokens || p.outputTokens) {
+		S.sessionTokens.input += p.inputTokens || 0;
+		S.sessionTokens.output += p.outputTokens || 0;
+		updateTokenBar();
+	}
+	S.setStreamEl(null);
+	S.setStreamText("");
+	S.setLastToolOutput("");
+}
+
+function handleChatAutoCompact(p, isActive, isChatPage) {
+	if (!(isActive && isChatPage)) return;
+	if (p.phase === "start") {
+		chatAddMsg("system", "Compacting conversation (context limit reached)\u2026");
+	} else if (p.phase === "done") {
+		if (S.chatMsgBox?.lastChild) S.chatMsgBox.removeChild(S.chatMsgBox.lastChild);
+		renderCompactCard(p);
+		S.setSessionTokens({ input: 0, output: 0 });
+		updateTokenBar();
+	} else if (p.phase === "error") {
+		if (S.chatMsgBox?.lastChild) S.chatMsgBox.removeChild(S.chatMsgBox.lastChild);
+		chatAddMsg("error", `Auto-compact failed: ${p.error || "unknown error"}`);
+	}
+}
+
+function handleChatError(p, isActive, isChatPage, eventSession) {
+	setSessionReplying(eventSession, false);
+	if (!(isActive && isChatPage)) return;
+	removeThinking();
+	if (p.error?.title) {
+		chatAddErrorCard(p.error);
+	} else {
+		chatAddErrorMsg(p.message || "unknown");
+	}
+	S.setStreamEl(null);
+	S.setStreamText("");
+}
+
+var chatHandlers = {
+	thinking: handleChatThinking,
+	thinking_text: handleChatThinkingText,
+	thinking_done: handleChatThinkingDone,
+	tool_call_start: handleChatToolCallStart,
+	tool_call_end: handleChatToolCallEnd,
+	channel_user: handleChatChannelUser,
+	delta: handleChatDelta,
+	final: handleChatFinal,
+	auto_compact: handleChatAutoCompact,
+	error: handleChatError,
+};
+
+function handleChatEvent(p) {
+	var eventSession = p.sessionKey || S.activeSessionKey;
+	var isActive = eventSession === S.activeSessionKey;
+	var isChatPage = currentPrefix === "/chats";
+
+	if (isActive && S.sessionSwitchInProgress) return;
+
+	if (p.sessionKey && !S.sessions.find((s) => s.key === p.sessionKey)) {
+		fetchSessions();
+	}
+
+	var handler = chatHandlers[p.state];
+	if (handler) handler(p, isActive, isChatPage, eventSession);
+}
+
+function handleApprovalEvent(payload) {
+	renderApprovalCard(payload.requestId, payload.command);
+}
+
+function handleLogEntry(payload) {
+	if (S.logsEventHandler) S.logsEventHandler(payload);
+	if (currentPage !== "/logs") {
+		var ll = (payload.level || "").toUpperCase();
+		if (ll === "ERROR") {
+			S.setUnseenErrors(S.unseenErrors + 1);
+			updateLogsAlert();
+		} else if (ll === "WARN") {
+			S.setUnseenWarns(S.unseenWarns + 1);
+			updateLogsAlert();
+		}
+	}
+}
+
+var eventHandlers = {
+	chat: handleChatEvent,
+	"exec.approval.requested": handleApprovalEvent,
+	"logs.entry": handleLogEntry,
+};
+
+function dispatchFrame(frame) {
+	if (frame.type === "res") {
+		var cb = S.pending[frame.id];
+		if (cb) {
+			delete S.pending[frame.id];
+			cb(frame);
+		}
+		return;
+	}
+	if (frame.type === "event") {
+		var listeners = eventListeners[frame.event] || [];
+		listeners.forEach((h) => {
+			h(frame.payload || {});
+		});
+		var handler = eventHandlers[frame.event];
+		if (handler) handler(frame.payload || {});
+	}
+}
 
 export function connect() {
 	setStatus("connecting", "connecting...");
@@ -63,10 +349,7 @@ export function connect() {
 					minute: "2-digit",
 					second: "2-digit",
 				});
-				chatAddMsg(
-					"system",
-					`Connected to moltis gateway v${hello.server.version} at ${ts}`,
-				);
+				chatAddMsg("system", `Connected to moltis gateway v${hello.server.version} at ${ts}`);
 				fetchModels();
 				fetchSessions();
 				fetchProjects();
@@ -96,267 +379,7 @@ export function connect() {
 		} catch (_e) {
 			return;
 		}
-
-		if (frame.type === "res") {
-			var cb = S.pending[frame.id];
-			if (cb) {
-				delete S.pending[frame.id];
-				cb(frame);
-			}
-			return;
-		}
-
-		if (frame.type === "event") {
-			var listeners = eventListeners[frame.event] || [];
-			listeners.forEach((h) => {
-				h(frame.payload || {});
-			});
-			if (frame.event === "chat") {
-				var p = frame.payload || {};
-				var eventSession = p.sessionKey || S.activeSessionKey;
-				var isActive = eventSession === S.activeSessionKey;
-				var isChatPage = currentPrefix === "/chats";
-
-				// Suppress chat events for the active session while history is loading
-				// to prevent duplicate messages after reconnect / shift-reload.
-				if (isActive && S.sessionSwitchInProgress) return;
-
-				if (p.sessionKey && !S.sessions.find((s) => s.key === p.sessionKey)) {
-					fetchSessions();
-				}
-
-				if (p.state === "thinking" && isActive && isChatPage) {
-					removeThinking();
-					var thinkEl = document.createElement("div");
-					thinkEl.className = "msg assistant thinking";
-					thinkEl.id = "thinkingIndicator";
-					var thinkDots = document.createElement("span");
-					thinkDots.className = "thinking-dots";
-					// Safe: static hardcoded HTML, no user input
-					thinkDots.innerHTML = "<span></span><span></span><span></span>";
-					thinkEl.appendChild(thinkDots);
-					S.chatMsgBox.appendChild(thinkEl);
-					S.chatMsgBox.scrollTop = S.chatMsgBox.scrollHeight;
-				} else if (p.state === "thinking_text" && isActive && isChatPage) {
-					var indicator = document.getElementById("thinkingIndicator");
-					if (indicator) {
-						while (indicator.firstChild)
-							indicator.removeChild(indicator.firstChild);
-						var textEl = document.createElement("span");
-						textEl.className = "thinking-text";
-						textEl.textContent = p.text;
-						indicator.appendChild(textEl);
-						S.chatMsgBox.scrollTop = S.chatMsgBox.scrollHeight;
-					}
-				} else if (p.state === "thinking_done" && isActive && isChatPage) {
-					removeThinking();
-				} else if (p.state === "tool_call_start" && isActive && isChatPage) {
-					removeThinking();
-					var card = document.createElement("div");
-					card.className = "msg exec-card running";
-					card.id = `tool-${p.toolCallId}`;
-					var prompt = document.createElement("div");
-					prompt.className = "exec-prompt";
-					var cmd =
-						p.toolName === "exec" && p.arguments && p.arguments.command
-							? p.arguments.command
-							: p.toolName || "tool";
-					var promptChar = document.createElement("span");
-					promptChar.className = "exec-prompt-char";
-					promptChar.textContent = "$";
-					prompt.appendChild(promptChar);
-					var cmdSpan = document.createElement("span");
-					cmdSpan.textContent = ` ${cmd}`;
-					prompt.appendChild(cmdSpan);
-					card.appendChild(prompt);
-					var spin = document.createElement("div");
-					spin.className = "exec-status";
-					spin.textContent = "running\u2026";
-					card.appendChild(spin);
-					S.chatMsgBox.appendChild(card);
-					S.chatMsgBox.scrollTop = S.chatMsgBox.scrollHeight;
-				} else if (p.state === "tool_call_end" && isActive && isChatPage) {
-					var toolCard = document.getElementById(`tool-${p.toolCallId}`);
-					if (toolCard) {
-						toolCard.className = `msg exec-card ${p.success ? "exec-ok" : "exec-err"}`;
-						var toolSpin = toolCard.querySelector(".exec-status");
-						if (toolSpin) toolSpin.remove();
-						if (p.success && p.result) {
-							var out = (p.result.stdout || "").replace(/\n+$/, "");
-							S.setLastToolOutput(out);
-							if (out) {
-								var outEl = document.createElement("pre");
-								outEl.className = "exec-output";
-								outEl.textContent = out;
-								toolCard.appendChild(outEl);
-							}
-							var stderrText = (p.result.stderr || "").replace(/\n+$/, "");
-							if (stderrText) {
-								var errEl = document.createElement("pre");
-								errEl.className = "exec-output exec-stderr";
-								errEl.textContent = stderrText;
-								toolCard.appendChild(errEl);
-							}
-							if (
-								p.result.exit_code !== undefined &&
-								p.result.exit_code !== 0
-							) {
-								var codeEl = document.createElement("div");
-								codeEl.className = "exec-exit";
-								codeEl.textContent = `exit ${p.result.exit_code}`;
-								toolCard.appendChild(codeEl);
-							}
-						} else if (!p.success && p.error && p.error.detail) {
-							var errMsg = document.createElement("div");
-							errMsg.className = "exec-error-detail";
-							errMsg.textContent = p.error.detail;
-							toolCard.appendChild(errMsg);
-						}
-					}
-				} else if (p.state === "channel_user" && isChatPage) {
-					if (p.sessionKey && p.sessionKey !== S.activeSessionKey) {
-						switchSession(p.sessionKey);
-					}
-					isActive = p.sessionKey
-						? p.sessionKey === S.activeSessionKey
-						: isActive;
-					if (!isActive) return;
-					// Deduplicate: skip if this message was already rendered from history
-					if (
-						p.messageIndex !== undefined &&
-						p.messageIndex <= S.lastHistoryIndex
-					)
-						return;
-					var cleanText = stripChannelPrefix(p.text || "");
-					var el = chatAddMsg("user", renderMarkdown(cleanText), true);
-					if (el && p.channel) {
-						appendChannelFooter(el, p.channel);
-					}
-				} else if (p.state === "delta" && p.text && isActive && isChatPage) {
-					removeThinking();
-					if (!S.streamEl) {
-						S.setStreamText("");
-						S.setStreamEl(document.createElement("div"));
-						S.streamEl.className = "msg assistant";
-						S.chatMsgBox.appendChild(S.streamEl);
-					}
-					S.setStreamText(S.streamText + p.text);
-					// Safe: renderMarkdown calls esc() first
-					S.streamEl.innerHTML = renderMarkdown(S.streamText);
-					S.chatMsgBox.scrollTop = S.chatMsgBox.scrollHeight;
-				} else if (p.state === "final") {
-					// Deduplicate: skip if this message was already rendered from history
-					if (
-						p.messageIndex !== undefined &&
-						p.messageIndex <= S.lastHistoryIndex
-					) {
-						setSessionReplying(eventSession, false);
-						return;
-					}
-					bumpSessionCount(eventSession, 1);
-					setSessionReplying(eventSession, false);
-					if (!isActive) {
-						setSessionUnread(eventSession, true);
-					}
-					if (isActive && isChatPage) {
-						removeThinking();
-						var isEcho =
-							S.lastToolOutput &&
-							p.text &&
-							p.text
-								.replace(/[`\s]/g, "")
-								.indexOf(
-									S.lastToolOutput.replace(/\s/g, "").substring(0, 80),
-								) !== -1;
-						var msgEl = null;
-						if (!isEcho) {
-							if (p.text && S.streamEl) {
-								// Safe: renderMarkdown calls esc() first
-								S.streamEl.innerHTML = renderMarkdown(p.text);
-								msgEl = S.streamEl;
-							} else if (p.text && !S.streamEl) {
-								msgEl = chatAddMsg("assistant", renderMarkdown(p.text), true);
-							}
-						} else if (S.streamEl) {
-							S.streamEl.remove();
-						}
-						if (msgEl && p.model) {
-							var footer = document.createElement("div");
-							footer.className = "msg-model-footer";
-							var footerText = p.provider
-								? `${p.provider} / ${p.model}`
-								: p.model;
-							if (p.inputTokens || p.outputTokens) {
-								footerText += ` \u00b7 ${formatTokens(p.inputTokens || 0)} in / ${formatTokens(p.outputTokens || 0)} out`;
-							}
-							footer.textContent = footerText;
-							msgEl.appendChild(footer);
-						}
-						if (p.inputTokens || p.outputTokens) {
-							S.sessionTokens.input += p.inputTokens || 0;
-							S.sessionTokens.output += p.outputTokens || 0;
-							updateTokenBar();
-						}
-						S.setStreamEl(null);
-						S.setStreamText("");
-						S.setLastToolOutput("");
-					}
-				} else if (p.state === "auto_compact") {
-					if (isActive && isChatPage) {
-						if (p.phase === "start") {
-							chatAddMsg(
-								"system",
-								"Compacting conversation (context limit reached)\u2026",
-							);
-						} else if (p.phase === "done") {
-							if (S.chatMsgBox?.lastChild)
-								S.chatMsgBox.removeChild(S.chatMsgBox.lastChild);
-							renderCompactCard(p);
-							S.setSessionTokens({ input: 0, output: 0 });
-							updateTokenBar();
-						} else if (p.phase === "error") {
-							if (S.chatMsgBox?.lastChild)
-								S.chatMsgBox.removeChild(S.chatMsgBox.lastChild);
-							chatAddMsg(
-								"error",
-								`Auto-compact failed: ${p.error || "unknown error"}`,
-							);
-						}
-					}
-				} else if (p.state === "error") {
-					setSessionReplying(eventSession, false);
-					if (isActive && isChatPage) {
-						removeThinking();
-						if (p.error?.title) {
-							chatAddErrorCard(p.error);
-						} else {
-							chatAddErrorMsg(p.message || "unknown");
-						}
-						S.setStreamEl(null);
-						S.setStreamText("");
-					}
-				}
-			}
-			if (frame.event === "exec.approval.requested") {
-				var ap = frame.payload || {};
-				renderApprovalCard(ap.requestId, ap.command);
-			}
-			if (frame.event === "logs.entry") {
-				var logPayload = frame.payload || {};
-				if (S.logsEventHandler) S.logsEventHandler(logPayload);
-				if (currentPage !== "/logs") {
-					var ll = (logPayload.level || "").toUpperCase();
-					if (ll === "ERROR") {
-						S.setUnseenErrors(S.unseenErrors + 1);
-						updateLogsAlert();
-					} else if (ll === "WARN") {
-						S.setUnseenWarns(S.unseenWarns + 1);
-						updateLogsAlert();
-					}
-				}
-			}
-			return;
-		}
+		dispatchFrame(frame);
 	};
 
 	S.ws.onclose = () => {
@@ -367,7 +390,9 @@ export function connect() {
 		scheduleReconnect();
 	};
 
-	S.ws.onerror = () => {};
+	S.ws.onerror = () => {
+		/* handled by onclose */
+	};
 }
 
 function setStatus(state, text) {
@@ -391,7 +416,7 @@ function scheduleReconnect() {
 }
 
 document.addEventListener("visibilitychange", () => {
-	if (!document.hidden && !S.connected) {
+	if (!(document.hidden || S.connected)) {
 		clearTimeout(reconnectTimer);
 		reconnectTimer = null;
 		S.setReconnectDelay(1000);

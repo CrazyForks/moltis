@@ -1,761 +1,427 @@
-// ── Channels page ───────────────────────────────────────────
+// ── Channels page (Preact + HTM + Signals) ──────────────────
 
+import { signal } from "@preact/signals";
+import { html } from "htm/preact";
+import { render } from "preact";
+import { useEffect } from "preact/hooks";
 import { onEvent } from "./events.js";
-import { createEl, sendRpc } from "./helpers.js";
-import { makeTelegramIcon } from "./icons.js";
+import { sendRpc } from "./helpers.js";
 import { registerPage } from "./router.js";
+import { connected, models as modelsSig } from "./signals.js";
 import * as S from "./state.js";
+import { ConfirmDialog, Modal, requestConfirm } from "./ui.js";
 
 export function prefetchChannels() {
 	sendRpc("channels.status", {}).then((res) => {
+		if (res?.ok) S.setCachedChannels(res.payload?.channels || []);
+	});
+}
+
+var channels = signal([]);
+var senders = signal([]);
+var activeTab = signal("channels");
+var showAddModal = signal(false);
+var editingChannel = signal(null);
+var sendersAccount = signal("");
+
+function loadChannels() {
+	sendRpc("channels.status", {}).then((res) => {
 		if (res?.ok) {
-			S.setCachedChannels(res.payload?.channels || []);
+			var ch = res.payload?.channels || [];
+			channels.value = ch;
+			S.setCachedChannels(ch);
 		}
 	});
 }
 
-var channelModal = S.$("channelModal");
-var channelModalTitle = S.$("channelModalTitle");
-var channelModalBody = S.$("channelModalBody");
-var channelModalClose = S.$("channelModalClose");
+function loadSenders() {
+	var accountId = sendersAccount.value;
+	if (!accountId) {
+		senders.value = [];
+		return;
+	}
+	sendRpc("channels.senders.list", { account_id: accountId }).then((res) => {
+		if (res?.ok) senders.value = res.payload?.senders || [];
+	});
+}
 
-function openChannelModal(onAdded) {
-	channelModal.classList.remove("hidden");
-	channelModalTitle.textContent = "Add Telegram Bot";
-	channelModalBody.textContent = "";
+// ── Telegram icon (inline SVG via htm) ──────────────────────
+function TelegramIcon() {
+	return html`<svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" stroke-width="1.5">
+    <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" />
+  </svg>`;
+}
 
-	var form = createEl("div", { className: "channel-form" });
+// ── Channel card ─────────────────────────────────────────────
+function ChannelCard(props) {
+	var ch = props.channel;
 
-	var helpBox = createEl("div", { className: "channel-card" });
-	var helpTitle = createEl("span", {
-		className: "text-xs font-medium text-[var(--text-strong)]",
-		textContent: "How to create a Telegram bot",
-	});
-	helpBox.appendChild(helpTitle);
+	function onRemove() {
+		requestConfirm(`Remove ${ch.name || ch.account_id}?`).then((yes) => {
+			if (!yes) return;
+			sendRpc("channels.remove", { account_id: ch.account_id }).then((r) => {
+				if (r?.ok) loadChannels();
+			});
+		});
+	}
 
-	var step1 = createEl("div", {
-		className: "text-xs text-[var(--muted)] channel-help",
-	});
-	step1.appendChild(document.createTextNode("1. Open "));
-	var bfLink = createEl("a", {
-		href: "https://t.me/BotFather",
-		target: "_blank",
-		className: "text-[var(--accent)]",
-		style: "text-decoration:underline;",
-		textContent: "@BotFather",
-	});
-	step1.appendChild(bfLink);
-	step1.appendChild(document.createTextNode(" in Telegram"));
-	helpBox.appendChild(step1);
+	var statusClass = ch.status === "connected" ? "configured" : "oauth";
+	var sessionLine = "";
+	if (ch.sessions && ch.sessions.length > 0) {
+		var active = ch.sessions.filter((s) => s.active);
+		sessionLine =
+			active.length > 0
+				? active.map((s) => `${s.label || s.key} (${s.messageCount} msgs)`).join(", ")
+				: "No active session";
+	}
 
-	helpBox.appendChild(
-		createEl("div", {
-			className: "text-xs text-[var(--muted)]",
-			textContent:
-				"2. Send /newbot and follow the prompts to choose a name and username",
-		}),
-	);
-	helpBox.appendChild(
-		createEl("div", {
-			className: "text-xs text-[var(--muted)]",
-			textContent:
-				"3. Copy the bot token (looks like 123456:ABC-DEF...) and paste it below",
-		}),
-	);
+	return html`<div class="provider-card" style="padding:12px 14px;border-radius:8px;margin-bottom:8px;">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:6px;background:var(--surface2);">
+        <${TelegramIcon} />
+      </span>
+      <div style="display:flex;flex-direction:column;gap:2px;">
+        <span class="text-sm text-[var(--text-strong)]">${ch.name || ch.account_id || "Telegram"}</span>
+        ${ch.details && html`<span class="text-xs text-[var(--muted)]">${ch.details}</span>`}
+        ${sessionLine && html`<span class="text-xs text-[var(--muted)]">${sessionLine}</span>`}
+      </div>
+      <span class="provider-item-badge ${statusClass}">${ch.status || "unknown"}</span>
+    </div>
+    <div style="display:flex;gap:6px;">
+      <button class="session-action-btn" title="Edit ${ch.account_id || "channel"}"
+        onClick=${() => {
+					editingChannel.value = ch;
+				}}>Edit</button>
+      <button class="session-action-btn session-delete" title="Remove ${ch.account_id || "channel"}"
+        onClick=${onRemove}>Remove</button>
+    </div>
+  </div>`;
+}
 
-	var helpTip = createEl("div", {
-		className: "text-xs text-[var(--muted)] channel-help",
-		style: "margin-top:2px;",
-	});
-	helpTip.appendChild(document.createTextNode("See the "));
-	var docsLink = createEl("a", {
-		href: "https://core.telegram.org/bots/tutorial",
-		target: "_blank",
-		className: "text-[var(--accent)]",
-		style: "text-decoration:underline;",
-		textContent: "Telegram Bot Tutorial",
-	});
-	helpTip.appendChild(docsLink);
-	helpTip.appendChild(document.createTextNode(" for more details."));
-	helpBox.appendChild(helpTip);
+// ── Channels tab ─────────────────────────────────────────────
+function ChannelsTab() {
+	if (channels.value.length === 0) {
+		return html`<div style="text-align:center;padding:40px 0;">
+      <div class="text-sm text-[var(--muted)]" style="margin-bottom:12px;">No Telegram bots connected.</div>
+      <div class="text-xs text-[var(--muted)]">Click "+ Add Telegram Bot" to connect one using a token from @BotFather.</div>
+    </div>`;
+	}
+	return html`${channels.value.map((ch) => html`<${ChannelCard} key=${ch.account_id} channel=${ch} />`)}`;
+}
 
-	form.appendChild(helpBox);
+// ── Senders tab ──────────────────────────────────────────────
+function SendersTab() {
+	useEffect(() => {
+		if (channels.value.length > 0 && !sendersAccount.value) {
+			sendersAccount.value = channels.value[0].account_id;
+		}
+	}, [channels.value]);
 
-	var idLabel = createEl("label", {
-		className: "text-xs text-[var(--muted)]",
-		textContent: "Bot username",
-	});
-	var idInput = createEl("input", {
-		type: "text",
-		placeholder: "e.g. my_assistant_bot",
-		className:
-			"text-sm bg-[var(--surface2)] border border-[var(--border)] rounded px-3 py-2 text-[var(--text)] focus:outline-none focus:border-[var(--border-strong)]",
-		style: "font-family:var(--font-body);",
-	});
+	useEffect(() => {
+		loadSenders();
+	}, [sendersAccount.value]);
 
-	var tokenLabel = createEl("label", {
-		className: "text-xs text-[var(--muted)]",
-		textContent: "Bot Token (from @BotFather)",
-	});
-	var tokenInput = createEl("input", {
-		type: "password",
-		placeholder: "123456:ABC-DEF...",
-		className:
-			"text-sm bg-[var(--surface2)] border border-[var(--border)] rounded px-3 py-2 text-[var(--text)] focus:outline-none focus:border-[var(--border-strong)]",
-		style: "font-family:var(--font-body);",
-	});
+	if (channels.value.length === 0) {
+		return html`<div class="text-sm text-[var(--muted)]">No channels configured.</div>`;
+	}
 
-	var dmLabel = createEl("label", {
-		className: "text-xs text-[var(--muted)]",
-		textContent: "DM Policy",
-	});
-	var dmSelect = createEl("select", {
-		className:
-			"text-sm bg-[var(--surface2)] border border-[var(--border)] rounded px-3 py-2 text-[var(--text)] cursor-pointer",
-		style: "font-family:var(--font-body);",
-	});
-	[
-		["open", "Open (anyone)"],
-		["allowlist", "Allowlist only"],
-		["disabled", "Disabled"],
-	].forEach((opt) => {
-		dmSelect.appendChild(
-			createEl("option", { value: opt[0], textContent: opt[1] }),
-		);
-	});
+	function onAction(identifier, action) {
+		var rpc = action === "approve" ? "channels.senders.approve" : "channels.senders.deny";
+		sendRpc(rpc, {
+			account_id: sendersAccount.value,
+			identifier: identifier,
+		}).then(() => loadSenders());
+	}
 
-	var mentionLabel = createEl("label", {
-		className: "text-xs text-[var(--muted)]",
-		textContent: "Group Mention Mode",
-	});
-	var mentionSelect = createEl("select", {
-		className:
-			"text-sm bg-[var(--surface2)] border border-[var(--border)] rounded px-3 py-2 text-[var(--text)] cursor-pointer",
-		style: "font-family:var(--font-body);",
-	});
-	[
-		["mention", "Must @mention bot"],
-		["always", "Always respond"],
-		["none", "Don't respond in groups"],
-	].forEach((opt) => {
-		mentionSelect.appendChild(
-			createEl("option", { value: opt[0], textContent: opt[1] }),
-		);
-	});
+	return html`<div>
+    <div style="margin-bottom:12px;">
+      <label class="text-xs text-[var(--muted)]" style="margin-right:6px;">Account:</label>
+      <select style="background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;font-size:12px;"
+        value=${sendersAccount.value} onChange=${(e) => {
+					sendersAccount.value = e.target.value;
+				}}>
+        ${channels.value.map(
+					(ch) => html`<option key=${ch.account_id} value=${ch.account_id}>${ch.name || ch.account_id}</option>`,
+				)}
+      </select>
+    </div>
+    ${senders.value.length === 0 && html`<div class="text-sm text-[var(--muted)] senders-empty">No messages received yet for this account.</div>`}
+    ${
+			senders.value.length > 0 &&
+			html`<table class="senders-table">
+      <thead><tr>
+        <th class="senders-th">Sender</th><th class="senders-th">Username</th>
+        <th class="senders-th">Messages</th><th class="senders-th">Last Seen</th>
+        <th class="senders-th">Status</th><th class="senders-th">Action</th>
+      </tr></thead>
+      <tbody>
+        ${senders.value.map((s) => {
+					var identifier = s.username || s.peer_id;
+					var lastSeen = s.last_seen ? new Date(s.last_seen * 1000).toLocaleString() : "\u2014";
+					return html`<tr key=${s.peer_id}>
+            <td class="senders-td">${s.sender_name || s.peer_id}</td>
+            <td class="senders-td" style="color:var(--muted);">${s.username ? `@${s.username}` : "\u2014"}</td>
+            <td class="senders-td">${s.message_count}</td>
+            <td class="senders-td" style="color:var(--muted);font-size:12px;">${lastSeen}</td>
+            <td class="senders-td">
+              <span class="provider-item-badge ${s.allowed ? "configured" : "oauth"}">${s.allowed ? "Allowed" : "Denied"}</span>
+            </td>
+            <td class="senders-td">
+              ${
+								s.allowed
+									? html`<button class="session-action-btn session-delete" onClick=${() => onAction(identifier, "deny")}>Deny</button>`
+									: html`<button class="session-action-btn" style="background:var(--accent-dim);color:white;" onClick=${() => onAction(identifier, "approve")}>Approve</button>`
+							}
+            </td>
+          </tr>`;
+				})}
+      </tbody>
+    </table>`
+		}
+  </div>`;
+}
 
-	var modelLabel = createEl("label", {
-		className: "text-xs text-[var(--muted)]",
-		textContent: "Default Model",
-	});
-	var modelSelect = createEl("select", {
-		className:
-			"text-sm bg-[var(--surface2)] border border-[var(--border)] rounded px-3 py-2 text-[var(--text)] cursor-pointer",
-		style: "font-family:var(--font-body);",
-	});
-	modelSelect.appendChild(
-		createEl("option", { value: "", textContent: "(server default)" }),
-	);
-	S.models.forEach((m) => {
-		modelSelect.appendChild(
-			createEl("option", { value: m.id, textContent: m.displayName || m.id }),
-		);
-	});
+// ── Add channel modal ────────────────────────────────────────
+function AddChannelModal() {
+	var error = signal("");
+	var saving = signal(false);
 
-	var allowLabel = createEl("label", {
-		className: "text-xs text-[var(--muted)]",
-		textContent: "DM Allowlist (one username per line)",
-	});
-	var allowInput = createEl("textarea", {
-		placeholder: "user1\nuser2",
-		rows: 3,
-		className:
-			"text-sm bg-[var(--surface2)] border border-[var(--border)] rounded px-3 py-2 text-[var(--text)] focus:outline-none focus:border-[var(--border-strong)]",
-		style: "font-family:var(--font-body);resize:vertical;",
-	});
-
-	var errorEl = createEl("div", {
-		className: "text-xs text-[var(--error)] channel-error",
-	});
-
-	var submitBtn = createEl("button", {
-		className:
-			"bg-[var(--accent-dim)] text-white border-none px-4 py-2 rounded text-sm cursor-pointer hover:bg-[var(--accent)] transition-colors",
-		textContent: "Connect Bot",
-	});
-
-	submitBtn.addEventListener("click", () => {
-		var accountId = idInput.value.trim();
-		var token = tokenInput.value.trim();
+	function onSubmit(e) {
+		e.preventDefault();
+		var form = e.target.closest(".channel-form");
+		var accountId = form.querySelector("[data-field=accountId]").value.trim();
+		var token = form.querySelector("[data-field=token]").value.trim();
 		if (!accountId) {
-			errorEl.textContent = "Bot username is required.";
-			errorEl.style.display = "block";
+			error.value = "Bot username is required.";
 			return;
 		}
 		if (!token) {
-			errorEl.textContent = "Bot token is required.";
-			errorEl.style.display = "block";
+			error.value = "Bot token is required.";
 			return;
 		}
-
-		var allowlist = allowInput.value
-			.trim()
+		var allowlist = form
+			.querySelector("[data-field=allowlist]")
+			.value.trim()
 			.split(/\n/)
 			.map((s) => s.trim())
 			.filter(Boolean);
-		errorEl.style.display = "none";
-		submitBtn.disabled = true;
-		submitBtn.textContent = "Connecting...";
-
+		error.value = "";
+		saving.value = true;
 		var addConfig = {
 			token: token,
-			dm_policy: dmSelect.value,
-			mention_mode: mentionSelect.value,
+			dm_policy: form.querySelector("[data-field=dmPolicy]").value,
+			mention_mode: form.querySelector("[data-field=mentionMode]").value,
 			allowlist: allowlist,
 		};
-		if (modelSelect.value) addConfig.model = modelSelect.value;
-
+		var model = form.querySelector("[data-field=model]").value;
+		if (model) addConfig.model = model;
 		sendRpc("channels.add", {
 			type: "telegram",
 			account_id: accountId,
 			config: addConfig,
 		}).then((res) => {
-			submitBtn.disabled = false;
-			submitBtn.textContent = "Connect Bot";
+			saving.value = false;
 			if (res?.ok) {
-				closeChannelModal();
-				if (onAdded) onAdded();
+				showAddModal.value = false;
+				loadChannels();
 			} else {
-				var msg =
-					(res?.error && (res.error.message || res.error.detail)) ||
-					"Failed to connect bot.";
-				errorEl.textContent = msg;
-				errorEl.style.display = "block";
+				error.value = (res?.error && (res.error.message || res.error.detail)) || "Failed to connect bot.";
 			}
 		});
-	});
+	}
 
-	form.appendChild(idLabel);
-	form.appendChild(idInput);
-	form.appendChild(tokenLabel);
-	form.appendChild(tokenInput);
-	form.appendChild(dmLabel);
-	form.appendChild(dmSelect);
-	form.appendChild(mentionLabel);
-	form.appendChild(mentionSelect);
-	form.appendChild(modelLabel);
-	form.appendChild(modelSelect);
-	form.appendChild(allowLabel);
-	form.appendChild(allowInput);
-	form.appendChild(errorEl);
-	form.appendChild(submitBtn);
-	channelModalBody.appendChild(form);
-	idInput.focus();
+	var selectStyle =
+		"font-family:var(--font-body);background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:8px 12px;font-size:.85rem;cursor:pointer;";
+	var inputStyle =
+		"font-family:var(--font-body);background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:8px 12px;font-size:.85rem;";
+
+	return html`<${Modal} show=${showAddModal.value} onClose=${() => {
+		showAddModal.value = false;
+	}} title="Add Telegram Bot">
+    <div class="channel-form">
+      <div class="channel-card">
+        <span class="text-xs font-medium text-[var(--text-strong)]">How to create a Telegram bot</span>
+        <div class="text-xs text-[var(--muted)] channel-help">1. Open <a href="https://t.me/BotFather" target="_blank" class="text-[var(--accent)]" style="text-decoration:underline;">@BotFather</a> in Telegram</div>
+        <div class="text-xs text-[var(--muted)]">2. Send /newbot and follow the prompts to choose a name and username</div>
+        <div class="text-xs text-[var(--muted)]">3. Copy the bot token (looks like 123456:ABC-DEF...) and paste it below</div>
+        <div class="text-xs text-[var(--muted)] channel-help" style="margin-top:2px;">See the <a href="https://core.telegram.org/bots/tutorial" target="_blank" class="text-[var(--accent)]" style="text-decoration:underline;">Telegram Bot Tutorial</a> for more details.</div>
+      </div>
+      <label class="text-xs text-[var(--muted)]">Bot username</label>
+      <input data-field="accountId" type="text" placeholder="e.g. my_assistant_bot" style=${inputStyle} />
+      <label class="text-xs text-[var(--muted)]">Bot Token (from @BotFather)</label>
+      <input data-field="token" type="password" placeholder="123456:ABC-DEF..." style=${inputStyle} />
+      <label class="text-xs text-[var(--muted)]">DM Policy</label>
+      <select data-field="dmPolicy" style=${selectStyle}>
+        <option value="open">Open (anyone)</option>
+        <option value="allowlist">Allowlist only</option>
+        <option value="disabled">Disabled</option>
+      </select>
+      <label class="text-xs text-[var(--muted)]">Group Mention Mode</label>
+      <select data-field="mentionMode" style=${selectStyle}>
+        <option value="mention">Must @mention bot</option>
+        <option value="always">Always respond</option>
+        <option value="none">Don't respond in groups</option>
+      </select>
+      <label class="text-xs text-[var(--muted)]">Default Model</label>
+      <select data-field="model" style=${selectStyle}>
+        <option value="">(server default)</option>
+        ${modelsSig.value.map((m) => html`<option key=${m.id} value=${m.id}>${m.displayName || m.id}</option>`)}
+      </select>
+      <label class="text-xs text-[var(--muted)]">DM Allowlist (one username per line)</label>
+      <textarea data-field="allowlist" placeholder="user1\nuser2" rows="3"
+        style="font-family:var(--font-body);resize:vertical;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:8px 12px;font-size:.85rem;" />
+      ${error.value && html`<div class="text-xs text-[var(--error)] channel-error" style="display:block;">${error.value}</div>`}
+      <button class="bg-[var(--accent-dim)] text-white border-none px-4 py-2 rounded text-sm cursor-pointer hover:bg-[var(--accent)] transition-colors"
+        onClick=${onSubmit} disabled=${saving.value}>
+        ${saving.value ? "Connecting\u2026" : "Connect Bot"}
+      </button>
+    </div>
+  </${Modal}>`;
 }
 
-function closeChannelModal() {
-	channelModal.classList.add("hidden");
-}
-
-function openEditChannelModal(ch, onUpdated) {
-	channelModal.classList.remove("hidden");
-	channelModalTitle.textContent = "Edit Telegram Bot";
-	channelModalBody.textContent = "";
-
+// ── Edit channel modal ───────────────────────────────────────
+function EditChannelModal() {
+	var ch = editingChannel.value;
+	if (!ch) return null;
 	var cfg = ch.config || {};
-	var form = createEl("div", { className: "channel-form" });
+	var error = signal("");
+	var saving = signal(false);
 
-	form.appendChild(
-		createEl("div", {
-			className: "text-sm text-[var(--text-strong)]",
-			textContent: ch.name || ch.account_id,
-		}),
-	);
-
-	var dmLabel = createEl("label", {
-		className: "text-xs text-[var(--muted)]",
-		textContent: "DM Policy",
-	});
-	var dmSelect = createEl("select", {
-		className:
-			"text-sm bg-[var(--surface2)] border border-[var(--border)] rounded px-3 py-2 text-[var(--text)] cursor-pointer",
-		style: "font-family:var(--font-body);",
-	});
-	[
-		["open", "Open (anyone)"],
-		["allowlist", "Allowlist only"],
-		["disabled", "Disabled"],
-	].forEach((opt) => {
-		var o = createEl("option", { value: opt[0], textContent: opt[1] });
-		if (opt[0] === cfg.dm_policy) o.selected = true;
-		dmSelect.appendChild(o);
-	});
-
-	var mentionLabel = createEl("label", {
-		className: "text-xs text-[var(--muted)]",
-		textContent: "Group Mention Mode",
-	});
-	var mentionSelect = createEl("select", {
-		className:
-			"text-sm bg-[var(--surface2)] border border-[var(--border)] rounded px-3 py-2 text-[var(--text)] cursor-pointer",
-		style: "font-family:var(--font-body);",
-	});
-	[
-		["mention", "Must @mention bot"],
-		["always", "Always respond"],
-		["none", "Don't respond in groups"],
-	].forEach((opt) => {
-		var o = createEl("option", { value: opt[0], textContent: opt[1] });
-		if (opt[0] === cfg.mention_mode) o.selected = true;
-		mentionSelect.appendChild(o);
-	});
-
-	var editModelLabel = createEl("label", {
-		className: "text-xs text-[var(--muted)]",
-		textContent: "Default Model",
-	});
-	var editModelSelect = createEl("select", {
-		className:
-			"text-sm bg-[var(--surface2)] border border-[var(--border)] rounded px-3 py-2 text-[var(--text)] cursor-pointer",
-		style: "font-family:var(--font-body);",
-	});
-	editModelSelect.appendChild(
-		createEl("option", { value: "", textContent: "(server default)" }),
-	);
-	S.models.forEach((m) => {
-		var o = createEl("option", {
-			value: m.id,
-			textContent: m.displayName || m.id,
-		});
-		if (m.id === cfg.model) o.selected = true;
-		editModelSelect.appendChild(o);
-	});
-
-	var allowLabel = createEl("label", {
-		className: "text-xs text-[var(--muted)]",
-		textContent: "DM Allowlist (one username per line)",
-	});
-	var allowInput = createEl("textarea", {
-		rows: 3,
-		className:
-			"text-sm bg-[var(--surface2)] border border-[var(--border)] rounded px-3 py-2 text-[var(--text)] focus:outline-none focus:border-[var(--border-strong)]",
-		style: "font-family:var(--font-body);resize:vertical;",
-	});
-	allowInput.value = (cfg.allowlist || []).join("\n");
-
-	var errorEl = createEl("div", {
-		className: "text-xs text-[var(--error)] channel-error",
-	});
-
-	var saveBtn = createEl("button", {
-		className:
-			"bg-[var(--accent-dim)] text-white border-none px-4 py-2 rounded text-sm cursor-pointer hover:bg-[var(--accent)] transition-colors",
-		textContent: "Save Changes",
-	});
-	saveBtn.addEventListener("click", () => {
-		var allowlist = allowInput.value
-			.trim()
+	function onSave(e) {
+		e.preventDefault();
+		var form = e.target.closest(".channel-form");
+		var allowlist = form
+			.querySelector("[data-field=allowlist]")
+			.value.trim()
 			.split(/\n/)
 			.map((s) => s.trim())
 			.filter(Boolean);
-		errorEl.style.display = "none";
-		saveBtn.disabled = true;
-		saveBtn.textContent = "Saving...";
+		error.value = "";
+		saving.value = true;
 		var updateConfig = {
 			token: cfg.token || "",
-			dm_policy: dmSelect.value,
-			mention_mode: mentionSelect.value,
+			dm_policy: form.querySelector("[data-field=dmPolicy]").value,
+			mention_mode: form.querySelector("[data-field=mentionMode]").value,
 			allowlist: allowlist,
 		};
-		if (editModelSelect.value) updateConfig.model = editModelSelect.value;
+		var model = form.querySelector("[data-field=model]").value;
+		if (model) updateConfig.model = model;
 		sendRpc("channels.update", {
 			account_id: ch.account_id,
 			config: updateConfig,
 		}).then((res) => {
-			saveBtn.disabled = false;
-			saveBtn.textContent = "Save Changes";
+			saving.value = false;
 			if (res?.ok) {
-				closeChannelModal();
-				if (onUpdated) onUpdated();
+				editingChannel.value = null;
+				loadChannels();
 			} else {
-				var msg =
-					(res?.error && (res.error.message || res.error.detail)) ||
-					"Failed to update bot.";
-				errorEl.textContent = msg;
-				errorEl.style.display = "block";
+				error.value = (res?.error && (res.error.message || res.error.detail)) || "Failed to update bot.";
 			}
 		});
-	});
+	}
 
-	form.appendChild(dmLabel);
-	form.appendChild(dmSelect);
-	form.appendChild(mentionLabel);
-	form.appendChild(mentionSelect);
-	form.appendChild(editModelLabel);
-	form.appendChild(editModelSelect);
-	form.appendChild(allowLabel);
-	form.appendChild(allowInput);
-	form.appendChild(errorEl);
-	form.appendChild(saveBtn);
-	channelModalBody.appendChild(form);
+	var selectStyle =
+		"font-family:var(--font-body);background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:8px 12px;font-size:.85rem;cursor:pointer;";
+
+	return html`<${Modal} show=${true} onClose=${() => {
+		editingChannel.value = null;
+	}} title="Edit Telegram Bot">
+    <div class="channel-form">
+      <div class="text-sm text-[var(--text-strong)]">${ch.name || ch.account_id}</div>
+      <label class="text-xs text-[var(--muted)]">DM Policy</label>
+      <select data-field="dmPolicy" style=${selectStyle} value=${cfg.dm_policy || "open"}>
+        <option value="open">Open (anyone)</option>
+        <option value="allowlist">Allowlist only</option>
+        <option value="disabled">Disabled</option>
+      </select>
+      <label class="text-xs text-[var(--muted)]">Group Mention Mode</label>
+      <select data-field="mentionMode" style=${selectStyle} value=${cfg.mention_mode || "mention"}>
+        <option value="mention">Must @mention bot</option>
+        <option value="always">Always respond</option>
+        <option value="none">Don't respond in groups</option>
+      </select>
+      <label class="text-xs text-[var(--muted)]">Default Model</label>
+      <select data-field="model" style=${selectStyle} value=${cfg.model || ""}>
+        <option value="">(server default)</option>
+        ${modelsSig.value.map((m) => {
+					return html`<option key=${m.id} value=${m.id}>${m.displayName || m.id}</option>`;
+				})}
+      </select>
+      <label class="text-xs text-[var(--muted)]">DM Allowlist (one username per line)</label>
+      <textarea data-field="allowlist" rows="3"
+        style="font-family:var(--font-body);resize:vertical;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:8px 12px;font-size:.85rem;">${(cfg.allowlist || []).join("\n")}</textarea>
+      ${error.value && html`<div class="text-xs text-[var(--error)] channel-error" style="display:block;">${error.value}</div>`}
+      <button class="bg-[var(--accent-dim)] text-white border-none px-4 py-2 rounded text-sm cursor-pointer hover:bg-[var(--accent)] transition-colors"
+        onClick=${onSave} disabled=${saving.value}>
+        ${saving.value ? "Saving\u2026" : "Save Changes"}
+      </button>
+    </div>
+  </${Modal}>`;
 }
 
-channelModalClose.addEventListener("click", closeChannelModal);
-channelModal.addEventListener("click", (e) => {
-	if (e.target === channelModal) closeChannelModal();
-});
+// ── Main page component ──────────────────────────────────────
+function ChannelsPage() {
+	useEffect(() => {
+		// Use prefetched cache for instant render
+		if (S.cachedChannels !== null) channels.value = S.cachedChannels;
+		loadChannels();
 
-// Safe: static hardcoded HTML template, no user input.
-var channelsPageHTML =
-	'<div class="flex-1 flex flex-col min-w-0 p-4 gap-4 overflow-y-auto">' +
-	'<div class="flex items-center gap-3">' +
-	'<h2 class="text-lg font-medium text-[var(--text-strong)]">Channels</h2>' +
-	'<div style="display:flex;gap:4px;margin-left:12px;">' +
-	'<button id="chanTabChannels" class="session-action-btn" style="font-weight:600;">Channels</button>' +
-	'<button id="chanTabSenders" class="session-action-btn">Senders</button>' +
-	"</div>" +
-	'<button id="chanAddBtn" class="bg-[var(--accent-dim)] text-white border-none px-3 py-1.5 rounded text-xs cursor-pointer hover:bg-[var(--accent)] transition-colors">+ Add Telegram Bot</button>' +
-	"</div>" +
-	'<div id="channelPageList"></div>' +
-	'<div id="sendersPageContent" style="display:none;">' +
-	'<div style="margin-bottom:12px;">' +
-	'<label class="text-xs text-[var(--muted)]" style="margin-right:6px;">Account:</label>' +
-	'<select id="sendersAccountSelect" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;font-size:12px;"></select>' +
-	"</div>" +
-	'<div id="sendersTableWrap"></div>' +
-	"</div>" +
-	"</div>";
+		var unsub = onEvent("channel", (p) => {
+			if (p.kind === "inbound_message" && activeTab.value === "senders" && sendersAccount.value === p.account_id) {
+				loadSenders();
+			}
+		});
+		S.setChannelEventUnsub(unsub);
+
+		return () => {
+			if (unsub) unsub();
+			S.setChannelEventUnsub(null);
+		};
+	}, []);
+
+	return html`
+    <div class="flex-1 flex flex-col min-w-0 p-4 gap-4 overflow-y-auto">
+      <div class="flex items-center gap-3">
+        <h2 class="text-lg font-medium text-[var(--text-strong)]">Channels</h2>
+        <div style="display:flex;gap:4px;margin-left:12px;">
+          <button class="session-action-btn" style=${activeTab.value === "channels" ? "font-weight:600;" : ""}
+            onClick=${() => {
+							activeTab.value = "channels";
+						}}>Channels</button>
+          <button class="session-action-btn" style=${activeTab.value === "senders" ? "font-weight:600;" : ""}
+            onClick=${() => {
+							activeTab.value = "senders";
+						}}>Senders</button>
+        </div>
+        ${
+					activeTab.value === "channels" &&
+					html`
+          <button class="bg-[var(--accent-dim)] text-white border-none px-3 py-1.5 rounded text-xs cursor-pointer hover:bg-[var(--accent)] transition-colors"
+            onClick=${() => {
+							if (connected.value) showAddModal.value = true;
+						}}>+ Add Telegram Bot</button>
+        `
+				}
+      </div>
+      ${activeTab.value === "channels" ? html`<${ChannelsTab} />` : html`<${SendersTab} />`}
+    </div>
+    <${AddChannelModal} />
+    <${EditChannelModal} />
+    <${ConfirmDialog} />
+  `;
+}
 
 registerPage(
 	"/channels",
 	function initChannels(container) {
-		container.innerHTML = channelsPageHTML; // safe: static template
-
-		var addBtn = S.$("chanAddBtn");
-		var listEl = S.$("channelPageList");
-		var sendersContent = S.$("sendersPageContent");
-		var tabChannels = S.$("chanTabChannels");
-		var tabSenders = S.$("chanTabSenders");
-		var sendersSelect = S.$("sendersAccountSelect");
-		var sendersTableWrap = S.$("sendersTableWrap");
-		var activeTab = "channels";
-
-		S.setChannelEventUnsub(
-			onEvent("channel", (p) => {
-				if (
-					p.kind === "inbound_message" &&
-					activeTab === "senders" &&
-					sendersSelect.value === p.account_id
-				) {
-					loadSenders();
-				}
-			}),
-		);
-
-		function switchTab(tab) {
-			activeTab = tab;
-			if (tab === "channels") {
-				listEl.style.display = "";
-				sendersContent.style.display = "none";
-				addBtn.style.display = "";
-				tabChannels.style.fontWeight = "600";
-				tabSenders.style.fontWeight = "";
-				renderChannelList();
-			} else {
-				listEl.style.display = "none";
-				sendersContent.style.display = "";
-				addBtn.style.display = "none";
-				tabChannels.style.fontWeight = "";
-				tabSenders.style.fontWeight = "600";
-				loadSendersAccounts();
-			}
-		}
-
-		tabChannels.addEventListener("click", () => {
-			switchTab("channels");
-		});
-		tabSenders.addEventListener("click", () => {
-			switchTab("senders");
-		});
-		addBtn.addEventListener("click", () => {
-			if (S.connected) openChannelModal(renderChannelList);
-		});
-
-		function loadSendersAccounts() {
-			sendRpc("channels.status", {}).then((res) => {
-				if (!res || !res.ok) return;
-				var channels = res.payload?.channels || [];
-				while (sendersSelect.firstChild)
-					sendersSelect.removeChild(sendersSelect.firstChild);
-				if (channels.length === 0) {
-					sendersTableWrap.textContent = "No channels configured.";
-					return;
-				}
-				channels.forEach((ch) => {
-					var opt = document.createElement("option");
-					opt.value = ch.account_id;
-					opt.textContent = ch.name || ch.account_id;
-					sendersSelect.appendChild(opt);
-				});
-				loadSenders();
-			});
-		}
-
-		sendersSelect.addEventListener("change", loadSenders);
-
-		function loadSenders() {
-			var accountId = sendersSelect.value;
-			if (!accountId) return;
-			sendRpc("channels.senders.list", { account_id: accountId }).then(
-				(res) => {
-					if (!res || !res.ok) {
-						sendersTableWrap.textContent = "Failed to load senders.";
-						return;
-					}
-					var senders = res.payload?.senders || [];
-					while (sendersTableWrap.firstChild)
-						sendersTableWrap.removeChild(sendersTableWrap.firstChild);
-
-					if (senders.length === 0) {
-						sendersTableWrap.appendChild(
-							createEl("div", {
-								className: "text-sm text-[var(--muted)] senders-empty",
-								textContent: "No messages received yet for this account.",
-							}),
-						);
-						return;
-					}
-
-					var table = createEl("table", { className: "senders-table" });
-					var thead = document.createElement("thead");
-					var headerRow = document.createElement("tr");
-					[
-						"Sender",
-						"Username",
-						"Messages",
-						"Last Seen",
-						"Status",
-						"Action",
-					].forEach((h) => {
-						headerRow.appendChild(
-							createEl("th", { textContent: h, className: "senders-th" }),
-						);
-					});
-					thead.appendChild(headerRow);
-					table.appendChild(thead);
-
-					var tbody = document.createElement("tbody");
-					senders.forEach((s) => {
-						var tr = document.createElement("tr");
-						tr.appendChild(
-							createEl("td", {
-								className: "senders-td",
-								textContent: s.sender_name || s.peer_id,
-							}),
-						);
-						tr.appendChild(
-							createEl("td", {
-								className: "senders-td",
-								style: "color:var(--muted);",
-								textContent: s.username ? `@${s.username}` : "\u2014",
-							}),
-						);
-						tr.appendChild(
-							createEl("td", {
-								className: "senders-td",
-								textContent: String(s.message_count),
-							}),
-						);
-						var lastSeen = s.last_seen
-							? new Date(s.last_seen * 1000).toLocaleString()
-							: "\u2014";
-						tr.appendChild(
-							createEl("td", {
-								className: "senders-td",
-								style: "color:var(--muted);font-size:12px;",
-								textContent: lastSeen,
-							}),
-						);
-
-						var statusTd = createEl("td", { className: "senders-td" });
-						statusTd.appendChild(
-							createEl("span", {
-								className: `provider-item-badge ${s.allowed ? "configured" : "oauth"}`,
-								textContent: s.allowed ? "Allowed" : "Denied",
-							}),
-						);
-						tr.appendChild(statusTd);
-
-						var actionTd = createEl("td", { className: "senders-td" });
-						var identifier = s.username || s.peer_id;
-						if (s.allowed) {
-							var denyBtn = createEl("button", {
-								className: "session-action-btn session-delete",
-								textContent: "Deny",
-								title: "Remove from allowlist",
-							});
-							denyBtn.addEventListener("click", () => {
-								sendRpc("channels.senders.deny", {
-									account_id: accountId,
-									identifier: identifier,
-								}).then(() => {
-									loadSenders();
-								});
-							});
-							actionTd.appendChild(denyBtn);
-						} else {
-							var approveBtn = createEl("button", {
-								className: "session-action-btn",
-								textContent: "Approve",
-								title: "Add to allowlist",
-							});
-							approveBtn.style.cssText =
-								"background:var(--accent-dim);color:white;";
-							approveBtn.addEventListener("click", () => {
-								sendRpc("channels.senders.approve", {
-									account_id: accountId,
-									identifier: identifier,
-								}).then(() => {
-									loadSenders();
-								});
-							});
-							actionTd.appendChild(approveBtn);
-						}
-						tr.appendChild(actionTd);
-						tbody.appendChild(tr);
-					});
-					table.appendChild(tbody);
-					sendersTableWrap.appendChild(table);
-				},
-			);
-		}
-
-		function renderChannelList() {
-			// Use prefetched cache for instant render, then refresh in background
-			if (S.cachedChannels !== null) {
-				renderChannels(S.cachedChannels);
-			}
-			sendRpc("channels.status", {}).then((res) => {
-				if (!res || !res.ok) return;
-				var channels = res.payload?.channels || [];
-				S.setCachedChannels(channels);
-				renderChannels(channels);
-			});
-		}
-
-		function renderChannels(channels) {
-			while (listEl.firstChild) listEl.removeChild(listEl.firstChild);
-
-			if (channels.length === 0) {
-				var empty = createEl("div", {
-					style: "text-align:center;padding:40px 0;",
-				});
-				empty.appendChild(
-					createEl("div", {
-						className: "text-sm text-[var(--muted)]",
-						style: "margin-bottom:12px;",
-						textContent: "No Telegram bots connected.",
-					}),
-				);
-				empty.appendChild(
-					createEl("div", {
-						className: "text-xs text-[var(--muted)]",
-						textContent:
-							'Click "+ Add Telegram Bot" to connect one using a token from @BotFather.',
-					}),
-				);
-				listEl.appendChild(empty);
-				return;
-			}
-
-			channels.forEach((ch) => {
-				var card = createEl("div", {
-					className: "provider-card",
-					style: "padding:12px 14px;border-radius:8px;margin-bottom:8px;",
-				});
-				var left = createEl("div", {
-					style: "display:flex;align-items:center;gap:10px;",
-				});
-				var icon = createEl("span", {
-					style:
-						"display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:6px;background:var(--surface2);",
-				});
-				icon.appendChild(makeTelegramIcon());
-				left.appendChild(icon);
-
-				var info = createEl("div", {
-					style: "display:flex;flex-direction:column;gap:2px;",
-				});
-				info.appendChild(
-					createEl("span", {
-						className: "text-sm text-[var(--text-strong)]",
-						textContent: ch.name || ch.account_id || "Telegram",
-					}),
-				);
-				if (ch.details)
-					info.appendChild(
-						createEl("span", {
-							className: "text-xs text-[var(--muted)]",
-							textContent: ch.details,
-						}),
-					);
-				if (ch.sessions && ch.sessions.length > 0) {
-					var active = ch.sessions.filter((s) => s.active);
-					var sessionLine =
-						active.length > 0
-							? active
-									.map((s) => `${s.label || s.key} (${s.messageCount} msgs)`)
-									.join(", ")
-							: "No active session";
-					info.appendChild(
-						createEl("span", {
-							className: "text-xs text-[var(--muted)]",
-							textContent: sessionLine,
-						}),
-					);
-				}
-				left.appendChild(info);
-
-				var statusClass = ch.status === "connected" ? "configured" : "oauth";
-				left.appendChild(
-					createEl("span", {
-						className: `provider-item-badge ${statusClass}`,
-						textContent: ch.status || "unknown",
-					}),
-				);
-				card.appendChild(left);
-
-				var actions = createEl("div", { style: "display:flex;gap:6px;" });
-				var editBtn = createEl("button", {
-					className: "session-action-btn",
-					textContent: "Edit",
-					title: `Edit ${ch.account_id || "channel"}`,
-				});
-				editBtn.addEventListener("click", () => {
-					openEditChannelModal(ch, renderChannelList);
-				});
-				actions.appendChild(editBtn);
-
-				var removeBtn = createEl("button", {
-					className: "session-action-btn session-delete",
-					textContent: "Remove",
-					title: `Remove ${ch.account_id || "channel"}`,
-				});
-				removeBtn.addEventListener("click", () => {
-					if (!confirm(`Remove ${ch.name || ch.account_id}?`)) return;
-					sendRpc("channels.remove", { account_id: ch.account_id }).then(
-						(r) => {
-							if (r?.ok) renderChannelList();
-						},
-					);
-				});
-				actions.appendChild(removeBtn);
-				card.appendChild(actions);
-				listEl.appendChild(card);
-			});
-		}
-
-		S.setRefreshChannelsPage(renderChannelList);
-		renderChannelList();
+		container.style.cssText = "flex-direction:column;padding:0;overflow:hidden;";
+		activeTab.value = "channels";
+		showAddModal.value = false;
+		editingChannel.value = null;
+		sendersAccount.value = "";
+		senders.value = [];
+		render(html`<${ChannelsPage} />`, container);
 	},
 	function teardownChannels() {
 		S.setRefreshChannelsPage(null);
@@ -763,5 +429,7 @@ registerPage(
 			S.channelEventUnsub();
 			S.setChannelEventUnsub(null);
 		}
+		var container = S.$("pageContent");
+		if (container) render(null, container);
 	},
 );
