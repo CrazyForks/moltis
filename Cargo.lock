@@ -2568,11 +2568,14 @@ dependencies = [
  "async-trait",
  "moltis-agents",
  "moltis-common",
+ "moltis-config",
  "moltis-cron",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "tokio",
  "tracing",
+ "url",
  "uuid",
 ]
 

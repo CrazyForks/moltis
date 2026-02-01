@@ -151,12 +151,105 @@ impl Default for TlsConfig {
     }
 }
 
-/// Tools configuration (exec, sandbox, policy).
+/// Tools configuration (exec, sandbox, policy, web).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ToolsConfig {
     pub exec: ExecConfig,
     pub policy: ToolPolicyConfig,
+    pub web: WebConfig,
+}
+
+/// Web tools configuration (search, fetch).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct WebConfig {
+    pub search: WebSearchConfig,
+    pub fetch: WebFetchConfig,
+}
+
+/// Search provider selection.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum SearchProvider {
+    #[default]
+    Brave,
+    Perplexity,
+}
+
+/// Web search tool configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct WebSearchConfig {
+    pub enabled: bool,
+    /// Search provider.
+    pub provider: SearchProvider,
+    /// Brave Search API key (overrides `BRAVE_API_KEY` env var).
+    pub api_key: Option<String>,
+    /// Maximum number of results to return (1-10).
+    pub max_results: u8,
+    /// HTTP request timeout in seconds.
+    pub timeout_seconds: u64,
+    /// In-memory cache TTL in minutes (0 to disable).
+    pub cache_ttl_minutes: u64,
+    /// Perplexity-specific settings.
+    pub perplexity: PerplexityConfig,
+}
+
+impl Default for WebSearchConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            provider: SearchProvider::default(),
+            api_key: None,
+            max_results: 5,
+            timeout_seconds: 30,
+            cache_ttl_minutes: 15,
+            perplexity: PerplexityConfig::default(),
+        }
+    }
+}
+
+/// Perplexity search provider configuration.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PerplexityConfig {
+    /// API key (overrides `PERPLEXITY_API_KEY` / `OPENROUTER_API_KEY` env vars).
+    pub api_key: Option<String>,
+    /// Base URL override. Auto-detected from key prefix if empty.
+    pub base_url: Option<String>,
+    /// Model to use.
+    pub model: Option<String>,
+}
+
+/// Web fetch tool configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct WebFetchConfig {
+    pub enabled: bool,
+    /// Maximum characters to return from fetched content.
+    pub max_chars: usize,
+    /// HTTP request timeout in seconds.
+    pub timeout_seconds: u64,
+    /// In-memory cache TTL in minutes (0 to disable).
+    pub cache_ttl_minutes: u64,
+    /// Maximum number of HTTP redirects to follow.
+    pub max_redirects: u8,
+    /// Use readability extraction for HTML pages.
+    pub readability: bool,
+}
+
+impl Default for WebFetchConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            max_chars: 50_000,
+            timeout_seconds: 30,
+            cache_ttl_minutes: 15,
+            max_redirects: 3,
+            readability: true,
+        }
+    }
 }
 
 /// Exec tool configuration.

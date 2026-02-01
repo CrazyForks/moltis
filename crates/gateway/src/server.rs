@@ -553,6 +553,15 @@ pub async fn start_gateway(
         let mut tool_registry = moltis_agents::tool_registry::ToolRegistry::new();
         tool_registry.register(Box::new(exec_tool));
         tool_registry.register(Box::new(cron_tool));
+        if let Some(t) =
+            moltis_tools::web_search::WebSearchTool::from_config(&config.tools.web.search)
+        {
+            tool_registry.register(Box::new(t));
+        }
+        if let Some(t) = moltis_tools::web_fetch::WebFetchTool::from_config(&config.tools.web.fetch)
+        {
+            tool_registry.register(Box::new(t));
+        }
         let live_chat = Arc::new(
             LiveChatService::new(
                 Arc::clone(&registry),

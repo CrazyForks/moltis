@@ -19,6 +19,8 @@ multiple LLM providers and communication channels, inspired by
   management
 - **Memory and knowledge base** — embeddings-powered long-term memory
 - **Skills and plugins** — extensible skill system and plugin architecture
+- **Web browsing** — web search (Brave, Perplexity) and URL fetching with
+  readability extraction and SSRF protection
 - **Scheduled tasks** — cron-based task execution
 - **OAuth flows** — built-in OAuth2 for provider authentication
 - **TLS support** — automatic self-signed certificate generation
