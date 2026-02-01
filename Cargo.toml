@@ -49,7 +49,7 @@ tracing               = "0.1"
 tracing-opentelemetry = "0.30"
 tracing-subscriber    = { features = ["env-filter", "json"], version = "0.3" }
 # CLI
-clap = { features = ["derive"], version = "4" }
+clap = { features = ["derive", "env"], version = "4" }
 # Database
 sqlx = { features = ["runtime-tokio", "sqlite"], version = "0.8" }
 # HTTP client

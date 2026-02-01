@@ -1,12 +1,16 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use argon2::{
-    Argon2,
-    password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString, rand_core::OsRng},
+use {
+    argon2::{
+        Argon2,
+        password_hash::{
+            PasswordHash, PasswordHasher, PasswordVerifier, SaltString, rand_core::OsRng,
+        },
+    },
+    serde::{Deserialize, Serialize},
+    sha2::{Digest, Sha256},
+    sqlx::SqlitePool,
 };
-use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
-use sqlx::SqlitePool;
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -55,7 +59,17 @@ pub struct CredentialStore {
 
 impl CredentialStore {
     /// Create a new store and initialize tables.
+    /// Reads `auth.disabled` from the discovered config file.
     pub async fn new(pool: SqlitePool) -> anyhow::Result<Self> {
+        let config = moltis_config::discover_and_load();
+        Self::with_config(pool, &config.auth).await
+    }
+
+    /// Create a new store with explicit auth config (avoids reading from disk).
+    pub async fn with_config(
+        pool: SqlitePool,
+        auth_config: &moltis_config::AuthConfig,
+    ) -> anyhow::Result<Self> {
         let store = Self {
             pool,
             setup_complete: AtomicBool::new(false),
@@ -64,6 +78,9 @@ impl CredentialStore {
         store.init().await?;
         let has = store.has_password().await?;
         store.setup_complete.store(has, Ordering::Relaxed);
+        store
+            .auth_disabled
+            .store(auth_config.disabled, Ordering::Relaxed);
         Ok(store)
     }
 
@@ -129,11 +146,17 @@ impl CredentialStore {
         self.auth_disabled.load(Ordering::Relaxed)
     }
 
+    fn persist_auth_disabled(&self, disabled: bool) -> anyhow::Result<()> {
+        let mut config = moltis_config::discover_and_load();
+        config.auth.disabled = disabled;
+        moltis_config::save_config(&config)?;
+        Ok(())
+    }
+
     async fn has_password(&self) -> anyhow::Result<bool> {
-        let row: Option<(i64,)> =
-            sqlx::query_as("SELECT id FROM auth_password WHERE id = 1")
-                .fetch_optional(&self.pool)
-                .await?;
+        let row: Option<(i64,)> = sqlx::query_as("SELECT id FROM auth_password WHERE id = 1")
+            .fetch_optional(&self.pool)
+            .await?;
         Ok(row.is_some())
     }
 
@@ -145,14 +168,13 @@ impl CredentialStore {
             anyhow::bail!("password already set");
         }
         let hash = hash_password(password)?;
-        sqlx::query(
-            "INSERT INTO auth_password (id, password_hash) VALUES (1, ?)",
-        )
-        .bind(&hash)
-        .execute(&self.pool)
-        .await?;
+        sqlx::query("INSERT INTO auth_password (id, password_hash) VALUES (1, ?)")
+            .bind(&hash)
+            .execute(&self.pool)
+            .await?;
         self.setup_complete.store(true, Ordering::Relaxed);
         self.auth_disabled.store(false, Ordering::Relaxed);
+        self.persist_auth_disabled(false)?;
         Ok(())
     }
 
@@ -169,11 +191,7 @@ impl CredentialStore {
     }
 
     /// Change the password (requires correct current password).
-    pub async fn change_password(
-        &self,
-        current: &str,
-        new_password: &str,
-    ) -> anyhow::Result<()> {
+    pub async fn change_password(&self, current: &str, new_password: &str) -> anyhow::Result<()> {
         if !self.verify_password(current).await? {
             anyhow::bail!("current password is incorrect");
         }
@@ -223,10 +241,9 @@ impl CredentialStore {
 
     /// Clean up expired sessions.
     pub async fn cleanup_expired_sessions(&self) -> anyhow::Result<u64> {
-        let result =
-            sqlx::query("DELETE FROM auth_sessions WHERE expires_at <= datetime('now')")
-                .execute(&self.pool)
-                .await?;
+        let result = sqlx::query("DELETE FROM auth_sessions WHERE expires_at <= datetime('now')")
+            .execute(&self.pool)
+            .await?;
         Ok(result.rows_affected())
     }
 
@@ -239,14 +256,13 @@ impl CredentialStore {
         let prefix = &raw_key[..raw_key.len().min(11)]; // "mk_" + 8 chars
         let hash = sha256_hex(&raw_key);
 
-        let result = sqlx::query(
-            "INSERT INTO api_keys (label, key_hash, key_prefix) VALUES (?, ?, ?)",
-        )
-        .bind(label)
-        .bind(&hash)
-        .bind(prefix)
-        .execute(&self.pool)
-        .await?;
+        let result =
+            sqlx::query("INSERT INTO api_keys (label, key_hash, key_prefix) VALUES (?, ?, ?)")
+                .bind(label)
+                .bind(&hash)
+                .bind(prefix)
+                .execute(&self.pool)
+                .await?;
         Ok((result.last_insert_rowid(), raw_key))
     }
 
@@ -282,12 +298,11 @@ impl CredentialStore {
     /// Verify a raw API key. Returns true if it matches a non-revoked key.
     pub async fn verify_api_key(&self, raw_key: &str) -> anyhow::Result<bool> {
         let hash = sha256_hex(raw_key);
-        let row: Option<(i64,)> = sqlx::query_as(
-            "SELECT id FROM api_keys WHERE key_hash = ? AND revoked_at IS NULL",
-        )
-        .bind(&hash)
-        .fetch_optional(&self.pool)
-        .await?;
+        let row: Option<(i64,)> =
+            sqlx::query_as("SELECT id FROM api_keys WHERE key_hash = ? AND revoked_at IS NULL")
+                .bind(&hash)
+                .fetch_optional(&self.pool)
+                .await?;
         Ok(row.is_some())
     }
 
@@ -311,6 +326,7 @@ impl CredentialStore {
             .await?;
         self.setup_complete.store(false, Ordering::Relaxed);
         self.auth_disabled.store(true, Ordering::Relaxed);
+        self.persist_auth_disabled(true)?;
         Ok(())
     }
 
@@ -371,19 +387,17 @@ impl CredentialStore {
 
     /// Load all passkey data blobs (for WebAuthn authentication).
     pub async fn load_all_passkey_data(&self) -> anyhow::Result<Vec<(i64, Vec<u8>)>> {
-        let rows: Vec<(i64, Vec<u8>)> =
-            sqlx::query_as("SELECT id, passkey_data FROM passkeys")
-                .fetch_all(&self.pool)
-                .await?;
+        let rows: Vec<(i64, Vec<u8>)> = sqlx::query_as("SELECT id, passkey_data FROM passkeys")
+            .fetch_all(&self.pool)
+            .await?;
         Ok(rows)
     }
 
     /// Check if any passkeys are registered (for login page UI).
     pub async fn has_passkeys(&self) -> anyhow::Result<bool> {
-        let row: Option<(i64,)> =
-            sqlx::query_as("SELECT id FROM passkeys LIMIT 1")
-                .fetch_optional(&self.pool)
-                .await?;
+        let row: Option<(i64,)> = sqlx::query_as("SELECT id FROM passkeys LIMIT 1")
+            .fetch_optional(&self.pool)
+            .await?;
         Ok(row.is_some())
     }
 }
@@ -391,10 +405,7 @@ impl CredentialStore {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 pub fn is_loopback(ip: &str) -> bool {
-    ip == "127.0.0.1"
-        || ip.starts_with("127.")
-        || ip == "::1"
-        || ip.starts_with("::ffff:127.")
+    ip == "127.0.0.1" || ip.starts_with("127.") || ip == "::1" || ip.starts_with("::ffff:127.")
 }
 
 fn hash_password(password: &str) -> anyhow::Result<String> {
@@ -416,8 +427,7 @@ fn verify_password(password: &str, hash_str: &str) -> bool {
 }
 
 fn generate_token() -> String {
-    use base64::Engine;
-    use rand::RngCore;
+    use {base64::Engine, rand::RngCore};
 
     let mut bytes = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut bytes);
@@ -673,6 +683,29 @@ mod tests {
         store.set_initial_password("newpass").await.unwrap();
         assert!(store.is_setup_complete());
         assert!(!store.is_auth_disabled());
+    }
+
+    #[tokio::test]
+    async fn test_auth_disabled_persists_across_restart() {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        let store = CredentialStore::new(pool.clone()).await.unwrap();
+
+        store.set_initial_password("testpass").await.unwrap();
+        store.reset_all().await.unwrap();
+        assert!(store.is_auth_disabled());
+
+        // Simulate restart: create a new CredentialStore from the same DB.
+        let store2 = CredentialStore::new(pool.clone()).await.unwrap();
+        assert!(store2.is_auth_disabled());
+        assert!(!store2.is_setup_complete());
+
+        // Re-enable auth.
+        store2.set_initial_password("newpass").await.unwrap();
+
+        // Another restart: disabled flag should be cleared.
+        let store3 = CredentialStore::new(pool).await.unwrap();
+        assert!(!store3.is_auth_disabled());
+        assert!(store3.is_setup_complete());
     }
 
     #[tokio::test]

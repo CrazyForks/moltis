@@ -45,6 +45,12 @@ serves them in two modes:
 When editing JavaScript files, run `biome check --write` to lint and format
 them. No separate asset build step is required.
 
+**HTML in JS**: Avoid creating HTML elements from JavaScript. Instead, add
+hidden elements in `index.html` (with `style="display:none"`) and have JS
+toggle their visibility. This keeps markup in HTML where it belongs and makes
+the structure easier to inspect. Preact components (HTM templates) are the
+exception — they use `html` tagged templates by design.
+
 ## Testing
 
 ```bash

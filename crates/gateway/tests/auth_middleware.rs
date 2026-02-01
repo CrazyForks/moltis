@@ -14,8 +14,19 @@ use moltis_gateway::{
 
 /// Start a test server with a credential store (auth enabled).
 async fn start_auth_server() -> (SocketAddr, Arc<CredentialStore>) {
+    let (addr, store, _state) = start_auth_server_with_state().await;
+    (addr, store)
+}
+
+/// Start a test server and also return the GatewayState for setup code tests.
+async fn start_auth_server_with_state() -> (SocketAddr, Arc<CredentialStore>, Arc<GatewayState>) {
     let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
-    let cred_store = Arc::new(CredentialStore::new(pool).await.unwrap());
+    let auth_config = moltis_config::AuthConfig::default();
+    let cred_store = Arc::new(
+        CredentialStore::with_config(pool, &auth_config)
+            .await
+            .unwrap(),
+    );
 
     let resolved_auth = auth::resolve_auth(None, None);
     let services = GatewayServices::noop();
@@ -27,6 +38,7 @@ async fn start_auth_server() -> (SocketAddr, Arc<CredentialStore>) {
         Some(Arc::clone(&cred_store)),
         None,
     );
+    let state_clone = Arc::clone(&state);
     let methods = Arc::new(MethodRegistry::new());
     let app = build_gateway_app(state, methods);
 
@@ -40,7 +52,7 @@ async fn start_auth_server() -> (SocketAddr, Arc<CredentialStore>) {
         .await
         .unwrap();
     });
-    (addr, cred_store)
+    (addr, cred_store, state_clone)
 }
 
 /// Start a test server without a credential store (no auth).
@@ -165,9 +177,7 @@ async fn public_routes_accessible_without_auth() {
     store.set_initial_password("testpass123").await.unwrap();
 
     // /health is always public.
-    let resp = reqwest::get(format!("http://{addr}/health"))
-        .await
-        .unwrap();
+    let resp = reqwest::get(format!("http://{addr}/health")).await.unwrap();
     assert_eq!(resp.status(), 200);
 
     // /api/auth/status is public.
@@ -228,7 +238,7 @@ async fn reset_auth_removes_all_authentication() {
         .unwrap();
     assert_eq!(resp.status(), 200);
 
-    // /api/auth/status should report authenticated: true (no login needed).
+    // /api/auth/status should report authenticated: true, auth_disabled: true.
     let resp = reqwest::get(format!("http://{addr}/api/auth/status"))
         .await
         .unwrap();
@@ -236,6 +246,66 @@ async fn reset_auth_removes_all_authentication() {
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["authenticated"], true);
     assert_eq!(body["setup_required"], false);
+    assert_eq!(body["auth_disabled"], true);
+}
+
+/// After resetting auth then re-setting up, auth_disabled is cleared.
+/// Reset generates a new setup code that must be provided.
+#[cfg(feature = "web-ui")]
+#[tokio::test]
+async fn reenable_auth_after_reset() {
+    let (addr, store, state) = start_auth_server_with_state().await;
+    store.set_initial_password("testpass123").await.unwrap();
+    let token = store.create_session().await.unwrap();
+
+    // Reset auth.
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!("http://{addr}/api/auth/reset"))
+        .header("Cookie", format!("moltis_session={token}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+
+    // Reset should have generated a new setup code.
+    let code = state.setup_code.read().await.clone().unwrap();
+
+    // Setup without code should fail.
+    let resp = client
+        .post(format!("http://{addr}/api/auth/setup"))
+        .header("Content-Type", "application/json")
+        .body(r#"{"password":"newpass123"}"#)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 403);
+
+    // Re-enable: set up a new password with the correct setup code.
+    let resp = client
+        .post(format!("http://{addr}/api/auth/setup"))
+        .header("Content-Type", "application/json")
+        .body(format!(
+            r#"{{"password":"newpass123","setup_code":"{code}"}}"#
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+
+    // Status should show auth_disabled: false, authenticated depends on cookie.
+    let resp = reqwest::get(format!("http://{addr}/api/auth/status"))
+        .await
+        .unwrap();
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["auth_disabled"], false);
+    assert_eq!(body["setup_required"], false);
+
+    // Protected endpoints require auth again.
+    let resp = reqwest::get(format!("http://{addr}/api/bootstrap"))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 401);
 }
 
 /// Reset without session returns 401.
@@ -271,4 +341,120 @@ async fn revoked_api_key_returns_401() {
         .await
         .unwrap();
     assert_eq!(resp.status(), 401);
+}
+
+// ── Setup code tests ─────────────────────────────────────────────────────────
+
+/// Setup without code when code is required returns 403.
+#[cfg(feature = "web-ui")]
+#[tokio::test]
+async fn setup_without_code_when_required_returns_403() {
+    let (addr, _store, state) = start_auth_server_with_state().await;
+    *state.setup_code.write().await = Some("123456".to_string());
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!("http://{addr}/api/auth/setup"))
+        .header("Content-Type", "application/json")
+        .body(r#"{"password":"testpass123"}"#)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 403);
+}
+
+/// Setup with wrong code returns 403.
+#[cfg(feature = "web-ui")]
+#[tokio::test]
+async fn setup_with_wrong_code_returns_403() {
+    let (addr, _store, state) = start_auth_server_with_state().await;
+    *state.setup_code.write().await = Some("123456".to_string());
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!("http://{addr}/api/auth/setup"))
+        .header("Content-Type", "application/json")
+        .body(r#"{"password":"testpass123","setup_code":"999999"}"#)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 403);
+}
+
+/// Setup with correct code succeeds.
+#[cfg(feature = "web-ui")]
+#[tokio::test]
+async fn setup_with_correct_code_succeeds() {
+    let (addr, _store, state) = start_auth_server_with_state().await;
+    *state.setup_code.write().await = Some("123456".to_string());
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!("http://{addr}/api/auth/setup"))
+        .header("Content-Type", "application/json")
+        .body(r#"{"password":"testpass123","setup_code":"123456"}"#)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+
+    // Code should be cleared after successful setup.
+    assert!(state.setup_code.read().await.is_none());
+}
+
+/// Setup code not required when already set up.
+#[cfg(feature = "web-ui")]
+#[tokio::test]
+async fn setup_code_not_required_when_already_setup() {
+    let (addr, store, _state) = start_auth_server_with_state().await;
+    store.set_initial_password("testpass123").await.unwrap();
+
+    let resp = reqwest::get(format!("http://{addr}/api/auth/status"))
+        .await
+        .unwrap();
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["setup_code_required"], false);
+}
+
+/// Status reports setup_code_required when code is set.
+#[cfg(feature = "web-ui")]
+#[tokio::test]
+async fn status_reports_setup_code_required() {
+    let (addr, _store, state) = start_auth_server_with_state().await;
+    *state.setup_code.write().await = Some("654321".to_string());
+
+    let resp = reqwest::get(format!("http://{addr}/api/auth/status"))
+        .await
+        .unwrap();
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["setup_code_required"], true);
+    assert_eq!(body["setup_required"], true);
+}
+
+/// Setup code not required when auth is disabled.
+#[cfg(feature = "web-ui")]
+#[tokio::test]
+async fn setup_code_not_required_when_auth_disabled() {
+    let (addr, store, _state) = start_auth_server_with_state().await;
+    store.set_initial_password("testpass123").await.unwrap();
+    let token = store.create_session().await.unwrap();
+
+    // Reset auth to disable it.
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!("http://{addr}/api/auth/reset"))
+        .header("Cookie", format!("moltis_session={token}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+
+    let resp = reqwest::get(format!("http://{addr}/api/auth/status"))
+        .await
+        .unwrap();
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["auth_disabled"], true);
+    // When auth is disabled, setup_code_required is not in the response
+    // (the handler returns early).
+    assert_eq!(body.get("setup_code_required"), None);
 }

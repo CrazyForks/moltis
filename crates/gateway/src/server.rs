@@ -76,6 +76,7 @@ pub fn build_gateway_app(state: Arc<GatewayState>, methods: Arc<MethodRegistry>)
         let auth_state = AuthState {
             credential_store: Arc::clone(cred_store),
             webauthn_state: state.webauthn_state.clone(),
+            gateway_state: Arc::clone(&state),
         };
         router = router.nest("/api/auth", auth_router().with_state(auth_state));
     }
@@ -133,7 +134,14 @@ pub async fn start_gateway(
     bind: &str,
     port: u16,
     log_buffer: Option<crate::logs::LogBuffer>,
+    config_dir: Option<std::path::PathBuf>,
+    data_dir: Option<std::path::PathBuf>,
 ) -> anyhow::Result<()> {
+    // Apply config directory override before loading config.
+    if let Some(dir) = config_dir {
+        moltis_config::set_config_dir(dir);
+    }
+
     // Resolve auth from environment (MOLTIS_TOKEN / MOLTIS_PASSWORD).
     let token = std::env::var("MOLTIS_TOKEN").ok();
     let password = std::env::var("MOLTIS_PASSWORD").ok();
@@ -182,9 +190,11 @@ pub async fn start_gateway(
     }
 
     // Initialize data directory and SQLite database.
-    let data_dir = directories::ProjectDirs::from("", "", "moltis")
-        .map(|d| d.data_dir().to_path_buf())
-        .unwrap_or_else(|| std::path::PathBuf::from(".moltis"));
+    let data_dir = data_dir.unwrap_or_else(|| {
+        directories::ProjectDirs::from("", "", "moltis")
+            .map(|d| d.data_dir().to_path_buf())
+            .unwrap_or_else(|| std::path::PathBuf::from(".moltis"))
+    });
     std::fs::create_dir_all(&data_dir).ok();
 
     // Enable log persistence so entries survive restarts.
@@ -214,9 +224,12 @@ pub async fn start_gateway(
 
     // Initialize WebAuthn state for passkey support.
     // RP ID defaults to "localhost"; override with MOLTIS_WEBAUTHN_RP_ID.
-    let rp_id = std::env::var("MOLTIS_WEBAUTHN_RP_ID")
-        .unwrap_or_else(|_| "localhost".into());
-    let default_scheme = if config.tls.enabled { "https" } else { "http" };
+    let rp_id = std::env::var("MOLTIS_WEBAUTHN_RP_ID").unwrap_or_else(|_| "localhost".into());
+    let default_scheme = if config.tls.enabled {
+        "https"
+    } else {
+        "http"
+    };
     let rp_origin_str = std::env::var("MOLTIS_WEBAUTHN_ORIGIN")
         .unwrap_or_else(|_| format!("{default_scheme}://{rp_id}:{port}"));
     let webauthn_state = match webauthn_rs::prelude::Url::parse(&rp_origin_str) {
@@ -234,12 +247,12 @@ pub async fn start_gateway(
     };
 
     // If MOLTIS_PASSWORD is set and no password in DB yet, migrate it.
-    if let Some(ref pw) = password {
-        if !credential_store.is_setup_complete() {
-            info!("migrating MOLTIS_PASSWORD env var to credential store");
-            if let Err(e) = credential_store.set_initial_password(pw).await {
-                tracing::warn!("failed to migrate env password: {e}");
-            }
+    if let Some(ref pw) = password
+        && !credential_store.is_setup_complete()
+    {
+        info!("migrating MOLTIS_PASSWORD env var to credential store");
+        if let Err(e) = credential_store.set_initial_password(pw).await {
+            tracing::warn!("failed to migrate env password: {e}");
         }
     }
 
@@ -516,6 +529,17 @@ pub async fn start_gateway(
         Some(Arc::clone(&credential_store)),
         webauthn_state,
     );
+
+    // Generate a one-time setup code if setup is pending and auth is not disabled.
+    let setup_code_display =
+        if !credential_store.is_setup_complete() && !credential_store.is_auth_disabled() {
+            let code = crate::auth_routes::generate_setup_code();
+            *state.setup_code.write().await = Some(code.clone());
+            Some(code)
+        } else {
+            None
+        };
+
     // Populate the deferred reference so cron callbacks can reach the gateway.
     let _ = deferred_state.set(Arc::clone(&state));
 
@@ -668,6 +692,12 @@ pub async fn start_gateway(
     // Warn when no sandbox backend is available.
     if sandbox_router.backend_name() == "none" {
         lines.push("⚠ no container runtime found; commands run on host".into());
+    }
+    // Display setup code if one was generated.
+    if let Some(ref code) = setup_code_display {
+        lines.push(format!(
+            "setup code: {code} (enter this in the browser to set your password)"
+        ));
     }
     #[cfg(feature = "tls")]
     if tls_active {

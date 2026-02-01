@@ -96,27 +96,24 @@ pub async fn handle_connection(
     // back to legacy env-var auth.
     let mut authenticated = is_loopback;
 
-    if !authenticated {
-        if let Some(ref cred_store) = state.credential_store {
-            if cred_store.is_setup_complete() {
-                // Check API key.
-                if let Some(ref api_key) = params.auth.as_ref().and_then(|a| a.api_key.clone()) {
-                    if cred_store.verify_api_key(api_key).await.unwrap_or(false) {
-                        authenticated = true;
-                    }
-                }
-                // Check password against DB hash.
-                if !authenticated {
-                    if let Some(ref pw) = params.auth.as_ref().and_then(|a| a.password.clone()) {
-                        if cred_store.verify_password(pw).await.unwrap_or(false) {
-                            authenticated = true;
-                        }
-                    }
-                }
-            } else {
-                // Setup not complete yet — allow all connections.
+    if !authenticated && let Some(ref cred_store) = state.credential_store {
+        if cred_store.is_setup_complete() {
+            // Check API key.
+            if let Some(ref api_key) = params.auth.as_ref().and_then(|a| a.api_key.clone())
+                && cred_store.verify_api_key(api_key).await.unwrap_or(false)
+            {
                 authenticated = true;
             }
+            // Check password against DB hash.
+            if !authenticated
+                && let Some(ref pw) = params.auth.as_ref().and_then(|a| a.password.clone())
+                && cred_store.verify_password(pw).await.unwrap_or(false)
+            {
+                authenticated = true;
+            }
+        } else {
+            // Setup not complete yet — allow all connections.
+            authenticated = true;
         }
     }
 

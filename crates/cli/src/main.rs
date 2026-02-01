@@ -30,6 +30,12 @@ enum Commands {
         bind: String,
         #[arg(long, default_value_t = 18789)]
         port: u16,
+        /// Custom config directory (overrides default ~/.config/moltis/).
+        #[arg(long, env = "MOLTIS_CONFIG_DIR")]
+        config_dir: Option<std::path::PathBuf>,
+        /// Custom data directory (overrides default data dir).
+        #[arg(long, env = "MOLTIS_DATA_DIR")]
+        data_dir: Option<std::path::PathBuf>,
     },
     /// Invoke an agent directly.
     Agent {
@@ -244,8 +250,14 @@ async fn main() -> anyhow::Result<()> {
     info!(version = env!("CARGO_PKG_VERSION"), "moltis starting");
 
     match cli.command {
-        Commands::Gateway { bind, port } => {
-            moltis_gateway::server::start_gateway(&bind, port, log_buffer).await
+        Commands::Gateway {
+            bind,
+            port,
+            config_dir,
+            data_dir,
+        } => {
+            moltis_gateway::server::start_gateway(&bind, port, log_buffer, config_dir, data_dir)
+                .await
         },
         Commands::Agent { message, .. } => {
             let result = moltis_agents::runner::run_agent("default", "main", &message).await?;

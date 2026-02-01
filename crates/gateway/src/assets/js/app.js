@@ -58,12 +58,20 @@ fetch("/api/auth/status")
 			mount("/login");
 			return;
 		}
+		if (auth.auth_disabled) {
+			showAuthDisabledBanner();
+		}
 		startApp();
 	})
 	.catch(() => {
 		// If auth check fails, proceed anyway (backward compat).
 		startApp();
 	});
+
+function showAuthDisabledBanner() {
+	var el = document.getElementById("authDisabledBanner");
+	if (el) el.style.display = "";
+}
 
 function applyModels(models) {
 	S.setModels(models || []);

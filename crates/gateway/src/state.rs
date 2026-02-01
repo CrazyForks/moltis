@@ -171,6 +171,9 @@ pub struct GatewayState {
     /// send, we queue the reply target so the "final" response can be routed
     /// back to the originating channel.
     pub channel_reply_queue: RwLock<HashMap<String, Vec<ChannelReplyTarget>>>,
+    /// One-time setup code displayed at startup, required during initial setup.
+    /// Cleared after successful setup.
+    pub setup_code: RwLock<Option<String>>,
 }
 
 impl GatewayState {
@@ -223,6 +226,7 @@ impl GatewayState {
             active_projects: RwLock::new(HashMap::new()),
             sandbox_router,
             channel_reply_queue: RwLock::new(HashMap::new()),
+            setup_code: RwLock::new(None),
         })
     }
 

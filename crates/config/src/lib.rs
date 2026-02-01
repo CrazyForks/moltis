@@ -11,6 +11,9 @@ pub mod migrate;
 pub mod schema;
 
 pub use {
-    loader::{config_dir, discover_and_load, find_or_default_config_path, save_config},
-    schema::{AgentIdentity, MoltisConfig, UserProfile},
+    loader::{
+        clear_config_dir, config_dir, discover_and_load, find_or_default_config_path, save_config,
+        set_config_dir,
+    },
+    schema::{AgentIdentity, AuthConfig, MoltisConfig, UserProfile},
 };

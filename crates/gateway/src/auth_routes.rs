@@ -12,6 +12,7 @@ use crate::{
     auth::CredentialStore,
     auth_middleware::{AuthSession, SESSION_COOKIE},
     auth_webauthn::WebAuthnState,
+    state::GatewayState,
 };
 
 /// Auth-related application state.
@@ -19,6 +20,7 @@ use crate::{
 pub struct AuthState {
     pub credential_store: Arc<CredentialStore>,
     pub webauthn_state: Option<Arc<WebAuthnState>>,
+    pub gateway_state: Arc<GatewayState>,
 }
 
 impl axum::extract::FromRef<AuthState> for Arc<CredentialStore> {
@@ -35,15 +37,24 @@ pub fn auth_router() -> axum::Router<AuthState> {
         .route("/login", post(login_handler))
         .route("/logout", post(logout_handler))
         .route("/password/change", post(change_password_handler))
-        .route("/api-keys", get(list_api_keys_handler).post(create_api_key_handler))
+        .route(
+            "/api-keys",
+            get(list_api_keys_handler).post(create_api_key_handler),
+        )
         .route("/api-keys/{id}", delete(revoke_api_key_handler))
         .route("/passkeys", get(list_passkeys_handler))
         .route(
             "/passkeys/{id}",
             delete(remove_passkey_handler).patch(rename_passkey_handler),
         )
-        .route("/passkey/register/begin", post(passkey_register_begin_handler))
-        .route("/passkey/register/finish", post(passkey_register_finish_handler))
+        .route(
+            "/passkey/register/begin",
+            post(passkey_register_begin_handler),
+        )
+        .route(
+            "/passkey/register/finish",
+            post(passkey_register_finish_handler),
+        )
         .route("/passkey/auth/begin", post(passkey_auth_begin_handler))
         .route("/passkey/auth/finish", post(passkey_auth_finish_handler))
         .route("/reset", post(reset_auth_handler))
@@ -55,12 +66,15 @@ async fn status_handler(
     State(state): State<AuthState>,
     headers: axum::http::HeaderMap,
 ) -> impl IntoResponse {
+    let auth_disabled = state.credential_store.is_auth_disabled();
+
     // When auth has been explicitly disabled, tell the frontend no auth is needed.
-    if state.credential_store.is_auth_disabled() {
+    if auth_disabled {
         return Json(serde_json::json!({
             "setup_required": false,
             "has_passkeys": false,
             "authenticated": true,
+            "auth_disabled": true,
         }));
     }
 
@@ -82,10 +96,14 @@ async fn status_handler(
         None => false,
     };
 
+    let setup_code_required = state.gateway_state.setup_code.read().await.is_some();
+
     Json(serde_json::json!({
         "setup_required": setup_required,
         "has_passkeys": has_passkeys,
         "authenticated": authenticated,
+        "auth_disabled": false,
+        "setup_code_required": setup_code_required,
     }))
 }
 
@@ -94,6 +112,7 @@ async fn status_handler(
 #[derive(serde::Deserialize)]
 struct SetupRequest {
     password: String,
+    setup_code: Option<String>,
 }
 
 async fn setup_handler(
@@ -104,6 +123,14 @@ async fn setup_handler(
         return (StatusCode::FORBIDDEN, "setup already completed").into_response();
     }
 
+    // Validate setup code if one was generated at startup.
+    let expected_code = state.gateway_state.setup_code.read().await.clone();
+    if let Some(ref expected) = expected_code
+        && body.setup_code.as_deref() != Some(expected)
+    {
+        return (StatusCode::FORBIDDEN, "invalid or missing setup code").into_response();
+    }
+
     if body.password.len() < 8 {
         return (
             StatusCode::BAD_REQUEST,
@@ -112,13 +139,20 @@ async fn setup_handler(
             .into_response();
     }
 
-    if let Err(e) = state.credential_store.set_initial_password(&body.password).await {
+    if let Err(e) = state
+        .credential_store
+        .set_initial_password(&body.password)
+        .await
+    {
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("failed to set password: {e}"),
         )
             .into_response();
     }
+
+    // Clear setup code after successful setup.
+    *state.gateway_state.setup_code.write().await = None;
 
     // Create session and set cookie.
     match state.credential_store.create_session().await {
@@ -179,7 +213,13 @@ async fn reset_auth_handler(
     State(state): State<AuthState>,
 ) -> impl IntoResponse {
     match state.credential_store.reset_all().await {
-        Ok(()) => clear_session_response(),
+        Ok(()) => {
+            // Generate a new setup code so the re-setup flow is protected.
+            let code = generate_setup_code();
+            tracing::info!("setup code: {code} (enter this in the browser to set your password)");
+            *state.gateway_state.setup_code.write().await = Some(code);
+            clear_session_response()
+        },
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
 }
@@ -247,7 +287,11 @@ async fn create_api_key_handler(
     if body.label.trim().is_empty() {
         return (StatusCode::BAD_REQUEST, "label is required").into_response();
     }
-    match state.credential_store.create_api_key(body.label.trim()).await {
+    match state
+        .credential_store
+        .create_api_key(body.label.trim())
+        .await
+    {
         Ok((id, key)) => Json(serde_json::json!({ "id": id, "key": key })).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
@@ -310,10 +354,15 @@ async fn rename_passkey_handler(
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
+/// Generate a random 6-digit numeric setup code.
+pub fn generate_setup_code() -> String {
+    use rand::Rng;
+    rand::thread_rng().gen_range(100_000..1_000_000).to_string()
+}
+
 fn session_response(token: String) -> axum::response::Response {
-    let cookie = format!(
-        "{SESSION_COOKIE}={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=2592000"
-    );
+    let cookie =
+        format!("{SESSION_COOKIE}={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=2592000");
     (
         StatusCode::OK,
         [(axum::http::header::SET_COOKIE, cookie)],
@@ -323,9 +372,7 @@ fn session_response(token: String) -> axum::response::Response {
 }
 
 fn clear_session_response() -> axum::response::Response {
-    let cookie = format!(
-        "{SESSION_COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0"
-    );
+    let cookie = format!("{SESSION_COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0");
     (
         StatusCode::OK,
         [(axum::http::header::SET_COOKIE, cookie)],
@@ -403,9 +450,7 @@ async fn passkey_register_finish_handler(
 
 // ── Passkey authentication (no session required) ─────────────────────────────
 
-async fn passkey_auth_begin_handler(
-    State(state): State<AuthState>,
-) -> impl IntoResponse {
+async fn passkey_auth_begin_handler(State(state): State<AuthState>) -> impl IntoResponse {
     let Some(ref wa) = state.webauthn_state else {
         return (StatusCode::NOT_IMPLEMENTED, "passkeys not configured").into_response();
     };
@@ -448,7 +493,7 @@ async fn passkey_auth_finish_handler(
     }
 }
 
-fn extract_session_token<'a>(headers: &'a axum::http::HeaderMap) -> Option<&'a str> {
+fn extract_session_token(headers: &axum::http::HeaderMap) -> Option<&str> {
     let cookie_header = headers
         .get(axum::http::header::COOKIE)
         .and_then(|v| v.to_str().ok())?;

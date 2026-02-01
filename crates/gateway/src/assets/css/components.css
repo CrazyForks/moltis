@@ -1055,6 +1055,30 @@
     font-weight: 500;
   }
 
+  .auth-disabled-banner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 6px 16px;
+    background: var(--error, #e53935);
+    color: #fff;
+    font-size: 0.82rem;
+    font-weight: 500;
+    flex-shrink: 0;
+  }
+
+  .auth-disabled-setup {
+    color: #fff;
+    text-decoration: underline;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .auth-disabled-setup:hover {
+    opacity: 0.85;
+  }
+
   .settings-danger-zone {
     margin-top: 2rem;
     border-top: 1px solid var(--error, #e53935);

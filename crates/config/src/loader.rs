@@ -1,4 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::Mutex,
+};
 
 use tracing::{debug, warn};
 
@@ -6,6 +9,26 @@ use crate::{env_subst::substitute_env, schema::MoltisConfig};
 
 /// Standard config file names, checked in order.
 const CONFIG_FILENAMES: &[&str] = &["moltis.toml", "moltis.yaml", "moltis.yml", "moltis.json"];
+
+/// Override for the config directory, set via `set_config_dir()`.
+static CONFIG_DIR_OVERRIDE: Mutex<Option<PathBuf>> = Mutex::new(None);
+
+/// Set a custom config directory. When set, config discovery only looks in
+/// this directory (project-local and user-global paths are skipped).
+/// Can be called multiple times (e.g. in tests) — each call replaces the
+/// previous override.
+pub fn set_config_dir(path: PathBuf) {
+    *CONFIG_DIR_OVERRIDE.lock().unwrap() = Some(path);
+}
+
+/// Clear the config directory override, restoring default discovery.
+pub fn clear_config_dir() {
+    *CONFIG_DIR_OVERRIDE.lock().unwrap() = None;
+}
+
+fn config_dir_override() -> Option<PathBuf> {
+    CONFIG_DIR_OVERRIDE.lock().unwrap().clone()
+}
 
 /// Load config from the given path (any supported format).
 pub fn load_config(path: &Path) -> anyhow::Result<MoltisConfig> {
@@ -46,7 +69,21 @@ pub fn discover_and_load() -> MoltisConfig {
 }
 
 /// Find the first config file in standard locations.
+///
+/// When a config dir override is set, only that directory is searched —
+/// project-local and user-global paths are skipped for isolation.
 fn find_config_file() -> Option<PathBuf> {
+    if let Some(dir) = config_dir_override() {
+        for name in CONFIG_FILENAMES {
+            let p = dir.join(name);
+            if p.exists() {
+                return Some(p);
+            }
+        }
+        // Override is set — don't fall through to other locations.
+        return None;
+    }
+
     // Project-local
     for name in CONFIG_FILENAMES {
         let p = PathBuf::from(name);
@@ -69,8 +106,11 @@ fn find_config_file() -> Option<PathBuf> {
     None
 }
 
-/// Returns the user-global config directory (`~/.config/moltis/`).
+/// Returns the config directory (override or user-global `~/.config/moltis/`).
 pub fn config_dir() -> Option<PathBuf> {
+    if let Some(dir) = config_dir_override() {
+        return Some(dir);
+    }
     directories::ProjectDirs::from("", "", "moltis").map(|d| d.config_dir().to_path_buf())
 }
 

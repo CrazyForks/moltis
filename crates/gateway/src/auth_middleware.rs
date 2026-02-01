@@ -34,12 +34,12 @@ where
 
         let token = parse_cookie(cookie_header, SESSION_COOKIE);
 
-        if let Some(token) = token {
-            if store.validate_session(token).await.unwrap_or(false) {
-                return Ok(AuthSession(AuthIdentity {
-                    method: AuthMethod::Password,
-                }));
-            }
+        if let Some(token) = token
+            && store.validate_session(token).await.unwrap_or(false)
+        {
+            return Ok(AuthSession(AuthIdentity {
+                method: AuthMethod::Password,
+            }));
         }
 
         Err((StatusCode::UNAUTHORIZED, "not authenticated"))
@@ -78,10 +78,10 @@ pub async fn require_auth(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
 
-    if let Some(token) = parse_cookie(cookie_header, SESSION_COOKIE) {
-        if cred_store.validate_session(token).await.unwrap_or(false) {
-            return next.run(request).await;
-        }
+    if let Some(token) = parse_cookie(cookie_header, SESSION_COOKIE)
+        && cred_store.validate_session(token).await.unwrap_or(false)
+    {
+        return next.run(request).await;
     }
 
     // Check Authorization: Bearer <api_key>.
@@ -89,12 +89,10 @@ pub async fn require_auth(
         .headers()
         .get(axum::http::header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
+        && let Some(key) = auth_header.strip_prefix("Bearer ")
+        && cred_store.verify_api_key(key).await.unwrap_or(false)
     {
-        if let Some(key) = auth_header.strip_prefix("Bearer ") {
-            if cred_store.verify_api_key(key).await.unwrap_or(false) {
-                return next.run(request).await;
-            }
-        }
+        return next.run(request).await;
     }
 
     (
@@ -104,15 +102,14 @@ pub async fn require_auth(
         .into_response()
 }
 
-
 /// Parse a specific cookie value from a Cookie header string.
 pub fn parse_cookie<'a>(header: &'a str, name: &str) -> Option<&'a str> {
     for part in header.split(';') {
         let part = part.trim();
-        if let Some(value) = part.strip_prefix(name) {
-            if let Some(value) = value.strip_prefix('=') {
-                return Some(value);
-            }
+        if let Some(value) = part.strip_prefix(name)
+            && let Some(value) = value.strip_prefix('=')
+        {
+            return Some(value);
         }
     }
     None

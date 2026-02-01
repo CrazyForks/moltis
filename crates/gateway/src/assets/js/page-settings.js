@@ -350,6 +350,9 @@ function IdentitySection() {
 // ── Security section ─────────────────────────────────────────
 
 function SecuritySection() {
+	var [authDisabled, setAuthDisabled] = useState(false);
+	var [authLoading, setAuthLoading] = useState(true);
+
 	var [curPw, setCurPw] = useState("");
 	var [newPw, setNewPw] = useState("");
 	var [confirmPw, setConfirmPw] = useState("");
@@ -370,6 +373,17 @@ function SecuritySection() {
 	var [akLoading, setAkLoading] = useState(true);
 
 	useEffect(() => {
+		fetch("/api/auth/status")
+			.then((r) => (r.ok ? r.json() : null))
+			.then((d) => {
+				if (d && d.auth_disabled) setAuthDisabled(true);
+				setAuthLoading(false);
+				rerender();
+			})
+			.catch(() => {
+				setAuthLoading(false);
+				rerender();
+			});
 		fetch("/api/auth/passkeys")
 			.then((r) => (r.ok ? r.json() : { passkeys: [] }))
 			.then((d) => {
@@ -567,7 +581,7 @@ function SecuritySection() {
 		fetch("/api/auth/reset", { method: "POST" })
 			.then((r) => {
 				if (r.ok) {
-					window.location.href = "/";
+					window.location.reload();
 				} else {
 					return r.text().then((t) => {
 						setPwErr(t);
@@ -583,6 +597,30 @@ function SecuritySection() {
 				setResetBusy(false);
 				rerender();
 			});
+	}
+
+	if (authLoading) {
+		return html`<div class="settings-content">
+			<h2 class="settings-title">Security</h2>
+			<p class="settings-hint">Loading...</p>
+		</div>`;
+	}
+
+	if (authDisabled) {
+		return html`<div class="settings-content">
+			<h2 class="settings-title">Security</h2>
+			<div class="settings-danger-box" style="margin-top:1rem">
+				<strong style="color:var(--error, #e53935)">Authentication is disabled</strong>
+				<p class="settings-hint" style="margin-top:0.5rem">
+					Anyone with network access can control moltis and your computer.
+					Set up a password to protect your instance.
+				</p>
+				<button type="button" class="settings-btn" style="margin-top:0.75rem"
+					onClick=${() => {
+						window.location.href = "/setup";
+					}}>Set up authentication</button>
+			</div>
+		</div>`;
 	}
 
 	return html`<div class="settings-content">
