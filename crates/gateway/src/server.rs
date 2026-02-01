@@ -752,7 +752,7 @@ async fn spa_fallback(uri: axum::http::Uri) -> impl IntoResponse {
         // Production: inject content-hash versioned URLs for immutable caching
         static HASH: std::sync::LazyLock<String> = std::sync::LazyLock::new(asset_content_hash);
         let versioned = format!("/assets/v/{}/", *HASH);
-        raw.replace("__BUILD_TS__", &*HASH)
+        raw.replace("__BUILD_TS__", &HASH)
             .replace("/assets/", &versioned)
     };
 
@@ -1285,10 +1285,10 @@ fn read_asset(path: &str) -> Option<Vec<u8>> {
     if let Some(dir) = FS_ASSETS_DIR.as_ref() {
         let file_path = dir.join(path);
         // Prevent path traversal
-        if file_path.starts_with(dir) {
-            if let Ok(bytes) = std::fs::read(&file_path) {
-                return Some(bytes);
-            }
+        if file_path.starts_with(dir)
+            && let Ok(bytes) = std::fs::read(&file_path)
+        {
+            return Some(bytes);
         }
     }
     ASSETS.get_file(path).map(|f| f.contents().to_vec())

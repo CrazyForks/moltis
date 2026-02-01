@@ -105,8 +105,9 @@ and any open items.
 
 Follow conventional commit format: `feat|fix|refactor|docs|test|chore(scope): description`
 
-Run all checks before committing:
-1. `cargo check`
-2. `cargo +nightly clippy`
-3. `cargo test`
-4. `biome check --write` (when JS files were modified)
+**You MUST run all checks before every commit and fix any issues they report:**
+1. `cargo +nightly fmt --all` — format all Rust code (CI runs `cargo fmt --all -- --check`)
+2. `cargo +nightly clippy --all-targets --all-features -- -D warnings` — run linter (must pass with zero warnings)
+3. `cargo test --all-features` — run all tests
+4. `biome check --write` (when JS files were modified; CI runs `biome ci`)
+5. `taplo fmt` (when TOML files were modified)

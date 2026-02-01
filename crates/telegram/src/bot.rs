@@ -101,7 +101,7 @@ pub async fn start_polling(
 
             let result = bot
                 .get_updates()
-                .offset(offset as i32)
+                .offset(offset)
                 .timeout(30)
                 .allowed_updates(vec![AllowedUpdate::Message, AllowedUpdate::CallbackQuery])
                 .await;

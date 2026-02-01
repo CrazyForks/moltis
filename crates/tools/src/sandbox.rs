@@ -604,7 +604,7 @@ fn select_backend(config: SandboxConfig) -> Arc<dyn Sandbox> {
         "docker" => Arc::new(DockerSandbox::new(config)),
         #[cfg(target_os = "macos")]
         "apple-container" => Arc::new(AppleContainerSandbox::new(config)),
-        "auto" | _ => auto_detect_backend(config),
+        _ => auto_detect_backend(config),
     }
 }
 

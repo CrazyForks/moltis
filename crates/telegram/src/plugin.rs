@@ -148,12 +148,11 @@ impl ChannelPlugin for TelegramPlugin {
 impl ChannelStatus for TelegramPlugin {
     async fn probe(&self, account_id: &str) -> Result<ChannelHealthSnapshot> {
         // Return cached result if fresh enough.
-        if let Ok(cache) = self.probe_cache.read() {
-            if let Some((snap, ts)) = cache.get(account_id) {
-                if ts.elapsed() < PROBE_CACHE_TTL {
-                    return Ok(snap.clone());
-                }
-            }
+        if let Ok(cache) = self.probe_cache.read()
+            && let Some((snap, ts)) = cache.get(account_id)
+            && ts.elapsed() < PROBE_CACHE_TTL
+        {
+            return Ok(snap.clone());
         }
 
         let bot = {

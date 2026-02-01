@@ -693,10 +693,10 @@ fn format_model_list(
         let id = m.get("id").and_then(|v| v.as_str()).unwrap_or("?");
         let provider = m.get("provider").and_then(|v| v.as_str()).unwrap_or("");
         let display = m.get("displayName").and_then(|v| v.as_str()).unwrap_or(id);
-        if let Some(filter) = provider_filter {
-            if provider != filter {
-                continue;
-            }
+        if let Some(filter) = provider_filter
+            && provider != filter
+        {
+            continue;
         }
         let marker = if current_model == Some(id) {
             " *"

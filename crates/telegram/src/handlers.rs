@@ -384,14 +384,14 @@ async fn send_context_card(bot: &Bot, chat_id: &str, context_text: &str) {
     let mut fields: Vec<(&str, String)> = Vec::new();
     for line in context_text.lines() {
         let trimmed = line.trim();
-        if let Some(rest) = trimmed.strip_prefix("**") {
-            if let Some(end) = rest.find("**") {
-                let label = &rest[..end];
-                let raw_value = rest[end + 2..].trim();
-                // Strip markdown backticks from value
-                let value = raw_value.replace('`', "");
-                fields.push((label, escape_html_simple(&value)));
-            }
+        if let Some(rest) = trimmed.strip_prefix("**")
+            && let Some(end) = rest.find("**")
+        {
+            let label = &rest[..end];
+            let raw_value = rest[end + 2..].trim();
+            // Strip markdown backticks from value
+            let value = raw_value.replace('`', "");
+            fields.push((label, escape_html_simple(&value)));
         }
     }
 
