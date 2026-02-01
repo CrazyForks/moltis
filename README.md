@@ -19,6 +19,8 @@ multiple LLM providers and communication channels, inspired by
   management
 - **Memory and knowledge base** — embeddings-powered long-term memory
 - **Skills and plugins** — extensible skill system and plugin architecture
+- **Hook system** — lifecycle hooks for tool calls, sessions, compaction, and
+  more, with both native Rust handlers and shell command handlers
 - **Scheduled tasks** — cron-based task execution
 - **OAuth flows** — built-in OAuth2 for provider authentication
 - **TLS support** — automatic self-signed certificate generation
@@ -45,6 +47,54 @@ cargo run -- gateway     # Start the gateway server
 cargo test --all-features
 ```
 
+## Hooks
+
+Moltis includes a hook dispatch system that lets you react to lifecycle events
+with native Rust handlers or external shell scripts. Hooks can observe, modify,
+or block actions.
+
+### Events
+
+`BeforeToolCall`, `AfterToolCall`, `BeforeAgentStart`, `AgentEnd`,
+`MessageReceived`, `MessageSending`, `MessageSent`, `BeforeCompaction`,
+`AfterCompaction`, `ToolResultPersist`, `SessionStart`, `SessionEnd`,
+`GatewayStart`, `GatewayStop`
+
+### Shell hook protocol
+
+Shell hooks receive the event payload as JSON on stdin and communicate their
+action via exit code and stdout:
+
+| Exit code | Stdout | Action |
+|-----------|--------|--------|
+| 0 | (empty) | Continue |
+| 0 | `{"action":"modify","data":{...}}` | Replace payload data |
+| 1 | — | Block (stderr used as reason) |
+
+### Configuration
+
+```toml
+[[hooks]]
+name = "audit-tool-calls"
+command = "./examples/hooks/log-tool-calls.sh"
+events = ["BeforeToolCall"]
+
+[[hooks]]
+name = "block-dangerous"
+command = "./examples/hooks/block-dangerous-commands.sh"
+events = ["BeforeToolCall"]
+timeout = 5
+
+[[hooks]]
+name = "notify-discord"
+command = "./examples/hooks/notify-discord.sh"
+events = ["SessionEnd"]
+env = { DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/..." }
+```
+
+See `examples/hooks/` for ready-to-use scripts (logging, blocking dangerous
+commands, Slack/Discord notifications, secret redaction, session saving).
+
 ## Project Structure
 
 Moltis is organized as a Cargo workspace with the following crates:
@@ -60,6 +110,7 @@ Moltis is organized as a Cargo workspace with the following crates:
 | `moltis-sessions` | Session persistence |
 | `moltis-memory` | Embeddings-based knowledge base |
 | `moltis-skills` | Skill/plugin system |
+| `moltis-plugins` | Plugin formats, hook handlers, and shell hook runtime |
 | `moltis-tools` | Tool/function execution |
 | `moltis-routing` | Message routing |
 | `moltis-projects` | Project/workspace management |
