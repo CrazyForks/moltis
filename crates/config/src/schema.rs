@@ -70,6 +70,7 @@ impl Default for ResolvedIdentity {
 #[serde(default)]
 pub struct MoltisConfig {
     pub providers: ProvidersConfig,
+    pub chat: ChatConfig,
     pub tools: ToolsConfig,
     pub skills: SkillsConfig,
     pub channels: ChannelsConfig,
@@ -199,6 +200,25 @@ impl Default for TlsConfig {
             http_redirect_port: Some(18790),
         }
     }
+}
+
+/// Chat configuration.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ChatConfig {
+    /// How to handle messages that arrive while an agent run is active.
+    pub message_queue_mode: MessageQueueMode,
+}
+
+/// Behaviour when `chat.send()` is called during an active run.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MessageQueueMode {
+    /// Queue each message; replay them one-by-one after the current run.
+    #[default]
+    Followup,
+    /// Buffer messages; concatenate and process as a single message after the current run.
+    Collect,
 }
 
 /// Tools configuration (exec, sandbox, policy, web).

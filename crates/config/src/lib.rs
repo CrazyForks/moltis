@@ -15,5 +15,8 @@ pub use {
         clear_config_dir, config_dir, data_dir, discover_and_load, find_or_default_config_path,
         save_config, set_config_dir, update_config,
     },
-    schema::{AgentIdentity, AuthConfig, MoltisConfig, ResolvedIdentity, UserProfile},
+    schema::{
+        AgentIdentity, AuthConfig, ChatConfig, MessageQueueMode, MoltisConfig, ResolvedIdentity,
+        UserProfile,
+    },
 };

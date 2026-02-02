@@ -4,12 +4,14 @@ use {
     async_trait::async_trait,
     serde_json::Value,
     tokio::{
-        sync::{RwLock, Semaphore},
+        sync::{OwnedSemaphorePermit, RwLock, Semaphore},
         task::AbortHandle,
     },
     tokio_stream::StreamExt,
     tracing::{debug, info, warn},
 };
+
+use moltis_config::MessageQueueMode;
 
 use {
     moltis_agents::{
@@ -71,6 +73,12 @@ impl ModelService for LiveModelService {
 
 // ── LiveChatService ─────────────────────────────────────────────────────────
 
+/// A message that arrived while an agent run was already active on the session.
+#[derive(Debug, Clone)]
+struct QueuedMessage {
+    params: Value,
+}
+
 pub struct LiveChatService {
     providers: Arc<RwLock<ProviderRegistry>>,
     state: Arc<GatewayState>,
@@ -81,6 +89,8 @@ pub struct LiveChatService {
     hook_registry: Option<Arc<moltis_common::hooks::HookRegistry>>,
     /// Per-session semaphore ensuring only one agent run executes per session at a time.
     session_locks: Arc<RwLock<HashMap<String, Arc<Semaphore>>>>,
+    /// Per-session message queue for messages arriving during an active run.
+    message_queue: Arc<RwLock<HashMap<String, Vec<QueuedMessage>>>>,
 }
 
 impl LiveChatService {
@@ -99,6 +109,7 @@ impl LiveChatService {
             session_metadata,
             hook_registry: None,
             session_locks: Arc::new(RwLock::new(HashMap::new())),
+            message_queue: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -543,16 +554,50 @@ impl ChatService for LiveChatService {
             }
         }
 
-        // Acquire the per-session semaphore so concurrent sends to the same
-        // session are serialized.  The permit is moved into the spawned task
-        // and released on drop (including abort/panic).
+        // Try to acquire the per-session semaphore.  If a run is already active,
+        // queue the message according to the configured MessageQueueMode instead
+        // of blocking the caller.
         let session_sem = self.session_semaphore(&session_key).await;
-        let permit = session_sem
-            .acquire_owned()
-            .await
-            .expect("session semaphore closed unexpectedly");
+        let permit: OwnedSemaphorePermit = match session_sem.clone().try_acquire_owned() {
+            Ok(p) => p,
+            Err(_) => {
+                // Active run — enqueue and return immediately.
+                let queue_mode = moltis_config::discover_and_load().chat.message_queue_mode;
+                info!(
+                    session = %session_key,
+                    mode = ?queue_mode,
+                    "queueing message (run active)"
+                );
+                self.message_queue
+                    .write()
+                    .await
+                    .entry(session_key.clone())
+                    .or_default()
+                    .push(QueuedMessage {
+                        params: params.clone(),
+                    });
+                broadcast(
+                    &self.state,
+                    "chat",
+                    serde_json::json!({
+                        "sessionKey": session_key,
+                        "state": "queued",
+                        "mode": format!("{queue_mode:?}").to_lowercase(),
+                    }),
+                    BroadcastOpts::default(),
+                )
+                .await;
+                return Ok(serde_json::json!({
+                    "queued": true,
+                    "mode": format!("{queue_mode:?}").to_lowercase(),
+                }));
+            },
+        };
 
         let agent_timeout_secs = moltis_config::discover_and_load().tools.agent_timeout_secs;
+
+        let message_queue = Arc::clone(&self.message_queue);
+        let state_for_drain = Arc::clone(&self.state);
 
         let handle = tokio::spawn(async move {
             let _permit = permit; // hold permit until task completes
@@ -652,6 +697,46 @@ impl ChatService for LiveChatService {
             }
 
             active_runs.write().await.remove(&run_id_clone);
+
+            // Drain queued messages for this session.
+            let queued = message_queue
+                .write()
+                .await
+                .remove(&session_key_clone)
+                .unwrap_or_default();
+            if !queued.is_empty() {
+                let queue_mode = moltis_config::discover_and_load().chat.message_queue_mode;
+                let chat = state_for_drain.chat().await;
+                match queue_mode {
+                    MessageQueueMode::Followup => {
+                        for msg in queued {
+                            info!(session = %session_key_clone, "replaying queued message (followup)");
+                            if let Err(e) = chat.send(msg.params).await {
+                                warn!(session = %session_key_clone, error = %e, "failed to replay queued message");
+                            }
+                        }
+                    },
+                    MessageQueueMode::Collect => {
+                        let combined: Vec<&str> = queued
+                            .iter()
+                            .filter_map(|m| m.params.get("text").and_then(|v| v.as_str()))
+                            .collect();
+                        if !combined.is_empty() {
+                            info!(
+                                session = %session_key_clone,
+                                count = combined.len(),
+                                "replaying collected messages"
+                            );
+                            // Use the last queued message as the base params, override text.
+                            let mut merged = queued.last().unwrap().params.clone();
+                            merged["text"] = serde_json::json!(combined.join("\n\n"));
+                            if let Err(e) = chat.send(merged).await {
+                                warn!(session = %session_key_clone, error = %e, "failed to replay collected messages");
+                            }
+                        }
+                    },
+                }
+            }
         });
 
         self.active_runs
@@ -1731,5 +1816,107 @@ mod tests {
         };
 
         assert_eq!(result, Some(("ok".to_string(), 10, 5)));
+    }
+
+    // ── Message queue tests ──────────────────────────────────────────────
+
+    fn make_message_queue() -> Arc<RwLock<HashMap<String, Vec<QueuedMessage>>>> {
+        Arc::new(RwLock::new(HashMap::new()))
+    }
+
+    #[tokio::test]
+    async fn queue_enqueue_and_drain() {
+        let queue = make_message_queue();
+        let key = "sess1";
+
+        // Enqueue two messages.
+        {
+            let mut q = queue.write().await;
+            q.entry(key.to_string()).or_default().push(QueuedMessage {
+                params: serde_json::json!({"text": "hello"}),
+            });
+            q.entry(key.to_string()).or_default().push(QueuedMessage {
+                params: serde_json::json!({"text": "world"}),
+            });
+        }
+
+        // Drain.
+        let drained = queue.write().await.remove(key).unwrap_or_default();
+        assert_eq!(drained.len(), 2);
+        assert_eq!(drained[0].params["text"], "hello");
+        assert_eq!(drained[1].params["text"], "world");
+
+        // Queue should be empty after drain.
+        assert!(queue.read().await.get(key).is_none());
+    }
+
+    #[tokio::test]
+    async fn queue_collect_concatenates_texts() {
+        let msgs = [
+            QueuedMessage {
+                params: serde_json::json!({"text": "first", "model": "gpt-4"}),
+            },
+            QueuedMessage {
+                params: serde_json::json!({"text": "second"}),
+            },
+            QueuedMessage {
+                params: serde_json::json!({"text": "third", "_conn_id": "c1"}),
+            },
+        ];
+
+        let combined: Vec<&str> = msgs
+            .iter()
+            .filter_map(|m| m.params.get("text").and_then(|v| v.as_str()))
+            .collect();
+        let joined = combined.join("\n\n");
+        assert_eq!(joined, "first\n\nsecond\n\nthird");
+    }
+
+    #[tokio::test]
+    async fn try_acquire_returns_err_when_held() {
+        let sem = Arc::new(Semaphore::new(1));
+        let _permit = sem.clone().try_acquire_owned().unwrap();
+
+        // Second try_acquire should fail.
+        assert!(sem.clone().try_acquire_owned().is_err());
+    }
+
+    #[tokio::test]
+    async fn try_acquire_succeeds_when_free() {
+        let sem = Arc::new(Semaphore::new(1));
+        assert!(sem.clone().try_acquire_owned().is_ok());
+    }
+
+    #[tokio::test]
+    async fn queue_drain_empty_is_noop() {
+        let queue = make_message_queue();
+        let drained = queue
+            .write()
+            .await
+            .remove("nonexistent")
+            .unwrap_or_default();
+        assert!(drained.is_empty());
+    }
+
+    #[test]
+    fn message_queue_mode_default_is_followup() {
+        let mode = MessageQueueMode::default();
+        assert_eq!(mode, MessageQueueMode::Followup);
+    }
+
+    #[test]
+    fn message_queue_mode_deserializes_from_toml() {
+        use serde::Deserialize;
+
+        #[derive(Deserialize)]
+        struct Wrapper {
+            mode: MessageQueueMode,
+        }
+
+        let followup: Wrapper = toml::from_str(r#"mode = "followup""#).unwrap();
+        assert_eq!(followup.mode, MessageQueueMode::Followup);
+
+        let collect: Wrapper = toml::from_str(r#"mode = "collect""#).unwrap();
+        assert_eq!(collect.mode, MessageQueueMode::Collect);
     }
 }
