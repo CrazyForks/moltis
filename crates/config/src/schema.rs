@@ -72,6 +72,7 @@ pub struct MoltisConfig {
     pub providers: ProvidersConfig,
     pub tools: ToolsConfig,
     pub skills: SkillsConfig,
+    pub mcp: McpConfig,
     pub channels: ChannelsConfig,
     pub tls: TlsConfig,
     pub auth: AuthConfig,
@@ -112,6 +113,31 @@ pub struct SkillsConfig {
 
 fn default_true() -> bool {
     true
+}
+
+/// MCP (Model Context Protocol) server configuration.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct McpConfig {
+    /// Configured MCP servers, keyed by server name.
+    #[serde(default)]
+    pub servers: HashMap<String, McpServerEntry>,
+}
+
+/// Configuration for a single MCP server.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpServerEntry {
+    /// Command to spawn the server process.
+    pub command: String,
+    /// Arguments to the command.
+    #[serde(default)]
+    pub args: Vec<String>,
+    /// Environment variables to set for the process.
+    #[serde(default)]
+    pub env: HashMap<String, String>,
+    /// Whether this server is enabled. Defaults to true.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
 }
 
 /// Channel configuration.

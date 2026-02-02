@@ -330,6 +330,65 @@ impl TtsService for NoopTtsService {
     }
 }
 
+// ── MCP (Model Context Protocol) ────────────────────────────────────────────
+
+#[async_trait]
+pub trait McpService: Send + Sync {
+    /// List all configured MCP servers with status.
+    async fn list(&self) -> ServiceResult;
+    /// Add a new MCP server.
+    async fn add(&self, params: Value) -> ServiceResult;
+    /// Remove an MCP server.
+    async fn remove(&self, params: Value) -> ServiceResult;
+    /// Enable an MCP server.
+    async fn enable(&self, params: Value) -> ServiceResult;
+    /// Disable an MCP server.
+    async fn disable(&self, params: Value) -> ServiceResult;
+    /// Get status of a specific server.
+    async fn status(&self, params: Value) -> ServiceResult;
+    /// List tools from a specific server.
+    async fn tools(&self, params: Value) -> ServiceResult;
+    /// Restart an MCP server.
+    async fn restart(&self, params: Value) -> ServiceResult;
+}
+
+pub struct NoopMcpService;
+
+#[async_trait]
+impl McpService for NoopMcpService {
+    async fn list(&self) -> ServiceResult {
+        Ok(serde_json::json!({ "servers": [] }))
+    }
+
+    async fn add(&self, _params: Value) -> ServiceResult {
+        Err("MCP not configured".into())
+    }
+
+    async fn remove(&self, _params: Value) -> ServiceResult {
+        Err("MCP not configured".into())
+    }
+
+    async fn enable(&self, _params: Value) -> ServiceResult {
+        Err("MCP not configured".into())
+    }
+
+    async fn disable(&self, _params: Value) -> ServiceResult {
+        Err("MCP not configured".into())
+    }
+
+    async fn status(&self, _params: Value) -> ServiceResult {
+        Err("MCP not configured".into())
+    }
+
+    async fn tools(&self, _params: Value) -> ServiceResult {
+        Err("MCP not configured".into())
+    }
+
+    async fn restart(&self, _params: Value) -> ServiceResult {
+        Err("MCP not configured".into())
+    }
+}
+
 // ── Skills ──────────────────────────────────────────────────────────────────
 
 #[async_trait]
@@ -1314,6 +1373,7 @@ pub struct GatewayServices {
     pub chat: Arc<dyn ChatService>,
     pub tts: Arc<dyn TtsService>,
     pub skills: Arc<dyn SkillsService>,
+    pub mcp: Arc<dyn McpService>,
     pub plugins: Arc<dyn PluginsService>,
     pub browser: Arc<dyn BrowserService>,
     pub usage: Arc<dyn UsageService>,
@@ -1375,6 +1435,7 @@ impl GatewayServices {
             chat: Arc::new(NoopChatService),
             tts: Arc::new(NoopTtsService),
             skills: Arc::new(NoopSkillsService),
+            mcp: Arc::new(NoopMcpService),
             plugins: Arc::new(NoopPluginsService),
             browser: Arc::new(NoopBrowserService),
             usage: Arc::new(NoopUsageService),

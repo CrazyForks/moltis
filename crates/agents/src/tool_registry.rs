@@ -31,6 +31,10 @@ impl ToolRegistry {
         self.tools.insert(tool.name().to_string(), tool);
     }
 
+    pub fn unregister(&mut self, name: &str) -> bool {
+        self.tools.remove(name).is_some()
+    }
+
     pub fn get(&self, name: &str) -> Option<&dyn AgentTool> {
         self.tools.get(name).map(|t| t.as_ref())
     }

@@ -1,0 +1,22 @@
+//! MCP (Model Context Protocol) client support for moltis.
+//!
+//! This crate provides:
+//! - JSON-RPC 2.0 over stdio transport (`transport`)
+//! - MCP client for protocol handshake and tool interactions (`client`)
+//! - Tool bridge adapting MCP tools to the agent tool interface (`tool_bridge`)
+//! - Server lifecycle management (`manager`)
+//! - Persisted server registry (`registry`)
+
+pub mod client;
+pub mod manager;
+pub mod registry;
+pub mod tool_bridge;
+pub mod transport;
+pub mod types;
+
+pub use {
+    client::{McpClient, McpClientState},
+    manager::McpManager,
+    registry::{McpRegistry, McpServerConfig},
+    tool_bridge::{McpAgentTool, McpToolBridge},
+};

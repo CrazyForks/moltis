@@ -190,6 +190,36 @@ pub async fn start_gateway(
         services = services.with_model(Arc::new(LiveModelService::new(Arc::clone(&registry))));
     }
 
+    // Wire live MCP service.
+    {
+        let mcp_registry_path = moltis_config::data_dir().join("mcp-servers.json");
+        let mcp_reg = moltis_mcp::McpRegistry::load(&mcp_registry_path).unwrap_or_default();
+        // Seed from config file servers that aren't already in the registry.
+        let mut merged = mcp_reg;
+        for (name, entry) in &config.mcp.servers {
+            if !merged.servers.contains_key(name) {
+                merged
+                    .servers
+                    .insert(name.clone(), moltis_mcp::McpServerConfig {
+                        command: entry.command.clone(),
+                        args: entry.args.clone(),
+                        env: entry.env.clone(),
+                        enabled: entry.enabled,
+                    });
+            }
+        }
+        let mcp_manager = Arc::new(moltis_mcp::McpManager::new(merged));
+        // Start enabled servers in the background.
+        let mgr = Arc::clone(&mcp_manager);
+        tokio::spawn(async move {
+            let started = mgr.start_enabled().await;
+            if !started.is_empty() {
+                tracing::info!(servers = ?started, "MCP servers started");
+            }
+        });
+        services.mcp = Arc::new(crate::mcp_service::LiveMcpService::new(mcp_manager));
+    }
+
     // Initialize data directory and SQLite database.
     let data_dir = data_dir.unwrap_or_else(moltis_config::data_dir);
     std::fs::create_dir_all(&data_dir).ok();
