@@ -1,3 +1,4 @@
+use std::fmt::Write;
 use std::sync::Arc;
 
 use {
@@ -156,16 +157,18 @@ fn parse_tool_call_from_text(text: &str) -> Option<(ToolCall, Option<String>)> {
 
 // ── Tool result sanitization ────────────────────────────────────────────
 
-/// Placeholder tag for stripped base64 data URIs.
 const BASE64_TAG: &str = "data:";
-/// Minimum length of a base64 payload to be worth stripping.
-const BASE64_MIN_LEN: usize = 200;
+const BASE64_MARKER: &str = ";base64,";
+/// Minimum length of a blob (base64 payload or hex run) to be worth stripping.
+const BLOB_MIN_LEN: usize = 200;
+
+fn is_base64_byte(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b == b'+' || b == b'/' || b == b'='
+}
 
 /// Strip base64 data-URI blobs (e.g. `data:image/png;base64,AAAA...`) and
-/// replace them with a short placeholder. Only targets payloads ≥ 200 chars.
+/// replace them with a short placeholder. Only targets payloads >= 200 chars.
 fn strip_base64_blobs(input: &str) -> String {
-    // Pattern: data:<mime>;base64,<payload>
-    // We scan manually to avoid pulling in the regex crate.
     let mut result = String::with_capacity(input.len());
     let mut rest = input;
 
@@ -173,25 +176,21 @@ fn strip_base64_blobs(input: &str) -> String {
         result.push_str(&rest[..start]);
         let after_tag = &rest[start + BASE64_TAG.len()..];
 
-        // Find ";base64," after the MIME type.
-        if let Some(marker_pos) = after_tag.find(";base64,") {
-            let payload_start = marker_pos + ";base64,".len();
-            let payload = &after_tag[payload_start..];
-            // Count contiguous base64 chars.
-            let payload_len = payload
+        if let Some(marker_pos) = after_tag.find(BASE64_MARKER) {
+            let payload_start = marker_pos + BASE64_MARKER.len();
+            let payload_len = after_tag[payload_start..]
                 .bytes()
-                .take_while(|b| b.is_ascii_alphanumeric() || *b == b'+' || *b == b'/' || *b == b'=')
+                .take_while(|b| is_base64_byte(*b))
                 .count();
 
-            if payload_len >= BASE64_MIN_LEN {
+            if payload_len >= BLOB_MIN_LEN {
                 let total_uri_len = BASE64_TAG.len() + payload_start + payload_len;
-                result.push_str(&format!("[base64 data removed — {total_uri_len} bytes]"));
+                write!(result,"[base64 data removed — {total_uri_len} bytes]").unwrap();
                 rest = &rest[start + total_uri_len..];
                 continue;
             }
         }
 
-        // Not a matching pattern — copy the "data:" literally and move on.
         result.push_str(BASE64_TAG);
         rest = after_tag;
     }
@@ -199,32 +198,28 @@ fn strip_base64_blobs(input: &str) -> String {
     result
 }
 
-/// Strip long hex sequences (≥ 200 hex chars) that look like binary dumps.
+/// Strip long hex sequences (>= 200 hex chars) that look like binary dumps.
 fn strip_hex_blobs(input: &str) -> String {
     let mut result = String::with_capacity(input.len());
-    let mut chars = input.char_indices().peekable();
+    let bytes = input.as_bytes();
+    let mut i = 0;
 
-    while let Some(&(start, ch)) = chars.peek() {
-        if ch.is_ascii_hexdigit() {
-            // Consume contiguous hex chars.
-            let mut end = start;
-            while let Some(&(i, c)) = chars.peek() {
-                if c.is_ascii_hexdigit() {
-                    end = i + c.len_utf8();
-                    chars.next();
-                } else {
-                    break;
-                }
+    while i < bytes.len() {
+        if bytes[i].is_ascii_hexdigit() {
+            let start = i;
+            while i < bytes.len() && bytes[i].is_ascii_hexdigit() {
+                i += 1;
             }
-            let run = end - start;
-            if run >= 200 {
-                result.push_str(&format!("[hex data removed — {run} chars]"));
+            let run = i - start;
+            if run >= BLOB_MIN_LEN {
+                write!(result,"[hex data removed — {run} chars]").unwrap();
             } else {
-                result.push_str(&input[start..end]);
+                result.push_str(&input[start..i]);
             }
         } else {
+            let ch = input[i..].chars().next().unwrap();
             result.push(ch);
-            chars.next();
+            i += ch.len_utf8();
         }
     }
     result
@@ -232,24 +227,25 @@ fn strip_hex_blobs(input: &str) -> String {
 
 /// Sanitize a tool result string before feeding it to the LLM.
 ///
-/// 1. Strips base64 data URIs (≥ 200 char payloads).
-/// 2. Strips long hex sequences (≥ 200 hex chars).
+/// 1. Strips base64 data URIs (>= 200 char payloads).
+/// 2. Strips long hex sequences (>= 200 hex chars).
 /// 3. Truncates the result to `max_bytes` (at a char boundary), appending a
 ///    truncation marker.
 pub fn sanitize_tool_result(input: &str, max_bytes: usize) -> String {
     let mut result = strip_base64_blobs(input);
     result = strip_hex_blobs(&result);
 
-    if result.len() > max_bytes {
-        let original_len = result.len();
-        // Truncate at a char boundary.
-        let mut end = max_bytes;
-        while end > 0 && !result.is_char_boundary(end) {
-            end -= 1;
-        }
-        result.truncate(end);
-        result.push_str(&format!("\n\n[truncated — {original_len} bytes total]"));
+    if result.len() <= max_bytes {
+        return result;
     }
+
+    let original_len = result.len();
+    let mut end = max_bytes;
+    while end > 0 && !result.is_char_boundary(end) {
+        end -= 1;
+    }
+    result.truncate(end);
+    write!(result, "\n\n[truncated — {original_len} bytes total]").unwrap();
     result
 }
 
@@ -292,6 +288,7 @@ pub async fn run_agent_loop_with_context(
 ) -> Result<AgentRunResult, AgentRunError> {
     let native_tools = provider.supports_tools();
     let tool_schemas = tools.list_schemas();
+    let max_tool_result_bytes = moltis_config::discover_and_load().tools.max_tool_result_bytes;
 
     info!(
         provider = provider.name(),
@@ -685,9 +682,7 @@ pub async fn run_agent_loop_with_context(
 
             let tool_result_str = sanitize_tool_result(
                 &result.to_string(),
-                moltis_config::discover_and_load()
-                    .tools
-                    .max_tool_result_bytes,
+                max_tool_result_bytes,
             );
             debug!(
                 tool = %tc.name,
