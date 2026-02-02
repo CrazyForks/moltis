@@ -73,6 +73,46 @@ pub async fn sync_mcp_tools(
     }
 }
 
+// ── Config parsing helper ───────────────────────────────────────────────────
+
+/// Extract an `McpServerConfig` from JSON params (used by both `add` and `update`).
+fn parse_server_config(params: &Value) -> Result<moltis_mcp::McpServerConfig, String> {
+    let command = params
+        .get("command")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "missing 'command' parameter".to_string())?;
+    let args: Vec<String> = params
+        .get("args")
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .unwrap_or_default();
+    let env: std::collections::HashMap<String, String> = params
+        .get("env")
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .unwrap_or_default();
+    let enabled = params
+        .get("enabled")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
+    let transport = match params
+        .get("transport")
+        .and_then(|v| v.as_str())
+        .unwrap_or("stdio")
+    {
+        "sse" => moltis_mcp::TransportType::Sse,
+        _ => moltis_mcp::TransportType::Stdio,
+    };
+    let url = params.get("url").and_then(|v| v.as_str()).map(String::from);
+
+    Ok(moltis_mcp::McpServerConfig {
+        command: command.into(),
+        args,
+        env,
+        enabled,
+        transport,
+        url,
+    })
+}
+
 // ── LiveMcpService ──────────────────────────────────────────────────────────
 
 /// Live MCP service delegating to `McpManager`.
@@ -98,16 +138,11 @@ impl LiveMcpService {
     }
 
     /// Sync MCP tools into the shared tool registry (if set).
-    async fn sync_tools(&self) {
+    pub async fn sync_tools_if_ready(&self) {
         let maybe_reg = self.tool_registry.read().await.clone();
         if let Some(reg) = maybe_reg {
             sync_mcp_tools(&self.manager, &reg).await;
         }
-    }
-
-    /// Public version of `sync_tools` for use from background tasks.
-    pub async fn sync_tools_if_ready(&self) {
-        self.sync_tools().await;
     }
 
     /// Access the underlying manager.
@@ -128,41 +163,7 @@ impl McpService for LiveMcpService {
             .get("name")
             .and_then(|v| v.as_str())
             .ok_or_else(|| "missing 'name' parameter".to_string())?;
-        let command = params
-            .get("command")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| "missing 'command' parameter".to_string())?;
-        let args: Vec<String> = params
-            .get("args")
-            .and_then(|v| serde_json::from_value(v.clone()).ok())
-            .unwrap_or_default();
-        let env: std::collections::HashMap<String, String> = params
-            .get("env")
-            .and_then(|v| serde_json::from_value(v.clone()).ok())
-            .unwrap_or_default();
-        let enabled = params
-            .get("enabled")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(true);
-
-        let transport = match params
-            .get("transport")
-            .and_then(|v| v.as_str())
-            .unwrap_or("stdio")
-        {
-            "sse" => moltis_mcp::TransportType::Sse,
-            _ => moltis_mcp::TransportType::Stdio,
-        };
-        let url = params.get("url").and_then(|v| v.as_str()).map(String::from);
-
-        let config = moltis_mcp::McpServerConfig {
-            command: command.into(),
-            args,
-            env,
-            enabled,
-            transport,
-            url,
-        };
+        let config = parse_server_config(&params)?;
 
         // If a server with this name already exists, append a numeric suffix.
         let final_name = {
@@ -182,7 +183,7 @@ impl McpService for LiveMcpService {
             .await
             .map_err(|e| e.to_string())?;
 
-        self.sync_tools().await;
+        self.sync_tools_if_ready().await;
 
         Ok(serde_json::json!({ "ok": true, "name": final_name }))
     }
@@ -199,7 +200,7 @@ impl McpService for LiveMcpService {
             .await
             .map_err(|e| e.to_string())?;
 
-        self.sync_tools().await;
+        self.sync_tools_if_ready().await;
 
         Ok(serde_json::json!({ "removed": removed }))
     }
@@ -215,7 +216,7 @@ impl McpService for LiveMcpService {
             .await
             .map_err(|e| e.to_string())?;
 
-        self.sync_tools().await;
+        self.sync_tools_if_ready().await;
 
         Ok(serde_json::json!({ "enabled": true }))
     }
@@ -232,7 +233,7 @@ impl McpService for LiveMcpService {
             .await
             .map_err(|e| e.to_string())?;
 
-        self.sync_tools().await;
+        self.sync_tools_if_ready().await;
 
         Ok(serde_json::json!({ "disabled": ok }))
     }
@@ -272,7 +273,7 @@ impl McpService for LiveMcpService {
             .await
             .map_err(|e| e.to_string())?;
 
-        self.sync_tools().await;
+        self.sync_tools_if_ready().await;
 
         Ok(serde_json::json!({ "ok": true }))
     }
@@ -282,44 +283,14 @@ impl McpService for LiveMcpService {
             .get("name")
             .and_then(|v| v.as_str())
             .ok_or_else(|| "missing 'name' parameter".to_string())?;
-        let command = params
-            .get("command")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| "missing 'command' parameter".to_string())?;
-        let args: Vec<String> = params
-            .get("args")
-            .and_then(|v| serde_json::from_value(v.clone()).ok())
-            .unwrap_or_default();
-        let env: std::collections::HashMap<String, String> = params
-            .get("env")
-            .and_then(|v| serde_json::from_value(v.clone()).ok())
-            .unwrap_or_default();
-
-        let transport = match params
-            .get("transport")
-            .and_then(|v| v.as_str())
-            .unwrap_or("stdio")
-        {
-            "sse" => moltis_mcp::TransportType::Sse,
-            _ => moltis_mcp::TransportType::Stdio,
-        };
-        let url = params.get("url").and_then(|v| v.as_str()).map(String::from);
-
-        let config = moltis_mcp::McpServerConfig {
-            command: command.into(),
-            args,
-            env,
-            transport,
-            url,
-            ..Default::default()
-        };
+        let config = parse_server_config(&params)?;
 
         self.manager
             .update_server(name, config)
             .await
             .map_err(|e| e.to_string())?;
 
-        self.sync_tools().await;
+        self.sync_tools_if_ready().await;
 
         Ok(serde_json::json!({ "ok": true }))
     }

@@ -2,18 +2,14 @@
 //!
 //! Uses HTTP POST for JSON-RPC requests and GET for server-initiated SSE events.
 
-use std::{
-    collections::HashMap,
-    sync::{
-        Arc,
-        atomic::{AtomicU64, Ordering},
-    },
+use std::sync::{
+    Arc,
+    atomic::{AtomicU64, Ordering},
 };
 
 use {
     anyhow::{Context, Result, bail},
     reqwest::Client,
-    tokio::sync::{Mutex, oneshot},
     tracing::{debug, warn},
 };
 
@@ -26,7 +22,6 @@ use crate::{
 pub struct SseTransport {
     client: Client,
     url: String,
-    pending: Arc<Mutex<HashMap<String, oneshot::Sender<JsonRpcResponse>>>>,
     next_id: AtomicU64,
 }
 
@@ -41,7 +36,6 @@ impl SseTransport {
         Ok(Arc::new(Self {
             client,
             url: url.to_string(),
-            pending: Arc::new(Mutex::new(HashMap::new())),
             next_id: AtomicU64::new(1),
         }))
     }
@@ -134,9 +128,6 @@ impl McpTransport for SseTransport {
 
     async fn kill(&self) {
         // For SSE transport, there is no persistent connection to kill.
-        // Clear any pending requests.
-        let mut pending = self.pending.lock().await;
-        pending.clear();
     }
 }
 

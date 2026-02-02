@@ -106,15 +106,6 @@ pub async fn run_health_monitor(state: Arc<GatewayState>, mcp: Arc<LiveMcpServic
     }
 }
 
-/// Reset the auto-restart counter for a server (called on manual restart).
-/// This is a no-op convenience — the health monitor resets on its own when
-/// a server returns to "running", but callers can use this for clarity.
-pub fn reset_restart_state(_name: &str) {
-    // The restart state is local to the health monitor task.
-    // Manual restarts go through McpManager::restart_server directly,
-    // and the health monitor will see "running" on the next poll.
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
