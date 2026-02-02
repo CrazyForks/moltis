@@ -46,10 +46,20 @@ function PathInput(props) {
 	}
 
 	return html`<div class="project-dir-group">
-    <div class="text-xs text-[var(--muted)]" style="margin-bottom:4px;">Directory</div>
-    <input ref=${inputRef} type="text" class="provider-key-input"
-      placeholder="/path/to/project" style="font-family:var(--font-mono);width:100%;"
+    <div class="text-xs text-[var(--muted)] mb-1">Directory</div>
+    <div class="flex gap-2 items-center">
+    <input ref=${inputRef} type="text" class="provider-key-input flex-1"
+      placeholder="/path/to/project" style="font-family:var(--font-mono);"
       onInput=${onInput} />
+    <button class="provider-btn"
+      onClick=${() => {
+				var dir = inputRef.current?.value.trim();
+				if (!dir) return;
+				props.onAdd(dir).then(() => {
+					if (inputRef.current) inputRef.current.value = "";
+				});
+			}}>Add</button>
+    </div>
     ${
 			completions.value.length > 0 &&
 			html`
@@ -62,15 +72,6 @@ function PathInput(props) {
       </div>
     `
 		}
-    <button class="bg-[var(--accent-dim)] text-white border-none px-3 py-1.5 rounded text-xs cursor-pointer hover:bg-[var(--accent)] transition-colors"
-      style="height:34px;margin-top:8px;"
-      onClick=${() => {
-				var dir = inputRef.current?.value.trim();
-				if (!dir) return;
-				props.onAdd(dir).then(() => {
-					if (inputRef.current) inputRef.current.value = "";
-				});
-			}}>Add</button>
   </div>`;
 }
 
@@ -242,13 +243,17 @@ function ProjectsPage() {
     <div class="flex-1 flex flex-col min-w-0 p-4 gap-4 overflow-y-auto">
       <div class="flex items-center gap-3">
         <h2 class="text-lg font-medium text-[var(--text-strong)]">Projects</h2>
-        <button class="text-xs text-[var(--muted)] border border-[var(--border)] px-2.5 py-1 rounded-md hover:text-[var(--text)] hover:border-[var(--border-strong)] transition-colors cursor-pointer bg-transparent"
-          onClick=${onDetect} disabled=${detecting.value}>
+        <button class="provider-btn provider-btn-secondary"
+          onClick=${onDetect} disabled=${detecting.value}
+          title="Scan common locations for git repositories and add them as projects">
           ${detecting.value ? "Detecting\u2026" : "Auto-detect"}
         </button>
       </div>
-      <p class="text-xs text-[var(--muted)] leading-relaxed" style="max-width:600px;margin:0;">
+      <p class="text-sm text-[var(--muted)]" style="max-width:600px;margin:0;">
         Projects bind sessions to a codebase directory. When a session is linked to a project, context files (CLAUDE.md, AGENTS.md) are loaded automatically and a custom system prompt can be injected. Enable auto-worktree to give each session its own git branch for isolated work.
+      </p>
+      <p class="text-sm text-[var(--muted)]" style="max-width:600px;margin:0;">
+        <strong class="text-[var(--text)]">Auto-detect</strong> scans common directories under your home folder (<code class="font-mono text-xs">~/Projects</code>, <code class="font-mono text-xs">~/Developer</code>, <code class="font-mono text-xs">~/src</code>, <code class="font-mono text-xs">~/code</code>, <code class="font-mono text-xs">~/repos</code>, <code class="font-mono text-xs">~/workspace</code>, <code class="font-mono text-xs">~/dev</code>, <code class="font-mono text-xs">~/git</code>) and Superset worktrees (<code class="font-mono text-xs">~/.superset/worktrees</code>) for git repositories and adds them as projects.
       </p>
       <div class="project-form-row">
         <${PathInput} onAdd=${onAdd} />
@@ -257,7 +262,7 @@ function ProjectsPage() {
         ${
 					list.length === 0 &&
 					html`
-          <div class="text-xs text-[var(--muted)]" style="padding:12px 0;">
+          <div class="text-sm text-[var(--muted)]" style="padding:12px 0;">
             No projects configured. Add a directory above or use auto-detect.
           </div>
         `

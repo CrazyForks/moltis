@@ -1,6 +1,6 @@
 use std::{
     fs,
-    path::Path,
+    path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -134,6 +134,55 @@ pub fn detect_project(dir: &Path) -> Option<Project> {
     })
 }
 
+/// Well-known parent directories where projects typically live.
+const SCAN_PARENTS: &[&str] = &[
+    "Projects",
+    "Developer",
+    "src",
+    "code",
+    "repos",
+    "workspace",
+    "dev",
+    "git",
+];
+
+/// Return the immediate children of well-known project parent directories
+/// under the user's home folder. Only existing directories are included.
+pub fn default_scan_dirs() -> Vec<PathBuf> {
+    let Ok(home) = std::env::var("HOME").map(PathBuf::from) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for parent_name in SCAN_PARENTS {
+        let parent = home.join(parent_name);
+        if let Ok(entries) = fs::read_dir(&parent) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    out.push(path);
+                }
+            }
+        }
+    }
+    // Superset worktrees: ~/.superset/worktrees/<project>/<branch>/
+    let superset_wt = home.join(".superset").join("worktrees");
+    if let Ok(projects) = fs::read_dir(&superset_wt) {
+        for project in projects.flatten() {
+            if project.path().is_dir()
+                && let Ok(branches) = fs::read_dir(project.path())
+            {
+                for branch in branches.flatten() {
+                    let path = branch.path();
+                    if path.is_dir() {
+                        out.push(path);
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
 /// Scan a list of directories and detect projects from git repos.
 /// Returns new projects not already in `known_ids`.
 pub fn auto_detect(dirs: &[&Path], known_ids: &[String]) -> Vec<Project> {
@@ -208,5 +257,34 @@ mod tests {
     fn test_derive_id() {
         let id = derive_id(Path::new("/home/user/My Project!"));
         assert_eq!(id, "my-project-");
+    }
+
+    #[test]
+    fn test_default_scan_dirs_with_projects_folder() {
+        let home = tempfile::tempdir().unwrap();
+        let projects = home.path().join("Projects");
+        fs::create_dir(&projects).unwrap();
+        let repo_a = projects.join("repo-a");
+        fs::create_dir(&repo_a).unwrap();
+        let repo_b = projects.join("repo-b");
+        fs::create_dir(&repo_b).unwrap();
+        // Also create a file — should be ignored.
+        fs::write(projects.join("not-a-dir.txt"), "hi").unwrap();
+
+        // SAFETY: test-only, single-threaded.
+        unsafe { std::env::set_var("HOME", home.path()) };
+        let dirs = default_scan_dirs();
+        assert!(dirs.contains(&repo_a));
+        assert!(dirs.contains(&repo_b));
+        assert!(!dirs.iter().any(|p| p.ends_with("not-a-dir.txt")));
+    }
+
+    #[test]
+    fn test_default_scan_dirs_no_matching_parents() {
+        let home = tempfile::tempdir().unwrap();
+        // SAFETY: test-only, single-threaded.
+        unsafe { std::env::set_var("HOME", home.path()) };
+        let dirs = default_scan_dirs();
+        assert!(dirs.is_empty());
     }
 }

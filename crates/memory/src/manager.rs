@@ -28,6 +28,27 @@ pub struct MemoryStatus {
     pub total_files: usize,
     pub total_chunks: usize,
     pub embedding_model: String,
+    /// SQLite database file size in bytes (0 for in-memory DBs).
+    pub db_size_bytes: u64,
+}
+
+impl MemoryStatus {
+    /// Human-readable database size (e.g. "12.3 MB").
+    pub fn db_size_display(&self) -> String {
+        format_bytes(self.db_size_bytes)
+    }
+}
+
+fn format_bytes(bytes: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = 1024 * KB;
+    const GB: u64 = 1024 * MB;
+    match bytes {
+        b if b >= GB => format!("{:.1} GB", b as f64 / GB as f64),
+        b if b >= MB => format!("{:.1} MB", b as f64 / MB as f64),
+        b if b >= KB => format!("{:.1} KB", b as f64 / KB as f64),
+        b => format!("{b} B"),
+    }
 }
 
 impl MemoryManager {
@@ -99,14 +120,20 @@ impl MemoryManager {
             }
         }
 
-        // Remove files no longer on disk
+        // Remove files no longer on disk.
+        // Skip the full reconciliation when the DB file count matches the
+        // discovered count and nothing was updated — the DB is already clean.
         let existing_files = self.store.list_files().await?;
-        for file in existing_files {
-            if !discovered_paths.contains(&file.path) {
-                info!(path = %file.path, "removing deleted file from memory");
-                self.store.delete_chunks_for_file(&file.path).await?;
-                self.store.delete_file(&file.path).await?;
-                report.files_removed += 1;
+        if existing_files.len() != discovered_paths.len() || report.files_updated > 0 {
+            let discovered_set: std::collections::HashSet<&str> =
+                discovered_paths.iter().map(|s| s.as_str()).collect();
+            for file in existing_files {
+                if !discovered_set.contains(file.path.as_str()) {
+                    info!(path = %file.path, "removing deleted file from memory");
+                    self.store.delete_chunks_for_file(&file.path).await?;
+                    self.store.delete_file(&file.path).await?;
+                    report.files_removed += 1;
+                }
             }
         }
 
@@ -140,8 +167,6 @@ impl MemoryManager {
         path_str: &str,
         report: &mut SyncReport,
     ) -> anyhow::Result<bool> {
-        let content = tokio::fs::read_to_string(path).await?;
-        let hash = sha256_hex(&content);
         let metadata = tokio::fs::metadata(path).await?;
         let mtime = metadata
             .modified()?
@@ -150,10 +175,30 @@ impl MemoryManager {
             .as_secs() as i64;
         let size = metadata.len() as i64;
 
-        // Check if file is unchanged
+        // Fast path: skip read+hash if mtime and size are unchanged.
+        if let Some(existing) = self.store.get_file(path_str).await?
+            && existing.mtime == mtime
+            && existing.size == size
+        {
+            return Ok(false);
+        }
+
+        let content = tokio::fs::read_to_string(path).await?;
+        let hash = sha256_hex(&content);
+
+        // Check if content hash is unchanged (mtime changed but content didn't).
         if let Some(existing) = self.store.get_file(path_str).await?
             && existing.hash == hash
         {
+            // Update mtime so the fast path works next time.
+            let file_row = FileRow {
+                path: path_str.to_string(),
+                source: existing.source,
+                hash: existing.hash,
+                mtime,
+                size,
+            };
+            self.store.upsert_file(&file_row).await?;
             return Ok(false);
         }
 
@@ -300,6 +345,9 @@ impl MemoryManager {
             let chunks = self.store.get_chunks_for_file(&file.path).await?;
             total_chunks += chunks.len();
         }
+        let db_size_bytes = std::fs::metadata(&self.config.db_path)
+            .map(|m| m.len())
+            .unwrap_or(0);
         Ok(MemoryStatus {
             total_files: files.len(),
             total_chunks,
@@ -308,6 +356,7 @@ impl MemoryManager {
                 .as_ref()
                 .map(|e| e.model_name().to_string())
                 .unwrap_or_else(|| "none (keyword-only)".into()),
+            db_size_bytes,
         })
     }
 }

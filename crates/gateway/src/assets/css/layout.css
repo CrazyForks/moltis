@@ -20,7 +20,9 @@
     font-size: 0.85rem;
     text-decoration: none;
     transition: background 0.15s, color 0.15s;
-    display: block;
+    display: flex;
+    align-items: center;
+    gap: 8px;
   }
 
   .nav-link:hover {
@@ -191,11 +193,18 @@
   }
 
   .session-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     color: var(--text);
+    font-size: 0.82rem;
+    min-width: 0;
+  }
+
+  .session-label [data-label-text] {
+    overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
-    font-size: 0.82rem;
-    overflow: hidden;
   }
 
   .session-meta {

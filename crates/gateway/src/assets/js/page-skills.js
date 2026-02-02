@@ -153,7 +153,7 @@ function InstallBox() {
 	}
 	return html`<div class="skills-install-box">
     <input ref=${inputRef} type="text" placeholder="owner/repo or full URL (e.g. anthropics/skills)" class="skills-install-input" onKeyDown=${onKey} />
-    <button class="skills-install-btn" onClick=${onInstall} disabled=${installing.value}>
+    <button class="provider-btn" onClick=${onInstall} disabled=${installing.value}>
       ${installing.value ? "Installing\u2026" : "Install"}
     </button>
   </div>`;
@@ -369,8 +369,7 @@ function RepoCard(props) {
            style="font-family:var(--font-mono);font-size:.82rem;font-weight:500;color:var(--text-strong);text-decoration:none">${repo.source}</a>
         <span style="font-size:.72rem;color:var(--muted)">${repo.enabled_count}/${repo.skill_count} enabled</span>
       </div>
-      <button onClick=${removeRepo}
-        style="background:none;border:1px solid var(--border);color:var(--error, #e55);border-radius:var(--radius-sm);font-size:.72rem;padding:3px 8px;cursor:pointer">Remove Repo</button>
+      <button class="provider-btn provider-btn-sm provider-btn-danger" onClick=${removeRepo}>Remove</button>
     </div>
     ${
 			expanded.value &&
@@ -453,9 +452,17 @@ function EnabledSkillsTable() {
 
 	function onDisable(skill) {
 		var source = map[skill.name] || skill.source;
-		if (!(source && S.connected)) return;
+		if (!source) {
+			showToast("Cannot disable: unknown source for skill.", "error");
+			return;
+		}
 		sendRpc("skills.skill.disable", { source: source, skill: skill.name }).then((res) => {
-			if (res?.ok) fetchAll();
+			if (res?.ok) {
+				showToast(`Disabled ${skill.name}`, "success");
+				fetchAll();
+			} else {
+				showToast(`Failed to disable: ${res?.error?.message || "unknown error"}`, "error");
+			}
 		});
 	}
 
@@ -482,10 +489,9 @@ function EnabledSkillsTable() {
               <td style="padding:8px 12px;font-weight:500;color:var(--text-strong);font-family:var(--font-mono)">${skill.name}</td>
               <td style="padding:8px 12px;color:var(--text)">${skill.description || "\u2014"}</td>
               <td style="padding:8px 12px;text-align:right">
-                <button onClick=${() => {
+                <button class="provider-btn provider-btn-sm provider-btn-secondary" onClick=${() => {
 									onDisable(skill);
-								}}
-                  style="background:none;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:.72rem;padding:2px 8px;cursor:pointer;color:var(--muted)">Disable</button>
+								}}>Disable</button>
               </td>
             </tr>`,
 					)}

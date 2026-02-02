@@ -1,6 +1,8 @@
 mod auth_commands;
 mod hooks_commands;
 mod sandbox_commands;
+#[cfg(feature = "tailscale")]
+mod tailscale_commands;
 
 use {
     clap::{Parser, Subcommand},
@@ -38,6 +40,14 @@ enum Commands {
         /// Custom data directory (overrides default data dir).
         #[arg(long, env = "MOLTIS_DATA_DIR")]
         data_dir: Option<std::path::PathBuf>,
+        /// Tailscale mode: off, serve, or funnel.
+        #[cfg(feature = "tailscale")]
+        #[arg(long, env = "MOLTIS_TAILSCALE")]
+        tailscale: Option<String>,
+        /// Reset tailscale serve/funnel when the gateway exits.
+        #[cfg(feature = "tailscale")]
+        #[arg(long, default_value_t = true)]
+        tailscale_reset_on_exit: bool,
     },
     /// Invoke an agent directly.
     Agent {
@@ -93,6 +103,12 @@ enum Commands {
     Sandbox {
         #[command(subcommand)]
         action: sandbox_commands::SandboxAction,
+    },
+    /// Tailscale Serve/Funnel management.
+    #[cfg(feature = "tailscale")]
+    Tailscale {
+        #[command(subcommand)]
+        action: tailscale_commands::TailscaleAction,
     },
     /// Install the Moltis CA certificate into the system trust store.
     #[cfg(feature = "tls")]
@@ -267,9 +283,29 @@ async fn main() -> anyhow::Result<()> {
             port,
             config_dir,
             data_dir,
+            #[cfg(feature = "tailscale")]
+            tailscale,
+            #[cfg(feature = "tailscale")]
+            tailscale_reset_on_exit,
         } => {
-            moltis_gateway::server::start_gateway(&bind, port, log_buffer, config_dir, data_dir)
-                .await
+            #[cfg(feature = "tailscale")]
+            let tailscale_opts = tailscale.map(|mode| moltis_gateway::server::TailscaleOpts {
+                mode,
+                reset_on_exit: tailscale_reset_on_exit,
+            });
+            #[cfg(not(feature = "tailscale"))]
+            let tailscale_opts: Option<()> = None;
+            let _ = &tailscale_opts; // suppress unused warning when feature disabled
+            moltis_gateway::server::start_gateway(
+                &bind,
+                port,
+                log_buffer,
+                config_dir,
+                data_dir,
+                #[cfg(feature = "tailscale")]
+                tailscale_opts,
+            )
+            .await
         },
         Commands::Agent { message, .. } => {
             let result = moltis_agents::runner::run_agent("default", "main", &message).await?;
@@ -279,6 +315,8 @@ async fn main() -> anyhow::Result<()> {
         Commands::Onboard => moltis_onboarding::wizard::run_onboarding().await,
         Commands::Auth { action } => auth_commands::handle_auth(action).await,
         Commands::Sandbox { action } => sandbox_commands::handle_sandbox(action).await,
+        #[cfg(feature = "tailscale")]
+        Commands::Tailscale { action } => tailscale_commands::handle_tailscale(action).await,
         Commands::Skills { action } => handle_skills(action).await,
         Commands::Hooks { action } => hooks_commands::handle_hooks(action).await,
         #[cfg(feature = "tls")]

@@ -47,5 +47,6 @@ tracing            = { workspace = true }
 tracing-subscriber = { workspace = true }
 
 [features]
-default = ["tls"]
-tls     = ["moltis-gateway/tls"]
+default   = ["tailscale", "tls"]
+tailscale = ["moltis-gateway/tailscale"]
+tls       = ["moltis-gateway/tls"]

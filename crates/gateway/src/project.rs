@@ -3,7 +3,10 @@ use std::sync::Arc;
 use {async_trait::async_trait, serde_json::Value, tracing::warn};
 
 use moltis_projects::{
-    ProjectStore, complete::complete_path, context::load_context_files, detect::auto_detect,
+    ProjectStore,
+    complete::complete_path,
+    context::load_context_files,
+    detect::{auto_detect, default_scan_dirs},
 };
 
 use crate::services::{ProjectService, ServiceResult};
@@ -62,7 +65,11 @@ impl ProjectService for LiveProjectService {
         let existing = self.store.list().await.map_err(|e| e.to_string())?;
         let known_ids: Vec<String> = existing.iter().map(|p| p.id.clone()).collect();
 
-        let dir_refs: Vec<std::path::PathBuf> = dirs.iter().map(std::path::PathBuf::from).collect();
+        let dir_refs: Vec<std::path::PathBuf> = if dirs.is_empty() {
+            default_scan_dirs()
+        } else {
+            dirs.iter().map(std::path::PathBuf::from).collect()
+        };
         let dir_slices: Vec<&std::path::Path> = dir_refs.iter().map(|p| p.as_path()).collect();
         let detected = auto_detect(&dir_slices, &known_ids);
 

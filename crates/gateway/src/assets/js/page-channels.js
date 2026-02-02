@@ -12,13 +12,17 @@ import { connected, models as modelsSig } from "./signals.js";
 import * as S from "./state.js";
 import { ConfirmDialog, Modal, requestConfirm } from "./ui.js";
 
+var channels = signal([]);
+
 export function prefetchChannels() {
 	sendRpc("channels.status", {}).then((res) => {
-		if (res?.ok) S.setCachedChannels(res.payload?.channels || []);
+		if (res?.ok) {
+			var ch = res.payload?.channels || [];
+			channels.value = ch;
+			S.setCachedChannels(ch);
+		}
 	});
 }
-
-var channels = signal([]);
 var senders = signal([]);
 var activeTab = signal("channels");
 var showAddModal = signal(false);
@@ -90,12 +94,12 @@ function ChannelCard(props) {
       </div>
       <span class="provider-item-badge ${statusClass}">${ch.status || "unknown"}</span>
     </div>
-    <div style="display:flex;gap:6px;">
-      <button class="session-action-btn" title="Edit ${ch.account_id || "channel"}"
+    <div class="flex gap-2">
+      <button class="provider-btn provider-btn-sm provider-btn-secondary" title="Edit ${ch.account_id || "channel"}"
         onClick=${() => {
 					editingChannel.value = ch;
 				}}>Edit</button>
-      <button class="session-action-btn session-delete" title="Remove ${ch.account_id || "channel"}"
+      <button class="provider-btn provider-btn-sm provider-btn-danger" title="Remove ${ch.account_id || "channel"}"
         onClick=${onRemove}>Remove</button>
     </div>
   </div>`;
@@ -172,8 +176,8 @@ function SendersTab() {
             <td class="senders-td">
               ${
 								s.allowed
-									? html`<button class="session-action-btn session-delete" onClick=${() => onAction(identifier, "deny")}>Deny</button>`
-									: html`<button class="session-action-btn" style="background:var(--accent-dim);color:white;" onClick=${() => onAction(identifier, "approve")}>Approve</button>`
+									? html`<button class="provider-btn provider-btn-sm provider-btn-danger" onClick=${() => onAction(identifier, "deny")}>Deny</button>`
+									: html`<button class="provider-btn provider-btn-sm" onClick=${() => onAction(identifier, "approve")}>Approve</button>`
 							}
             </td>
           </tr>`;
@@ -274,7 +278,7 @@ function AddChannelModal() {
       <textarea data-field="allowlist" placeholder="user1\nuser2" rows="3"
         style="font-family:var(--font-body);resize:vertical;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:8px 12px;font-size:.85rem;" />
       ${error.value && html`<div class="text-xs text-[var(--error)] channel-error" style="display:block;">${error.value}</div>`}
-      <button class="bg-[var(--accent-dim)] text-white border-none px-4 py-2 rounded text-sm cursor-pointer hover:bg-[var(--accent)] transition-colors"
+      <button class="provider-btn"
         onClick=${onSubmit} disabled=${saving.value}>
         ${saving.value ? "Connecting\u2026" : "Connect Bot"}
       </button>
@@ -354,7 +358,7 @@ function EditChannelModal() {
       <textarea data-field="allowlist" rows="3"
         style="font-family:var(--font-body);resize:vertical;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:8px 12px;font-size:.85rem;">${(cfg.allowlist || []).join("\n")}</textarea>
       ${error.value && html`<div class="text-xs text-[var(--error)] channel-error" style="display:block;">${error.value}</div>`}
-      <button class="bg-[var(--accent-dim)] text-white border-none px-4 py-2 rounded text-sm cursor-pointer hover:bg-[var(--accent)] transition-colors"
+      <button class="provider-btn"
         onClick=${onSave} disabled=${saving.value}>
         ${saving.value ? "Saving\u2026" : "Save Changes"}
       </button>
@@ -367,7 +371,7 @@ function ChannelsPage() {
 	useEffect(() => {
 		// Use prefetched cache for instant render
 		if (S.cachedChannels !== null) channels.value = S.cachedChannels;
-		loadChannels();
+		if (connected.value) loadChannels();
 
 		var unsub = onEvent("channel", (p) => {
 			if (p.kind === "inbound_message" && activeTab.value === "senders" && sendersAccount.value === p.account_id) {
@@ -380,7 +384,7 @@ function ChannelsPage() {
 			if (unsub) unsub();
 			S.setChannelEventUnsub(null);
 		};
-	}, []);
+	}, [connected.value]);
 
 	return html`
     <div class="flex-1 flex flex-col min-w-0 p-4 gap-4 overflow-y-auto">
@@ -399,7 +403,7 @@ function ChannelsPage() {
         ${
 					activeTab.value === "channels" &&
 					html`
-          <button class="bg-[var(--accent-dim)] text-white border-none px-3 py-1.5 rounded text-xs cursor-pointer hover:bg-[var(--accent)] transition-colors"
+          <button class="provider-btn"
             onClick=${() => {
 							if (connected.value) showAddModal.value = true;
 						}}>+ Add Telegram Bot</button>

@@ -37,6 +37,10 @@ pub mod server;
 pub mod services;
 pub mod session;
 pub mod state;
+#[cfg(feature = "tailscale")]
+pub mod tailscale;
+#[cfg(feature = "tailscale")]
+pub mod tailscale_routes;
 #[cfg(feature = "tls")]
 pub mod tls;
 pub mod ws;

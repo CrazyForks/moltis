@@ -341,12 +341,12 @@ function CronsPage() {
     <div class="flex-1 flex flex-col min-w-0 p-4 gap-4 overflow-y-auto">
       <div class="flex items-center gap-3">
         <h2 class="text-lg font-medium text-[var(--text-strong)]">Cron Jobs</h2>
-        <button class="bg-[var(--accent-dim)] text-white border-none px-3 py-1.5 rounded text-xs cursor-pointer hover:bg-[var(--accent)] transition-colors"
+        <button class="provider-btn"
           onClick=${() => {
 						editingJob.value = null;
 						showModal.value = true;
 					}}>+ Add Job</button>
-        <button class="text-xs text-[var(--muted)] border border-[var(--border)] px-2.5 py-1 rounded-md hover:text-[var(--text)] hover:border-[var(--border-strong)] transition-colors cursor-pointer bg-transparent"
+        <button class="provider-btn provider-btn-secondary"
           onClick=${() => {
 						loadJobs();
 						loadStatus();

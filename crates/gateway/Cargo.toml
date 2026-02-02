@@ -60,9 +60,10 @@ webauthn-rs           = { features = ["danger-allow-state-serialisation"], versi
 webauthn-rs-proto     = "0.5"
 
 [features]
-default          = ["file-watcher", "tls", "web-ui"]
+default          = ["file-watcher", "tailscale", "tls", "web-ui"]
 file-watcher     = ["moltis-memory/file-watcher"]
 local-embeddings = ["moltis-memory/local-embeddings"]
+tailscale        = []
 tls              = ["dep:axum-server", "dep:rcgen", "dep:rustls", "dep:rustls-pemfile", "dep:tokio-rustls"]
 web-ui           = ["dep:include_dir"]
 

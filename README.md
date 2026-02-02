@@ -77,6 +77,9 @@ What you get out of the box:
   defaults so you can edit packages and settings without recompiling
 - **Configurable directories** — `--config-dir` / `--data-dir` CLI flags and
   `MOLTIS_CONFIG_DIR` / `MOLTIS_DATA_DIR` environment variables
+- **Tailscale integration** — expose the gateway over your tailnet via Tailscale
+  Serve (private HTTPS) or Funnel (public HTTPS), with status monitoring and
+  mode switching from the web UI (optional `tailscale` feature flag)
 
 ## Quickstart
 

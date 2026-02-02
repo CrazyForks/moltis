@@ -1,9 +1,10 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark light">
+<script>!function(){var t=localStorage.getItem("moltis-theme")||"system";if(t==="system")t=matchMedia("(prefers-color-scheme:dark)").matches?"dark":"light";document.documentElement.setAttribute("data-theme",t);document.documentElement.style.background=t==="dark"?"#0f1115":"#fafafa";document.documentElement.style.color=t==="dark"?"#e0e0e0":"#222"}()</script>
 <title>moltis</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%23333'/><text x='16' y='22' font-size='20' text-anchor='middle' fill='white' font-family='system-ui'>M</text></svg>">
 <meta name="build-ts" content="__BUILD_TS__">
@@ -66,7 +67,8 @@
   <button id="burgerBtn" class="burger-btn" title="Navigation">
     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="20" height="20"><path d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"/></svg>
   </button>
-  <a href="/chats" id="titleLink" class="text-base font-medium tracking-wide text-[var(--text-strong)]" style="text-decoration:none;cursor:pointer"><span id="titleEmoji"></span><span id="titleName">moltis</span></a>
+  <a href="/chats" id="titleLink" class="text-base font-medium tracking-wide text-[var(--text-strong)] no-underline cursor-pointer"><span id="titleEmoji"></span><span id="titleName">moltis</span></a>
+  <script>!function(){var g=window.__MOLTIS__;if(!g||!g.identity)return;var i=g.identity;var e=document.getElementById("titleEmoji");var n=document.getElementById("titleName");if(e&&i.emoji)e.textContent=i.emoji+" ";if(n&&i.name)n.textContent=i.name}()</script>
   <span class="status-dot" id="statusDot"></span>
   <span class="text-xs text-[var(--muted)]" id="statusText">disconnected</span>
   <div class="flex-1"></div>
@@ -103,36 +105,36 @@
   <!-- Navigation panel -->
   <nav id="navPanel" class="nav-panel">
     <div class="flex-1 flex flex-col">
-      <a href="/chats" data-nav class="nav-link" style="display:flex;align-items:center;gap:8px">
+      <a href="/chats" data-nav class="nav-link">
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="16" height="16"><path stroke-linecap="round" stroke-linejoin="round" d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.076-4.076a1.526 1.526 0 0 1 1.037-.443 48.3 48.3 0 0 0 5.862-.498c1.585-.233 2.708-1.626 2.708-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.4 48.4 0 0 0 12 3a48.4 48.4 0 0 0-5.775.514C4.623 3.746 3.5 5.14 3.5 6.74v6.009Z"/></svg>
         Chat
       </a>
-      <a href="/crons" data-nav class="nav-link" style="display:flex;align-items:center;gap:8px">
+      <a href="/crons" data-nav class="nav-link">
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="16" height="16"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/></svg>
         Crons
         <span class="nav-count ml-auto text-[0.85rem] leading-none px-1.5 py-0.5 rounded-full bg-[var(--surface2)] text-[var(--muted)]" id="navCountCrons"></span>
       </a>
-      <a href="/projects" data-nav class="nav-link" style="display:flex;align-items:center;gap:8px">
+      <a href="/projects" data-nav class="nav-link">
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="16" height="16"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12.75V12A2.25 2.25 0 0 1 4.5 9.75h15A2.25 2.25 0 0 1 21.75 12v.75m-8.69-6.44-2.12-2.12a1.5 1.5 0 0 0-1.061-.44H4.5A2.25 2.25 0 0 0 2.25 6v12a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9a2.25 2.25 0 0 0-2.25-2.25h-5.379a1.5 1.5 0 0 1-1.06-.44Z"/></svg>
         Projects
         <span class="nav-count ml-auto text-[0.85rem] leading-none px-1.5 py-0.5 rounded-full bg-[var(--surface2)] text-[var(--muted)]" id="navCountProjects"></span>
       </a>
-      <a href="/providers" data-nav class="nav-link" style="display:flex;align-items:center;gap:8px">
+      <a href="/providers" data-nav class="nav-link">
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="16" height="16"><path stroke-linecap="round" stroke-linejoin="round" d="M5.25 14.25H18.75M5.25 14.25C3.59315 14.25 2.25 12.9069 2.25 11.25M5.25 14.25C3.59315 14.25 2.25 15.5931 2.25 17.25C2.25 18.9069 3.59315 20.25 5.25 20.25H18.75C20.4069 20.25 21.75 18.9069 21.75 17.25C21.75 15.5931 20.4069 14.25 18.75 14.25M2.25 11.25C2.25 9.59315 3.59315 8.25 5.25 8.25H18.75C20.4069 8.25 21.75 9.59315 21.75 11.25M2.25 11.25C2.25 10.2763 2.5658 9.32893 3.15 8.55L5.7375 5.1C6.37488 4.25016 7.37519 3.75 8.4375 3.75H15.5625C16.6248 3.75 17.6251 4.25016 18.2625 5.1L20.85 8.55C21.4342 9.32893 21.75 10.2763 21.75 11.25M21.75 11.25C21.75 12.9069 20.4069 14.25 18.75 14.25M18.75 17.25H18.7575V17.2575H18.75V17.25ZM18.75 11.25H18.7575V11.2575H18.75V11.25ZM15.75 17.25H15.7575V17.2575H15.75V17.25ZM15.75 11.25H15.7575V11.2575H15.75V11.25Z"/></svg>
         Providers
         <span class="nav-count ml-auto text-[0.85rem] leading-none px-1.5 py-0.5 rounded-full bg-[var(--surface2)] text-[var(--muted)]" id="navCountProviders"></span>
       </a>
-      <a href="/channels" data-nav class="nav-link" style="display:flex;align-items:center;gap:8px">
+      <a href="/channels" data-nav class="nav-link">
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="16" height="16"><path stroke-linecap="round" stroke-linejoin="round" d="M5.25 8.25h15m-16.5 7.5h15m-1.8-13.5-3.9 19.5m-2.1-19.5-3.9 19.5"/></svg>
         Channels
         <span class="nav-count ml-auto text-[0.85rem] leading-none px-1.5 py-0.5 rounded-full bg-[var(--surface2)] text-[var(--muted)]" id="navCountChannels"></span>
       </a>
-      <a href="/plugins" data-nav class="nav-link" style="display:flex;align-items:center;gap:8px">
+      <a href="/plugins" data-nav class="nav-link">
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="16" height="16"><path stroke-linecap="round" stroke-linejoin="round" d="M14.25 6.087c0-.355.186-.676.401-.959.221-.29.349-.634.349-1.003 0-1.036-1.007-1.875-2.25-1.875S10.5 3.09 10.5 4.125c0 .369.128.713.349 1.003.215.283.401.604.401.959v0a.64.64 0 0 1-.657.643 48.4 48.4 0 0 1-4.163-.3c.186 1.613.293 3.25.315 4.907a.656.656 0 0 1-.658.663v0c-.355 0-.676-.186-.959-.401a1.647 1.647 0 0 0-1.003-.349c-1.036 0-1.875 1.007-1.875 2.25s.84 2.25 1.875 2.25c.369 0 .713-.128 1.003-.349.283-.215.604-.401.959-.401v0c.31 0 .555.26.532.57a48.039 48.039 0 0 1-.642 5.056c1.518.19 3.058.309 4.616.354a.64.64 0 0 0 .657-.643v0c0-.355-.186-.676-.401-.959a1.647 1.647 0 0 1-.349-1.003c0-1.035 1.008-1.875 2.25-1.875 1.243 0 2.25.84 2.25 1.875 0 .369-.128.713-.349 1.003-.215.283-.4.604-.4.959v0c0 .333.277.599.61.58a48.1 48.1 0 0 0 5.427-.63 48.05 48.05 0 0 0 .582-4.717.532.532 0 0 0-.533-.57v0c-.355 0-.676.186-.959.401-.29.221-.634.349-1.003.349-1.035 0-1.875-1.007-1.875-2.25s.84-2.25 1.875-2.25c.37 0 .713.128 1.003.349.283.215.604.401.96.401v0a.656.656 0 0 0 .658-.663 48.422 48.422 0 0 0-.37-5.36c-1.886.342-3.81.574-5.766.689a.578.578 0 0 1-.61-.58v0Z"/></svg>
         Plugins
         <span class="nav-count ml-auto text-[0.85rem] leading-none px-1.5 py-0.5 rounded-full bg-[var(--surface2)] text-[var(--muted)]" id="navCountPlugins"></span>
       </a>
-      <a href="/skills" data-nav class="nav-link" style="display:flex;align-items:center;gap:8px">
+      <a href="/skills" data-nav class="nav-link">
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="16" height="16"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 0 0-2.455 2.456ZM16.894 20.567 16.5 21.75l-.394-1.183a2.25 2.25 0 0 0-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 0 0 1.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 0 0 1.423 1.423l1.183.394-1.183.394a2.25 2.25 0 0 0-1.423 1.423Z"/></svg>
         Skills
         <span class="nav-count ml-auto text-[0.85rem] leading-none px-1.5 py-0.5 rounded-full bg-[var(--surface2)] text-[var(--muted)]" id="navCountSkills"></span>
@@ -142,19 +144,19 @@
         MCP Tools
         <span class="nav-count ml-auto text-[0.85rem] leading-none px-1.5 py-0.5 rounded-full bg-[var(--surface2)] text-[var(--muted)]" id="navCountMcp"></span>
       </a>
-      <a href="/images" data-nav class="nav-link" style="display:flex;align-items:center;gap:8px">
+      <a href="/images" data-nav class="nav-link">
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="16" height="16"><path stroke-linecap="round" stroke-linejoin="round" d="m21 7.5-9-5.25L3 7.5m18 0-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9"/></svg>
         Images
         <span class="nav-count ml-auto text-[0.85rem] leading-none px-1.5 py-0.5 rounded-full bg-[var(--surface2)] text-[var(--muted)]" id="navCountImages"></span>
       </a>
-      <a href="/logs" data-nav class="nav-link" id="navLogs" style="display:flex;align-items:center;gap:8px;position:relative">
+      <a href="/logs" data-nav class="nav-link relative" id="navLogs">
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="16" height="16"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z"/></svg>
         Logs
-        <span id="logsAlertDot" style="display:none;width:7px;height:7px;border-radius:50%;background:var(--warn);position:absolute;top:50%;right:8px;transform:translateY(-50%)"></span>
+        <span id="logsAlertDot" class="hidden absolute top-1/2 right-2 -translate-y-1/2 w-[7px] h-[7px] rounded-full bg-[var(--warn)]"></span>
       </a>
     </div>
     <div class="border-t border-[var(--border)]">
-      <a href="/settings" data-nav class="nav-link" style="display:flex;align-items:center;gap:8px">
+      <a href="/settings" data-nav class="nav-link">
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="16" height="16"><path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.248a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg>
         Settings
       </a>
@@ -169,14 +171,14 @@
     </div>
     <!-- Project selector -->
     <div class="px-3 py-2 border-b border-[var(--border)] flex items-center gap-2">
-      <select id="projectSelect" class="flex-1 text-xs bg-[var(--surface2)] border border-[var(--border)] rounded px-2 py-1.5 text-[var(--text)] focus:outline-none focus:border-[var(--border-strong)] cursor-pointer" style="font-family:var(--font-body)">
+      <select id="projectSelect" class="flex-1 text-xs bg-[var(--surface2)] border border-[var(--border)] rounded px-2 py-1.5 text-[var(--text)] focus:outline-none focus:border-[var(--border-strong)] cursor-pointer font-sans">
         <option value="">No project</option>
       </select>
       <button id="manageProjectsBtn" class="text-xs text-[var(--muted)] border border-[var(--border)] px-2 py-0.5 rounded hover:text-[var(--text)] hover:border-[var(--border-strong)] transition-colors cursor-pointer bg-transparent" title="Manage projects">+</button>
     </div>
-    <div class="px-3 py-2 border-b border-[var(--border)]" style="position:relative">
+    <div class="px-3 py-2 border-b border-[var(--border)] relative">
       <input id="sessionSearch" type="text" placeholder="Search sessions…"
-             class="w-full text-xs bg-[var(--surface2)] border border-[var(--border)] rounded px-2 py-1.5 text-[var(--text)] focus:outline-none focus:border-[var(--border-strong)]" style="font-family:var(--font-body)" />
+             class="w-full text-xs bg-[var(--surface2)] border border-[var(--border)] rounded px-2 py-1.5 text-[var(--text)] focus:outline-none focus:border-[var(--border-strong)] font-sans" />
       <div id="searchResults" class="hidden"></div>
     </div>
     <div class="flex-1 overflow-y-auto" id="sessionList"></div>
@@ -188,6 +190,89 @@
 
 <!-- Modals (created on demand by modals.js) -->
 <div id="modalRoot"></div>
+
+<!-- Tailscale section hidden elements (toggled by page-settings.js) -->
+<div id="ts-installed-bar" style="display:none">
+  <div class="info-bar">
+    <span class="info-field">
+      <span class="status-dot connected"></span>
+      <span class="info-label">Installed</span>
+      <span data-info-version class="info-version"></span>
+    </span>
+    <span data-ts-tailnet-wrap class="info-field" style="display:none">
+      <span class="info-label">Tailnet:</span>
+      <span data-ts-tailnet class="info-value-strong"></span>
+    </span>
+    <span data-ts-account-wrap class="info-field" style="display:none">
+      <span class="info-label">Account:</span>
+      <span data-ts-account class="info-value"></span>
+    </span>
+    <span data-ts-ip-wrap class="info-field" style="display:none">
+      <span class="info-label">IP:</span>
+      <span data-ts-ip class="info-value-mono"></span>
+    </span>
+  </div>
+</div>
+
+<div id="ts-not-installed" style="display:none">
+  <div class="info-bar" style="justify-content:center;flex-direction:column;gap:12px;text-align:center">
+    <p style="font-size:.875rem;color:var(--text);margin:0">
+      The <code style="font-family:var(--font-mono);font-size:.875rem">tailscale</code> CLI was not found on this machine.
+    </p>
+    <div>
+      <a href="https://tailscale.com/download" target="_blank" rel="noopener"
+        class="provider-btn" style="display:inline-block;text-decoration:none">
+        Install Tailscale
+      </a>
+      <button data-ts-recheck class="provider-btn provider-btn-secondary" style="margin-left:8px">
+        Re-check
+      </button>
+    </div>
+  </div>
+</div>
+
+<div id="ts-error" class="settings-alert-error whitespace-pre-line max-w-form" style="display:none">
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="18" height="18" class="shrink-0 mt-0.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z"/></svg>
+  <span data-ts-error-text class="whitespace-pre-line"></span>
+</div>
+
+<div id="ts-not-running" class="alert-warning-text max-w-form" style="display:none">
+  <span class="alert-label-warn">Warning:</span>
+  Tailscale is not running. Start it with <code class="font-mono">tailscale up</code> or open the Tailscale app.
+</div>
+
+<div id="ts-mode-section" class="max-w-form" style="display:none">
+  <h3 class="text-sm font-medium text-[var(--text-strong)] mb-2">Mode</h3>
+  <div data-ts-mode-btns class="flex gap-2"></div>
+  <div data-ts-configuring class="text-xs text-[var(--muted)] mt-1.5" style="display:none"></div>
+</div>
+
+<div id="ts-hostname" class="max-w-form" style="display:none">
+  <h3 class="text-sm font-medium text-[var(--text-strong)] mb-1">Hostname</h3>
+  <a data-ts-hostname-link href="#" target="_blank" rel="noopener" class="font-mono text-sm text-[var(--text)] no-underline pointer-events-none">
+    <span data-ts-hostname-value></span>
+  </a>
+</div>
+
+<div id="ts-url" class="max-w-form" style="display:none">
+  <h3 class="text-sm font-medium text-[var(--text-strong)] mb-1">URL</h3>
+  <div class="font-mono text-sm">
+    <a data-ts-url-link href="#" target="_blank" rel="noopener" class="text-[var(--accent)] no-underline"></a>
+  </div>
+</div>
+
+<div id="ts-funnel-warning" class="alert-warning-text max-w-form" style="display:none">
+  <span class="alert-label-warn">Warning:</span>
+  Funnel exposes your gateway to the public internet. Make sure password authentication is configured.
+</div>
+
+<div id="ts-funnel-security-warning" class="alert-warning-text max-w-form" style="display:none">
+  <span class="alert-label-warn">Warning:</span>
+  Enabling Funnel exposes moltis to the public internet. This code has not been security-audited. Use at your own risk.
+</div>
+<div id="ts-funnel-auth-btn" style="display:none">
+  <a href="/settings/security" class="provider-btn">Set up authentication</a>
+</div>
 
 <!-- Templates -->
 <template id="tpl-thinking-dots">
@@ -219,7 +304,7 @@
 <template id="tpl-session-item">
   <div class="session-item">
     <div class="session-info">
-      <div class="session-label" style="display:flex;align-items:center;gap:5px">
+      <div class="session-label">
         <span class="session-icon"></span>
         <span data-label-text></span>
       </div>

@@ -194,19 +194,18 @@ function SandboxBanner() {
 	var badgeColor =
 		info.backend === "none" ? "var(--error)" : info.backend === "apple-container" ? "var(--accent)" : "var(--muted)";
 
-	return html`<div style="max-width:600px;">
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
-      <span class="text-xs font-medium text-[var(--text)]">Container backend:</span>
-      <span class="text-xs font-medium" style="color:${badgeColor};font-family:var(--font-mono);">${label}</span>
+	return html`<div>
+    <div class="info-bar" style="margin-bottom:8px;">
+      <span class="info-field">
+        <span class="info-label">Container backend:</span>
+        <span class="info-value-strong" style="color:${badgeColor};font-family:var(--font-mono)">${label}</span>
+      </span>
     </div>
     ${
 			rec &&
 			html`
-      <div style="padding:10px 14px;border-radius:6px;font-size:.78rem;line-height:1.5;
-        background:${rec.level === "warn" ? "rgba(245,158,11,0.08)" : "rgba(59,130,246,0.08)"};
-        border:1px solid ${rec.level === "warn" ? "rgba(245,158,11,0.25)" : "rgba(59,130,246,0.2)"};
-        color:var(--text);">
-        <span style="font-weight:500;color:${rec.level === "warn" ? "var(--warn)" : "var(--accent)"};">
+      <div class="${rec.level === "warn" ? "alert-warning-text" : "alert-info-text"}">
+        <span class="${rec.level === "warn" ? "alert-label-warn" : "alert-label-info"}">
           ${rec.level === "warn" ? "Warning" : "Tip"}:
         </span>
         ${" "}${rec.text}
@@ -240,7 +239,7 @@ function DefaultImageSelector() {
 			});
 	}
 
-	return html`<div style="max-width:600px;">
+	return html`<div class="max-w-form">
     <h3 class="text-sm font-medium text-[var(--text-strong)]" style="margin-bottom:8px;">Default image</h3>
     <p class="text-xs text-[var(--muted)]" style="margin:0 0 8px;">
       Base image used for new sessions and projects unless overridden. Leave empty to use the built-in default (ubuntu:25.10).
@@ -292,7 +291,7 @@ function ImagesPage() {
           ${pruning.value ? "Pruning\u2026" : "Prune all"}
         </button>
       </div>
-      <p class="text-xs text-[var(--muted)] leading-relaxed" style="max-width:600px;margin:0;">
+      <p class="text-sm text-[var(--muted)] leading-relaxed" class="max-w-form" style="margin:0;">
         Container images cached by moltis for sandbox execution. You can delete individual images or prune all. Build custom images from a base with apt packages.
         ${sandboxInfo.value?.backend === "apple-container" && html`<br /><br />Apple Container provides VM-isolated execution but does not support building images. Docker (or OrbStack) is required alongside Apple Container to build and cache custom images. Sandboxed commands run via Apple Container; image builds use Docker.`}
       </p>
@@ -302,14 +301,14 @@ function ImagesPage() {
       <${DefaultImageSelector} />
 
       <!-- Cached images list -->
-      <div style="max-width:600px;">
+      <div class="max-w-form">
         ${loading.value && html`<div class="text-xs text-[var(--muted)]">Loading\u2026</div>`}
         ${!loading.value && images.value.length === 0 && html`<div class="text-xs text-[var(--muted)]" style="padding:12px 0;">No cached images.</div>`}
         ${images.value.map((img) => html`<${ImageRow} key=${img.tag} image=${img} />`)}
       </div>
 
       <!-- Build custom image -->
-      <div style="max-width:600px;margin-top:8px;border-top:1px solid var(--border);padding-top:16px;">
+      <div class="max-w-form" style="margin-top:8px;border-top:1px solid var(--border);padding-top:16px;">
         <h3 class="text-sm font-medium text-[var(--text-strong)]" style="margin-bottom:12px;">Build custom image</h3>
         <div class="project-edit-group" style="margin-bottom:8px;">
           <div class="text-xs text-[var(--muted)]" style="margin-bottom:4px;">Image name</div>
@@ -343,14 +342,14 @@ function ImagesPage() {
         </button>
         ${
 					buildWarning.value &&
-					html`<div style="margin-top:8px;padding:8px 12px;border-radius:6px;font-size:.78rem;line-height:1.5;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.25);color:var(--text);">
-          <span style="font-weight:500;color:var(--warn);">Warning:</span>${" "}${buildWarning.value}
+					html`<div class="alert-warning-text" style="margin-top:8px;">
+          <span class="alert-label-warn">Warning:</span>${" "}${buildWarning.value}
         </div>`
 				}
         ${
 					buildStatus.value &&
 					(buildStatus.value.startsWith("Error")
-						? html`<pre style="margin-top:8px;padding:10px 12px;border-radius:6px;font-size:.75rem;line-height:1.4;font-family:var(--font-mono);color:var(--error);background:rgba(239,68,68,0.06);border:1px solid rgba(239,68,68,0.2);white-space:pre-wrap;word-break:break-word;overflow-x:auto;max-height:300px;overflow-y:auto;">${buildStatus.value}</pre>`
+						? html`<div class="alert-error-text" style="margin-top:8px;"><pre>${buildStatus.value}</pre></div>`
 						: html`<div class="text-xs" style="margin-top:8px;color:var(--muted);">${buildStatus.value}</div>`)
 				}
       </div>

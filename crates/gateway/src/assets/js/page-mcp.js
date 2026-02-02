@@ -146,7 +146,7 @@ function ConfigForm({ server, argsVal, envVal, onCancel }) {
       </div>`
 		}
     <button onClick=${onCancel}
-      class="self-start bg-transparent border border-[var(--border)] text-[var(--muted)] rounded-[var(--radius-sm)] text-xs px-2 py-0.5 cursor-pointer">Cancel</button>
+      class="self-start provider-btn provider-btn-secondary provider-btn-sm">Cancel</button>
   </div>`;
 }
 
@@ -190,7 +190,7 @@ function FeaturedCard(props) {
         </div>
       </div>
       <button onClick=${onAdd} disabled=${installing.value}
-        class="shrink-0 whitespace-nowrap border border-[var(--border)] rounded-[var(--radius-sm)] text-xs px-2.5 py-1 cursor-pointer font-medium bg-[var(--accent)] text-white">
+        class="shrink-0 whitespace-nowrap provider-btn provider-btn-sm">
         ${featuredButtonLabel(installing.value, configuring.value, needsConfig)}
       </button>
     </div>
@@ -320,11 +320,11 @@ function InstallBox() {
       <button onClick=${() => {
 				transportType.value = "stdio";
 			}}
-        class="text-xs px-2.5 py-1 rounded-[var(--radius-sm)] border cursor-pointer ${transportType.value === "stdio" ? "bg-[var(--accent)] text-white border-[var(--accent)]" : "bg-transparent text-[var(--muted)] border-[var(--border)]"}">Stdio (local)</button>
+        class="provider-btn provider-btn-sm ${transportType.value === "stdio" ? "" : "provider-btn-secondary"}">Stdio (local)</button>
       <button onClick=${() => {
 				transportType.value = "sse";
 			}}
-        class="text-xs px-2.5 py-1 rounded-[var(--radius-sm)] border cursor-pointer ${transportType.value === "sse" ? "bg-[var(--accent)] text-white border-[var(--accent)]" : "bg-transparent text-[var(--muted)] border-[var(--border)]"}">SSE (remote)</button>
+        class="provider-btn provider-btn-sm ${transportType.value === "sse" ? "" : "provider-btn-secondary"}">SSE (remote)</button>
     </div>
     ${
 			!isSse &&
@@ -371,7 +371,7 @@ function InstallBox() {
       <button onClick=${() => {
 				showEnv.value = !showEnv.value;
 			}}
-        class="bg-transparent border border-[var(--border)] text-[var(--muted)] rounded-[var(--radius-sm)] text-xs px-2 py-1.5 cursor-pointer whitespace-nowrap">
+        class="provider-btn provider-btn-secondary provider-btn-sm whitespace-nowrap">
         ${showEnv.value ? "Hide env vars" : "+ Environment variables"}
       </button>
     </div>
@@ -465,19 +465,19 @@ function ServerCard({ server }) {
       </div>
       <div class="flex items-center gap-1.5">
         <button onClick=${startEdit}
-          class="bg-transparent border border-[var(--border)] text-[var(--text)] rounded-[var(--radius-sm)] text-xs px-2 py-1 cursor-pointer" title="Edit">Edit</button>
+          class="provider-btn provider-btn-secondary provider-btn-sm" title="Edit">Edit</button>
         <button onClick=${(e) => {
 					e.stopPropagation();
 					toggleEnabled();
 				}} disabled=${toggling.value}
-          class="border border-[var(--border)] rounded-[var(--radius-sm)] text-xs px-2.5 py-1 font-medium ${server.enabled ? "bg-transparent text-[var(--muted)]" : "bg-[var(--accent)] text-white"} ${toggling.value ? "cursor-wait opacity-60" : "cursor-pointer"}">${toggling.value ? "\u2026" : server.enabled ? "Disable" : "Enable"}</button>
+          class="provider-btn provider-btn-sm ${server.enabled ? "provider-btn-secondary" : ""} ${toggling.value ? "cursor-wait opacity-60" : ""}">${toggling.value ? "\u2026" : server.enabled ? "Disable" : "Enable"}</button>
         <button onClick=${(e) => {
 					e.stopPropagation();
 					restart();
 				}} disabled=${!server.enabled}
-          class="bg-transparent border border-[var(--border)] text-[var(--text)] rounded-[var(--radius-sm)] text-xs px-2 py-1 cursor-pointer">Restart</button>
+          class="provider-btn provider-btn-secondary provider-btn-sm">Restart</button>
         <button onClick=${remove}
-          class="bg-transparent border border-[var(--border)] text-[var(--error)] rounded-[var(--radius-sm)] text-xs px-2 py-1 cursor-pointer">Remove</button>
+          class="provider-btn provider-btn-danger provider-btn-sm">Remove</button>
       </div>
     </div>
     ${
@@ -512,7 +512,7 @@ function ServerCard({ server }) {
           <button onClick=${() => {
 						editing.value = false;
 					}}
-            class="bg-transparent border border-[var(--border)] text-[var(--muted)] rounded-[var(--radius-sm)] text-xs px-2 py-1 cursor-pointer">Cancel</button>
+            class="provider-btn provider-btn-secondary provider-btn-sm">Cancel</button>
         </div>
       </div>`
 		}
@@ -574,7 +574,7 @@ function McpPage() {
     <div class="flex-1 flex flex-col min-w-0 p-4 gap-4 overflow-y-auto">
       <div class="flex items-center gap-3">
         <h2 class="text-lg font-medium text-[var(--text-strong)]">MCP Tools</h2>
-        <button class="logs-btn" onClick=${refreshServers}>Refresh</button>
+        <button class="provider-btn provider-btn-secondary provider-btn-sm" onClick=${refreshServers}>Refresh</button>
       </div>
       <div class="max-w-[600px] bg-[var(--surface2)] border border-[var(--border)] rounded-[var(--radius)] px-5 py-4 leading-relaxed">
         <p class="text-sm text-[var(--text)] mb-2.5">

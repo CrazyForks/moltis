@@ -53,6 +53,11 @@ var sections = [
 		label: "Security",
 		icon: html`<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="16" height="16"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg>`,
 	},
+	{
+		id: "tailscale",
+		label: "Tailscale",
+		icon: html`<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="16" height="16"><path stroke-linecap="round" stroke-linejoin="round" d="M12 21a9.004 9.004 0 0 0 8.716-6.747M12 21a9.004 9.004 0 0 1-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 0 1 7.843 4.582M12 3a8.997 8.997 0 0 0-7.843 4.582m15.686 0A11.953 11.953 0 0 1 12 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0 1 21 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0 1 12 16.5a17.92 17.92 0 0 1-8.716-2.247m0 0A8.966 8.966 0 0 1 3 12c0-1.264.26-2.466.73-3.558"/></svg>`,
+	},
 ];
 
 function SettingsSidebar() {
@@ -145,16 +150,16 @@ function EmojiPicker({ value, onChange }) {
 	return html`<div class="settings-emoji-field" ref=${wrapRef}>
 		<input
 			type="text"
-			class="settings-input"
-			style="width:3.5rem;text-align:center;font-size:1.3rem"
+			class="provider-key-input"
+			style="width:3.5rem;text-align:center;font-size:1.3rem;padding:0.35rem"
 			value=${value || ""}
 			onInput=${(e) => onChange(e.target.value)}
 			placeholder="\u{1f43e}"
 		/>
 		<button
 			type="button"
-			class="settings-btn"
-			style="padding:0.35rem 0.6rem;font-size:0.75rem"
+			class="provider-btn"
+			style="font-size:0.75rem"
 			onClick=${() => setOpen(!open)}
 		>
 			${open ? "Close" : "Pick"}
@@ -220,8 +225,8 @@ function IdentitySection() {
 	}, [id]);
 
 	if (loading.value) {
-		return html`<div class="settings-content">
-			<p class="text-sm text-[var(--muted)]">Loading...</p>
+		return html`<div class="flex-1 flex flex-col min-w-0 p-4 gap-4 overflow-y-auto">
+			<div class="text-xs text-[var(--muted)]">Loading\u2026</div>
 		</div>`;
 	}
 
@@ -274,94 +279,82 @@ function IdentitySection() {
 		rerender();
 	}
 
-	return html`<div class="settings-content">
-		<h2 class="settings-title">Identity</h2>
+	return html`<div class="flex-1 flex flex-col min-w-0 p-4 gap-4 overflow-y-auto">
+		<h2 class="text-lg font-medium text-[var(--text-strong)]">Identity</h2>
 		${
 			isNew
-				? html`<p class="settings-hint" style="margin-bottom:1rem">
+				? html`<p class="text-xs text-[var(--muted)] leading-relaxed" style="max-width:600px;margin:0;">
 				Welcome! Set up your agent's identity to get started.
 			</p>`
 				: null
 		}
-		<form onSubmit=${onSave}>
-			<div class="settings-section">
-				<h3 class="settings-section-title">Agent</h3>
-				<div class="settings-grid">
-					<div class="settings-field">
-						<label class="settings-label">Name *</label>
-						<input
-							type="text"
-							class="settings-input"
-							value=${name}
-							onInput=${(e) => setName(e.target.value)}
-							placeholder="e.g. Rex"
-						/>
+		<form onSubmit=${onSave} style="max-width:600px;display:flex;flex-direction:column;gap:16px;">
+			<!-- Agent section -->
+			<div>
+				<h3 class="text-sm font-medium text-[var(--text-strong)]" style="margin-bottom:8px;">Agent</h3>
+				<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;">
+					<div>
+						<div class="text-xs text-[var(--muted)]" style="margin-bottom:4px;">Name *</div>
+						<input type="text" class="provider-key-input" style="width:100%;"
+							value=${name} onInput=${(e) => setName(e.target.value)}
+							placeholder="e.g. Rex" />
 					</div>
-					<div class="settings-field">
-						<label class="settings-label">Emoji</label>
+					<div>
+						<div class="text-xs text-[var(--muted)]" style="margin-bottom:4px;">Emoji</div>
 						<${EmojiPicker} value=${emoji} onChange=${setEmoji} />
 					</div>
-					<div class="settings-field">
-						<label class="settings-label">Creature</label>
-						<input
-							type="text"
-							class="settings-input"
-							value=${creature}
-							onInput=${(e) => setCreature(e.target.value)}
-							placeholder="e.g. dog"
-						/>
+					<div>
+						<div class="text-xs text-[var(--muted)]" style="margin-bottom:4px;">Creature</div>
+						<input type="text" class="provider-key-input" style="width:100%;"
+							value=${creature} onInput=${(e) => setCreature(e.target.value)}
+							placeholder="e.g. dog" />
 					</div>
-					<div class="settings-field">
-						<label class="settings-label">Vibe</label>
-						<input
-							type="text"
-							class="settings-input"
-							value=${vibe}
-							onInput=${(e) => setVibe(e.target.value)}
-							placeholder="e.g. chill"
-						/>
+					<div>
+						<div class="text-xs text-[var(--muted)]" style="margin-bottom:4px;">Vibe</div>
+						<input type="text" class="provider-key-input" style="width:100%;"
+							value=${vibe} onInput=${(e) => setVibe(e.target.value)}
+							placeholder="e.g. chill" />
 					</div>
 				</div>
 			</div>
-			<div class="settings-section">
-				<h3 class="settings-section-title">User</h3>
-				<div class="settings-grid">
-					<div class="settings-field">
-						<label class="settings-label">Your name *</label>
-						<input
-							type="text"
-							class="settings-input"
-							value=${userName}
-							onInput=${(e) => setUserName(e.target.value)}
-							placeholder="e.g. Alice"
-						/>
-					</div>
+
+			<!-- User section -->
+			<div>
+				<h3 class="text-sm font-medium text-[var(--text-strong)]" style="margin-bottom:8px;">User</h3>
+				<div>
+					<div class="text-xs text-[var(--muted)]" style="margin-bottom:4px;">Your name *</div>
+					<input type="text" class="provider-key-input" style="width:100%;max-width:280px;"
+						value=${userName} onInput=${(e) => setUserName(e.target.value)}
+						placeholder="e.g. Alice" />
 				</div>
 			</div>
-			<div class="settings-section">
-				<h3 class="settings-section-title">Soul</h3>
-				<p class="settings-hint">Personality and tone injected into every conversation. Leave empty for the default.</p>
+
+			<!-- Soul section -->
+			<div>
+				<h3 class="text-sm font-medium text-[var(--text-strong)]" style="margin-bottom:4px;">Soul</h3>
+				<p class="text-xs text-[var(--muted)]" style="margin:0 0 8px;">Personality and tone injected into every conversation. Leave empty for the default.</p>
 				<textarea
-					class="settings-textarea"
+					class="provider-key-input"
 					rows="8"
+					style="width:100%;min-height:8rem;resize:vertical;font-size:.8rem;line-height:1.5;"
 					placeholder=${DEFAULT_SOUL}
 					value=${soul}
 					onInput=${(e) => setSoul(e.target.value)}
 				/>
 				${
 					soul
-						? html`<div style="margin-top:0.25rem">
-						<button type="button" class="settings-btn settings-btn-secondary" onClick=${onResetSoul}>Reset to default</button>
-					</div>`
+						? html`<button type="button" class="provider-btn" style="margin-top:6px;font-size:.75rem;"
+							onClick=${onResetSoul}>Reset to default</button>`
 						: null
 				}
 			</div>
-			<div class="settings-actions">
-				<button type="submit" class="settings-btn" disabled=${saving}>
+
+			<div style="display:flex;align-items:center;gap:8px;">
+				<button type="submit" class="provider-btn" disabled=${saving}>
 					${saving ? "Saving\u2026" : "Save"}
 				</button>
-				${saved ? html`<span class="settings-saved">Saved</span>` : null}
-				${error ? html`<span class="settings-error">${error}</span>` : null}
+				${saved ? html`<span class="text-xs" style="color:var(--accent);">Saved</span>` : null}
+				${error ? html`<span class="text-xs" style="color:var(--error);">${error}</span>` : null}
 			</div>
 		</form>
 	</div>`;
@@ -473,64 +466,73 @@ function EnvironmentSection() {
 		});
 	}
 
-	return html`<div class="settings-content">
-		<h2 class="settings-title">Environment Variables</h2>
-		<p class="settings-hint">Environment variables are injected into sandbox command execution. Values are write-only and never displayed.</p>
+	return html`<div class="flex-1 flex flex-col min-w-0 p-4 gap-4 overflow-y-auto">
+		<h2 class="text-lg font-medium text-[var(--text-strong)]">Environment Variables</h2>
+		<p class="text-xs text-[var(--muted)] leading-relaxed" style="max-width:600px;margin:0;">
+			Environment variables are injected into sandbox command execution. Values are write-only and never displayed.
+		</p>
 
 		${
 			envLoading
-				? html`<p class="settings-hint">Loading...</p>`
+				? html`<div class="text-xs text-[var(--muted)]">Loading\u2026</div>`
 				: html`
-			<div class="settings-section">
+			<!-- Existing variables -->
+			<div style="max-width:600px;">
 				${
 					envVars.length > 0
-						? html`<div class="security-list">
+						? html`<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px;">
 					${envVars.map(
-						(v) => html`<div class="security-list-item" key=${v.id}>
+						(v) => html`<div class="provider-item" style="margin-bottom:0;" key=${v.id}>
 						${
 							updateId === v.id
 								? html`<form style="display:flex;align-items:center;gap:6px;flex:1" onSubmit=${(e) => {
 										e.preventDefault();
 										onConfirmUpdate(v.key);
 									}}>
-									<code style="font-size:0.85rem">${v.key}</code>
-									<input type="password" class="settings-input" value=${updateValue}
+									<code style="font-size:0.8rem;font-family:var(--font-mono);">${v.key}</code>
+									<input type="password" class="provider-key-input" value=${updateValue}
 										onInput=${(e) => setUpdateValue(e.target.value)}
 										placeholder="New value" style="flex:1" autofocus />
-									<button type="submit" class="settings-btn">Save</button>
-									<button type="button" class="settings-btn" onClick=${onCancelUpdate}>Cancel</button>
+									<button type="submit" class="provider-btn">Save</button>
+									<button type="button" class="provider-btn" onClick=${onCancelUpdate}>Cancel</button>
 								</form>`
-								: html`<div>
-									<code style="font-size:0.85rem">${v.key}</code>
-									<span style="margin-left:0.5rem;color:var(--muted);font-size:0.78rem">\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022</span>
-									<span style="color:var(--muted);font-size:0.78rem"> - <time datetime="${v.updated_at}">${v.updated_at}</time></span>
+								: html`<div style="flex:1;min-width:0;">
+									<div class="provider-item-name" style="font-family:var(--font-mono);font-size:.8rem;">${v.key}</div>
+									<div style="font-size:.7rem;color:var(--muted);margin-top:2px;display:flex;gap:12px;">
+										<span>\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022</span>
+										<span>${v.updated_at}</span>
+									</div>
 								</div>
-								<div style="display:flex;gap:4px">
-									<button class="settings-btn" onClick=${() => onStartUpdate(v.id)}>Update</button>
-									<button class="settings-btn settings-btn-danger" onClick=${() => onDelete(v.id)}>Delete</button>
+								<div style="display:flex;gap:4px;">
+									<button class="provider-btn" onClick=${() => onStartUpdate(v.id)}>Update</button>
+									<button class="provider-btn provider-btn-danger"
+										onClick=${() => onDelete(v.id)}>Delete</button>
 								</div>`
 						}
 					</div>`,
 					)}
 				</div>`
-						: html`<p class="settings-hint">No environment variables set.</p>`
+						: html`<div class="text-xs text-[var(--muted)]" style="padding:12px 0;">No environment variables set.</div>`
 				}
+			</div>
 
-				<form onSubmit=${onAdd} style="margin-top:1rem">
-					<h3 class="settings-section-title">Add Variable</h3>
-					<div class="security-add-row" style="flex-wrap:wrap">
-						<input type="text" class="settings-input" value=${newKey}
+			<!-- Add variable -->
+			<div style="max-width:600px;border-top:1px solid var(--border);padding-top:16px;">
+				<h3 class="text-sm font-medium text-[var(--text-strong)]" style="margin-bottom:8px;">Add Variable</h3>
+				<form onSubmit=${onAdd}>
+					<div style="display:flex;gap:8px;flex-wrap:wrap;">
+						<input type="text" class="provider-key-input" value=${newKey}
 							onInput=${(e) => setNewKey(e.target.value)}
-							placeholder="KEY_NAME" style="flex:1;min-width:120px" />
-						<input type="password" class="settings-input" value=${newValue}
+							placeholder="KEY_NAME" style="flex:1;min-width:120px;font-family:var(--font-mono);font-size:.8rem;" />
+						<input type="password" class="provider-key-input" value=${newValue}
 							onInput=${(e) => setNewValue(e.target.value)}
-							placeholder="Value" style="flex:2;min-width:200px" />
-						<button type="submit" class="settings-btn" disabled=${saving || !newKey.trim()}>
+							placeholder="Value" style="flex:2;min-width:200px;" />
+						<button type="submit" class="provider-btn" disabled=${saving || !newKey.trim()}>
 							${saving ? "Saving\u2026" : "Add"}
 						</button>
 					</div>
-					${envMsg ? html`<span class="settings-saved" style="display:block;margin-top:0.5rem">${envMsg}</span>` : null}
-					${envErr ? html`<span class="settings-error" style="display:block;margin-top:0.5rem">${envErr}</span>` : null}
+					${envMsg ? html`<div class="text-xs" style="margin-top:6px;color:var(--accent);">${envMsg}</div>` : null}
+					${envErr ? html`<div class="text-xs" style="margin-top:6px;color:var(--error);">${envErr}</div>` : null}
 				</form>
 			</div>
 		`
@@ -798,26 +800,26 @@ function SecuritySection() {
 	}
 
 	if (authLoading) {
-		return html`<div class="settings-content">
-			<h2 class="settings-title">Security</h2>
-			<p class="settings-hint">Loading...</p>
+		return html`<div class="flex-1 flex flex-col min-w-0 p-4 gap-4 overflow-y-auto">
+			<h2 class="text-lg font-medium text-[var(--text-strong)]">Security</h2>
+			<div class="text-xs text-[var(--muted)]">Loading\u2026</div>
 		</div>`;
 	}
 
 	if (authDisabled) {
 		var isScary = !localhostOnly;
-		return html`<div class="settings-content">
-			<h2 class="settings-title">Security</h2>
-			<div class="settings-danger-box" style="margin-top:1rem">
-				<strong style="color:var(--error, #e53935)">Authentication is disabled</strong>
-				<p class="settings-hint" style="margin-top:0.5rem">
+		return html`<div class="flex-1 flex flex-col min-w-0 p-4 gap-4 overflow-y-auto">
+			<h2 class="text-lg font-medium text-[var(--text-strong)]">Security</h2>
+			<div style="max-width:600px;padding:12px 16px;border-radius:6px;border:1px solid var(--error);background:color-mix(in srgb, var(--error) 5%, transparent);">
+				<strong style="color:var(--error);">Authentication is disabled</strong>
+				<p class="text-xs text-[var(--muted)]" style="margin:8px 0 0;">
 					${
 						isScary
 							? "Anyone with network access can control moltis and your computer. Set up a password to protect your instance."
 							: "Authentication has been removed. While localhost-only access is safe, you should set up a password before exposing moltis to the network."
 					}
 				</p>
-				<button type="button" class="settings-btn" style="margin-top:0.75rem"
+				<button type="button" class="provider-btn" style="margin-top:10px;"
 					onClick=${() => {
 						window.location.href = "/setup";
 					}}>Set up authentication</button>
@@ -825,167 +827,173 @@ function SecuritySection() {
 		</div>`;
 	}
 
-	return html`<div class="settings-content">
-		<h2 class="settings-title">Security</h2>
+	return html`<div class="flex-1 flex flex-col min-w-0 p-4 gap-4 overflow-y-auto">
+		<h2 class="text-lg font-medium text-[var(--text-strong)]">Security</h2>
 
 		${
 			localhostOnly && !hasPassword
-				? html`<div class="settings-info-box" style="margin-top:1rem;margin-bottom:1rem;padding:0.75rem 1rem;border-radius:6px;background:var(--surface2);border:1px solid var(--border)">
-			<p class="settings-hint" style="margin:0">
-				Moltis is running on localhost, so you have full access without a password.
-				Set a password before exposing moltis to the network.
-			</p>
-		</div>`
+				? html`<div class="alert-info-text max-w-form">
+					<span class="alert-label-info">Note:</span>${" "}
+					Moltis is running on localhost, so you have full access without a password.
+					Set a password before exposing moltis to the network.
+				</div>`
 				: null
 		}
 
-		<div class="settings-section">
-			<h3 class="settings-section-title">${hasPassword ? "Change Password" : "Set Password"}</h3>
+		<!-- Password -->
+		<div style="max-width:600px;">
+			<h3 class="text-sm font-medium text-[var(--text-strong)]" style="margin-bottom:8px;">${hasPassword ? "Change Password" : "Set Password"}</h3>
 			<form onSubmit=${onChangePw}>
-				<div class="settings-grid">
+				<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px;">
 					${
 						hasPassword
-							? html`<div class="settings-field">
-						<label class="settings-label">Current password</label>
-						<input type="password" class="settings-input" value=${curPw}
-							onInput=${(e) => setCurPw(e.target.value)} />
-					</div>`
+							? html`<div>
+								<div class="text-xs text-[var(--muted)]" style="margin-bottom:4px;">Current password</div>
+								<input type="password" class="provider-key-input" style="width:100%;" value=${curPw}
+									onInput=${(e) => setCurPw(e.target.value)} />
+							</div>`
 							: null
 					}
-					<div class="settings-field">
-						<label class="settings-label">${hasPassword ? "New password" : "Password"}</label>
-						<input type="password" class="settings-input" value=${newPw}
+					<div>
+						<div class="text-xs text-[var(--muted)]" style="margin-bottom:4px;">${hasPassword ? "New password" : "Password"}</div>
+						<input type="password" class="provider-key-input" style="width:100%;" value=${newPw}
 							onInput=${(e) => setNewPw(e.target.value)} placeholder="At least 8 characters" />
 					</div>
-					<div class="settings-field">
-						<label class="settings-label">Confirm ${hasPassword ? "new " : ""}password</label>
-						<input type="password" class="settings-input" value=${confirmPw}
+					<div>
+						<div class="text-xs text-[var(--muted)]" style="margin-bottom:4px;">Confirm ${hasPassword ? "new " : ""}password</div>
+						<input type="password" class="provider-key-input" style="width:100%;" value=${confirmPw}
 							onInput=${(e) => setConfirmPw(e.target.value)} />
 					</div>
 				</div>
-				<div class="settings-actions">
-					<button type="submit" class="settings-btn" disabled=${pwSaving}>
+				<div style="display:flex;align-items:center;gap:8px;">
+					<button type="submit" class="provider-btn" disabled=${pwSaving}>
 						${pwSaving ? (hasPassword ? "Changing\u2026" : "Setting\u2026") : hasPassword ? "Change password" : "Set password"}
 					</button>
-					${pwMsg ? html`<span class="settings-saved">${pwMsg}</span>` : null}
-					${pwErr ? html`<span class="settings-error">${pwErr}</span>` : null}
+					${pwMsg ? html`<span class="text-xs" style="color:var(--accent);">${pwMsg}</span>` : null}
+					${pwErr ? html`<span class="text-xs" style="color:var(--error);">${pwErr}</span>` : null}
 				</div>
 			</form>
 		</div>
 
-		<div class="settings-section">
-			<h3 class="settings-section-title">Passkeys</h3>
+		<!-- Passkeys -->
+		<div style="max-width:600px;border-top:1px solid var(--border);padding-top:16px;">
+			<h3 class="text-sm font-medium text-[var(--text-strong)]" style="margin-bottom:8px;">Passkeys</h3>
 			${
 				pkLoading
-					? html`<p class="text-sm text-[var(--muted)]">Loading...</p>`
+					? html`<div class="text-xs text-[var(--muted)]">Loading\u2026</div>`
 					: html`
 				${
 					passkeys.length > 0
-						? html`<div class="security-list">
+						? html`<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px;">
 					${passkeys.map(
-						(pk) => html`<div class="security-list-item" key=${pk.id}>
+						(pk) => html`<div class="provider-item" style="margin-bottom:0;" key=${pk.id}>
 						${
 							editingPk === pk.id
 								? html`<form style="display:flex;align-items:center;gap:6px;flex:1" onSubmit=${(e) => {
 										e.preventDefault();
 										onConfirmRename(pk.id);
 									}}>
-									<input type="text" class="settings-input" value=${editingPkName}
+									<input type="text" class="provider-key-input" value=${editingPkName}
 										onInput=${(e) => setEditingPkName(e.target.value)}
 										style="flex:1" autofocus />
-									<button type="submit" class="settings-btn">Save</button>
-									<button type="button" class="settings-btn" onClick=${onCancelRename}>Cancel</button>
+									<button type="submit" class="provider-btn">Save</button>
+									<button type="button" class="provider-btn" onClick=${onCancelRename}>Cancel</button>
 								</form>`
-								: html`<div>
-									<strong>${pk.name}</strong>
-									<span style="color:var(--muted);font-size:0.78rem"> - <time datetime="${pk.created_at}">${pk.created_at}</time></span>
+								: html`<div style="flex:1;min-width:0;">
+									<div class="provider-item-name" style="font-size:.85rem;">${pk.name}</div>
+									<div style="font-size:.7rem;color:var(--muted);margin-top:2px;">${pk.created_at}</div>
 								</div>
-								<div style="display:flex;gap:4px">
-									<button class="settings-btn" onClick=${() => onStartRename(pk.id, pk.name)}>Rename</button>
-									<button class="settings-btn settings-btn-danger" onClick=${() => onRemovePasskey(pk.id)}>Remove</button>
+								<div style="display:flex;gap:4px;">
+									<button class="provider-btn" onClick=${() => onStartRename(pk.id, pk.name)}>Rename</button>
+									<button class="provider-btn provider-btn-danger"
+										onClick=${() => onRemovePasskey(pk.id)}>Remove</button>
 								</div>`
 						}
 					</div>`,
 					)}
 				</div>`
-						: html`<p class="settings-hint">No passkeys registered.</p>`
+						: html`<div class="text-xs text-[var(--muted)]" style="padding:4px 0 12px;">No passkeys registered.</div>`
 				}
-				<div class="security-add-row">
-					<input type="text" class="settings-input" value=${pkName}
+				<div style="display:flex;gap:8px;align-items:center;">
+					<input type="text" class="provider-key-input" value=${pkName}
 						onInput=${(e) => setPkName(e.target.value)}
 						placeholder="Passkey name (e.g. MacBook Touch ID)" style="flex:1" />
-					<button type="button" class="settings-btn" onClick=${onAddPasskey}>Add passkey</button>
+					<button type="button" class="provider-btn" onClick=${onAddPasskey}>Add passkey</button>
 				</div>
-				${pkMsg ? html`<p class="settings-hint" style="margin-top:0.5rem">${pkMsg}</p>` : null}
+				${pkMsg ? html`<div class="text-xs text-[var(--muted)]" style="margin-top:6px;">${pkMsg}</div>` : null}
 			`
 			}
 		</div>
 
-		<div class="settings-section">
-			<h3 class="settings-section-title">API Keys</h3>
-			<p class="settings-hint">API keys authenticate external tools and scripts connecting to moltis over the WebSocket protocol. Pass the key as the <code>api_key</code> field in the <code>auth</code> object of the <code>connect</code> handshake.</p>
+		<!-- API Keys -->
+		<div style="max-width:600px;border-top:1px solid var(--border);padding-top:16px;">
+			<h3 class="text-sm font-medium text-[var(--text-strong)]" style="margin-bottom:4px;">API Keys</h3>
+			<p class="text-xs text-[var(--muted)] leading-relaxed" style="margin:0 0 12px;">
+				API keys authenticate external tools and scripts connecting to moltis over the WebSocket protocol. Pass the key as the <code style="font-family:var(--font-mono);font-size:.75rem;">api_key</code> field in the <code style="font-family:var(--font-mono);font-size:.75rem;">auth</code> object of the <code style="font-family:var(--font-mono);font-size:.75rem;">connect</code> handshake.
+			</p>
 			${
 				akLoading
-					? html`<p class="text-sm text-[var(--muted)]">Loading...</p>`
+					? html`<div class="text-xs text-[var(--muted)]">Loading\u2026</div>`
 					: html`
 				${
 					akNew
-						? html`<div class="security-key-reveal">
-					<p class="settings-hint">Copy this key now. It won't be shown again.</p>
-					<code class="security-key-code">${akNew}</code>
-				</div>`
+						? html`<div style="margin-bottom:12px;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:6px;">
+							<div class="text-xs text-[var(--muted)]" style="margin-bottom:4px;">Copy this key now. It won't be shown again.</div>
+							<code style="font-family:var(--font-mono);font-size:.78rem;word-break:break-all;color:var(--text-strong);">${akNew}</code>
+						</div>`
 						: null
 				}
 				${
 					apiKeys.length > 0
-						? html`<div class="security-list">
+						? html`<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px;">
 					${apiKeys.map(
-						(ak) => html`<div class="security-list-item" key=${ak.id}>
-						<div>
-							<strong>${ak.label}</strong>
-							<code style="margin-left:0.5rem;font-size:0.78rem">${ak.key_prefix}...</code>
-							<span style="color:var(--muted);font-size:0.78rem"> - <time datetime="${ak.created_at}">${ak.created_at}</time></span>
+						(ak) => html`<div class="provider-item" style="margin-bottom:0;" key=${ak.id}>
+						<div style="flex:1;min-width:0;">
+							<div class="provider-item-name" style="font-size:.85rem;">${ak.label}</div>
+							<div style="font-size:.7rem;color:var(--muted);margin-top:2px;display:flex;gap:12px;">
+								<span style="font-family:var(--font-mono);">${ak.key_prefix}...</span>
+								<span>${ak.created_at}</span>
+							</div>
 						</div>
-						<button class="settings-btn settings-btn-danger"
+						<button class="provider-btn provider-btn-danger"
 							onClick=${() => onRevokeApiKey(ak.id)}>Revoke</button>
 					</div>`,
 					)}
 				</div>`
-						: html`<p class="settings-hint">No API keys.</p>`
+						: html`<div class="text-xs text-[var(--muted)]" style="padding:4px 0 12px;">No API keys.</div>`
 				}
-				<div class="security-add-row">
-					<input type="text" class="settings-input" value=${akLabel}
+				<div style="display:flex;gap:8px;align-items:center;">
+					<input type="text" class="provider-key-input" value=${akLabel}
 						onInput=${(e) => setAkLabel(e.target.value)}
 						placeholder="Key label (e.g. CLI tool)" style="flex:1" />
-					<button type="button" class="settings-btn" onClick=${onCreateApiKey} disabled=${!akLabel.trim()}>Generate key</button>
+					<button type="button" class="provider-btn" onClick=${onCreateApiKey} disabled=${!akLabel.trim()}>Generate key</button>
 				</div>
 			`
 			}
 		</div>
 
-		<div class="settings-section settings-danger-zone">
-			<h3 class="settings-section-title" style="color:var(--danger, #e53935)">Danger Zone</h3>
-			<div class="settings-danger-box">
-				<div>
-					<strong>Remove all authentication</strong>
-					<p class="settings-hint" style="margin-top:0.25rem">
-						If you know what you're doing, you can fully disable authentication.
-						Anyone with network access will be able to access moltis and your computer.
-						This removes your password, all passkeys, all API keys, and all sessions.
-					</p>
-				</div>
+		<!-- Danger zone -->
+		<div style="max-width:600px;margin-top:8px;border-top:1px solid var(--error);padding-top:16px;">
+			<h3 class="text-sm font-medium" style="color:var(--error);margin-bottom:8px;">Danger Zone</h3>
+			<div style="padding:12px 16px;border:1px solid var(--error);border-radius:6px;background:color-mix(in srgb, var(--error) 5%, transparent);">
+				<strong class="text-sm" style="color:var(--text-strong);">Remove all authentication</strong>
+				<p class="text-xs text-[var(--muted)]" style="margin:6px 0 0;">
+					If you know what you're doing, you can fully disable authentication.
+					Anyone with network access will be able to access moltis and your computer.
+					This removes your password, all passkeys, all API keys, and all sessions.
+				</p>
 				${
 					resetConfirm
-						? html`<div style="display:flex;align-items:center;gap:8px;margin-top:0.5rem">
-						<span class="settings-error" style="margin:0">Are you sure? This cannot be undone.</span>
-						<button type="button" class="settings-btn settings-btn-danger" disabled=${resetBusy}
+						? html`<div style="display:flex;align-items:center;gap:8px;margin-top:10px;">
+						<span class="text-xs" style="color:var(--error);">Are you sure? This cannot be undone.</span>
+						<button type="button" class="provider-btn provider-btn-danger" disabled=${resetBusy}
 							onClick=${onResetAuth}>${resetBusy ? "Removing\u2026" : "Yes, remove all auth"}</button>
-						<button type="button" class="settings-btn" onClick=${() => {
+						<button type="button" class="provider-btn" onClick=${() => {
 							setResetConfirm(false);
 							rerender();
 						}}>Cancel</button>
 					</div>`
-						: html`<button type="button" class="settings-btn settings-btn-danger" style="margin-top:0.5rem"
+						: html`<button type="button" class="provider-btn provider-btn-danger" style="margin-top:10px;"
 						onClick=${onResetAuth}>Remove all authentication</button>`
 				}
 			</div>
@@ -1009,6 +1017,278 @@ function bufToB64(buf) {
 	return btoa(str).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
+// ── Tailscale section ─────────────────────────────────────────
+
+/** Populate a text node with plain text + clickable URLs. */
+function setLinkedText(el, text) {
+	el.textContent = "";
+	var parts = String(text).split(/(https?:\/\/[^\s]+)/g);
+	for (var p of parts) {
+		if (/^https?:\/\//.test(p)) {
+			var a = document.createElement("a");
+			a.href = p;
+			a.target = "_blank";
+			a.rel = "noopener";
+			a.style.cssText = "color:inherit;text-decoration:underline;word-break:break-all;";
+			a.textContent = p;
+			el.appendChild(a);
+		} else {
+			el.appendChild(document.createTextNode(p));
+		}
+	}
+}
+
+/** Clone a hidden element from index.html by ID. */
+function cloneHidden(id) {
+	var el = document.getElementById(id);
+	if (!el) return null;
+	var clone = el.cloneNode(true);
+	clone.removeAttribute("id");
+	clone.style.display = "";
+	return clone;
+}
+
+function TailscaleSection() {
+	var ref = useRef(null);
+	var [tsStatus, setTsStatus] = useState(null);
+	var [tsError, setTsError] = useState(null);
+	var [tsLoading, setTsLoading] = useState(true);
+	var [configuring, setConfiguring] = useState(false);
+	var [configuringMode, setConfiguringMode] = useState(null);
+	var [authReady, setAuthReady] = useState(false);
+
+	function fetchTsStatus() {
+		setTsLoading(true);
+		rerender();
+		fetch("/api/tailscale/status")
+			.then((r) => {
+				var ct = r.headers.get("content-type") || "";
+				if (r.status === 404 || !ct.includes("application/json")) {
+					setTsError("Tailscale feature is not enabled. Rebuild with --features tailscale.");
+					setTsLoading(false);
+					rerender();
+					return null;
+				}
+				return r.json();
+			})
+			.then((data) => {
+				if (!data) return;
+				if (data.error) {
+					setTsError(data.error);
+				} else {
+					setTsStatus(data);
+					setTsError(null);
+				}
+				setTsLoading(false);
+				rerender();
+			})
+			.catch((e) => {
+				setTsError(e.message);
+				setTsLoading(false);
+				rerender();
+			});
+	}
+
+	function setMode(mode) {
+		setConfiguring(true);
+		setTsError(null);
+		setConfiguringMode(mode);
+		rerender();
+		fetch("/api/tailscale/configure", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ mode }),
+		})
+			.then((r) => r.json())
+			.then((data) => {
+				if (data.error) {
+					setTsError(data.error);
+				} else {
+					fetchTsStatus();
+				}
+				setConfiguring(false);
+				setConfiguringMode(null);
+				rerender();
+			})
+			.catch((e) => {
+				setTsError(e.message);
+				setConfiguring(false);
+				setConfiguringMode(null);
+				rerender();
+			});
+	}
+
+	useEffect(() => {
+		fetchTsStatus();
+		fetch("/api/auth/status")
+			.then((r) => (r.ok ? r.json() : null))
+			.then((d) => {
+				if (!d) return;
+				var ready = d.auth_disabled ? false : d.has_password === true;
+				setAuthReady(ready);
+				rerender();
+			})
+			.catch(() => {});
+	}, []);
+
+	function renderInstalledBar(container, status) {
+		var bar = cloneHidden("ts-installed-bar");
+		if (!bar) return;
+		var verEl = bar.querySelector("[data-ts-version]");
+		if (verEl) verEl.textContent = status.version ? `v${status.version.split("-")[0]}` : "";
+		var tailnetWrap = bar.querySelector("[data-ts-tailnet-wrap]");
+		if (tailnetWrap && status.tailnet) {
+			tailnetWrap.style.display = "";
+			tailnetWrap.querySelector("[data-ts-tailnet]").textContent = status.tailnet;
+		}
+		var accountWrap = bar.querySelector("[data-ts-account-wrap]");
+		if (accountWrap && status.login_name) {
+			accountWrap.style.display = "";
+			accountWrap.querySelector("[data-ts-account]").textContent = status.login_name;
+		}
+		var ipWrap = bar.querySelector("[data-ts-ip-wrap]");
+		if (ipWrap && status.tailscale_ip) {
+			ipWrap.style.display = "";
+			ipWrap.querySelector("[data-ts-ip]").textContent = status.tailscale_ip;
+		}
+		container.appendChild(bar);
+	}
+
+	function createModeBtn(m, currentMode) {
+		var btn = document.createElement("button");
+		btn.textContent = m;
+		btn.style.fontWeight = "500";
+		var active = currentMode === m && !configuring;
+		var base = "text-xs border px-3 py-1.5 rounded-md cursor-pointer transition-colors";
+		var state = active
+			? "ts-mode-active"
+			: "text-[var(--muted)] border-[var(--border)] bg-transparent hover:text-[var(--text)] hover:border-[var(--border-strong)]";
+		btn.className = `${base} ${state}${configuringMode === m ? " ts-mode-configuring" : ""}`;
+		var funnelBlocked = m === "funnel" && !authReady;
+		btn.disabled = configuring || funnelBlocked;
+		if (funnelBlocked) {
+			btn.style.opacity = "0.4";
+			btn.style.cursor = "default";
+			btn.style.pointerEvents = "none";
+		} else {
+			btn.addEventListener("click", setMode.bind(null, m));
+		}
+		if (configuringMode === m) {
+			var spinner = document.createElement("span");
+			spinner.className = "ts-spinner";
+			btn.prepend(spinner);
+		}
+		return btn;
+	}
+
+	function renderModeButtons(container, status) {
+		var modes = ["off", "serve", "funnel"];
+		var currentMode = status?.mode || "off";
+		var section = cloneHidden("ts-mode-section");
+		if (!section) return currentMode;
+		var btnContainer = section.querySelector("[data-ts-mode-btns]");
+		for (var m of modes) btnContainer.appendChild(createModeBtn(m, currentMode));
+		var cfgMsg = section.querySelector("[data-ts-configuring]");
+		if (configuring && cfgMsg) {
+			cfgMsg.style.display = "";
+			cfgMsg.textContent = `Configuring tailscale ${configuringMode}\u2026 This can take up to 10 seconds.`;
+		}
+		container.appendChild(section);
+		var warn = cloneHidden("ts-funnel-security-warning");
+		if (warn) container.appendChild(warn);
+		if (!authReady) {
+			var authBtn = cloneHidden("ts-funnel-auth-btn");
+			if (authBtn) container.appendChild(authBtn);
+		}
+		return currentMode;
+	}
+
+	function renderHostnameAndUrl(container, currentMode) {
+		if (tsStatus?.hostname) {
+			var hn = cloneHidden("ts-hostname");
+			if (hn) {
+				hn.querySelector("[data-ts-hostname-value]").textContent = tsStatus.hostname;
+				var hnLink = hn.querySelector("[data-ts-hostname-link]");
+				if (hnLink && tsStatus.url && currentMode !== "off") {
+					hnLink.href = tsStatus.url;
+					hnLink.classList.remove("pointer-events-none", "text-[var(--text)]");
+					hnLink.classList.add("text-[var(--accent)]");
+				}
+				container.appendChild(hn);
+			}
+		}
+		if (tsStatus?.url && currentMode !== "off") {
+			var urlEl = cloneHidden("ts-url");
+			if (urlEl) {
+				var link = urlEl.querySelector("[data-ts-url-link]");
+				link.href = tsStatus.url;
+				link.textContent = tsStatus.url;
+				container.appendChild(urlEl);
+			}
+		}
+	}
+
+	function renderInstalledState(container) {
+		if (tsStatus?.tailscale_up === false) {
+			var warn = cloneHidden("ts-not-running");
+			if (warn) container.appendChild(warn);
+		}
+		var currentMode = renderModeButtons(container, tsStatus);
+		renderHostnameAndUrl(container, currentMode);
+		if (currentMode === "funnel") {
+			var fw = cloneHidden("ts-funnel-warning");
+			if (fw) container.appendChild(fw);
+		}
+	}
+
+	function renderTsError(container) {
+		var errEl = cloneHidden("ts-error");
+		if (errEl) {
+			setLinkedText(errEl.querySelector("[data-ts-error-text]"), tsError);
+			container.appendChild(errEl);
+		}
+	}
+
+	function renderNotInstalled(container) {
+		var notInst = cloneHidden("ts-not-installed");
+		if (notInst) {
+			notInst.querySelector("[data-ts-recheck]").addEventListener("click", fetchTsStatus);
+			container.appendChild(notInst);
+		}
+	}
+
+	// Build DOM from hidden elements after each render.
+	useEffect(() => {
+		var container = ref.current;
+		if (!container) return;
+		while (container.children.length > 2) container.removeChild(container.lastChild);
+
+		if (tsLoading) {
+			var loadEl = document.createElement("div");
+			loadEl.className = "text-xs text-[var(--muted)]";
+			loadEl.textContent = "Loading\u2026 this can take a few seconds.";
+			container.appendChild(loadEl);
+			return;
+		}
+		if (tsStatus?.installed) renderInstalledBar(container, tsStatus);
+		if (tsError) renderTsError(container);
+		if (tsStatus?.installed === false) {
+			if (!tsError) renderNotInstalled(container);
+			return;
+		}
+		renderInstalledState(container);
+	});
+
+	return html`<div ref=${ref} class="flex-1 flex flex-col min-w-0 p-4 gap-4 overflow-y-auto">
+		<h2 class="text-lg font-medium text-[var(--text-strong)]">Tailscale</h2>
+		<p class="text-xs text-[var(--muted)] leading-relaxed max-w-form" style="margin:0;">
+			Expose the gateway via Tailscale Serve (tailnet-only HTTPS) or Funnel
+			(public HTTPS). The gateway stays bound to localhost; Tailscale proxies
+			traffic to it.
+		</p>
+	</div>`;
+}
+
 // ── Main layout ──────────────────────────────────────────────
 
 function SettingsPage() {
@@ -1023,6 +1303,7 @@ function SettingsPage() {
 		${section === "identity" ? html`<${IdentitySection} />` : null}
 		${section === "environment" ? html`<${EnvironmentSection} />` : null}
 		${section === "security" ? html`<${SecuritySection} />` : null}
+		${section === "tailscale" ? html`<${TailscaleSection} />` : null}
 	</div>`;
 }
 

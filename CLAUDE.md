@@ -97,20 +97,34 @@ toggle their visibility. This keeps markup in HTML where it belongs and makes
 the structure easier to inspect. Preact components (HTM templates) are the
 exception — they use `html` tagged templates by design.
 
-### CSS Architecture
+### Styling and UI Consistency
 
-The project has two layers of stylesheets:
+**Always use Tailwind utility classes instead of inline `style="..."` attributes.**
+This applies to all properties — spacing (`p-4`, `gap-3`), colors
+(`text-[var(--muted)]`, `bg-[var(--surface)]`), typography (`font-mono`,
+`text-xs`, `font-medium`), layout (`flex`, `grid`, `items-center`), borders
+(`border`, `rounded-md`), and anything else Tailwind covers. Only fall back to
+inline styles for truly one-off values that have no Tailwind equivalent (e.g. a
+specific `max-width` or `grid-template-columns` pattern).
 
-1. **Hand-written CSS** in `crates/gateway/src/assets/css/` (`base.css`,
-   `layout.css`, `chat.css`, `components.css`) — loaded directly by
-   `index.html`. These contain CSS variables, layout rules, and reusable
-   component classes (`provider-item`, `provider-key-input`, `provider-btn`,
-   `skills-repo-card`, etc.).
+Keep buttons, links, and other interactive elements visually consistent with
+the existing UI. Reuse the shared CSS classes defined in `components.css`:
 
-2. **Tailwind CSS v4** — source is `crates/gateway/ui/input.css`, output is
-   `crates/gateway/src/assets/style.css` (also loaded by `index.html`).
-   Tailwind scans `crates/gateway/src/assets/` for class usage via the
-   `source("../src/assets/")` directive in `input.css`.
+- **Primary action**: `provider-btn` (green background, white text).
+- **Secondary action**: `provider-btn provider-btn-secondary` (surface
+  background, border).
+- **Destructive action**: `provider-btn provider-btn-danger` (red background,
+  white text). Never combine `provider-btn` with inline color overrides for
+  destructive buttons.
+
+When buttons or selects sit next to each other (e.g. in a header row), they
+must share the same height and text size so they look like a cohesive group.
+Use `provider-btn` variants for all of them rather than mixing ad-hoc Tailwind
+button styles with different padding/font sizes.
+
+Before creating a new CSS class, check whether an existing one already covers
+the use case. Duplicating styles (e.g. a second green-button class) leads to
+drift — consolidate instead.
 
 **Building Tailwind**: After adding or changing Tailwind utility classes in JS
 or HTML files, you must rebuild the CSS:
@@ -122,15 +136,6 @@ npx tailwindcss -i input.css -o ../src/assets/style.css --minify
 ```
 
 Use `npm run watch` during development for automatic rebuilds on file changes.
-
-**Using Tailwind**: Always use Tailwind utility classes instead of inline
-`style=` attributes. Use arbitrary value syntax for CSS variables:
-`text-[var(--muted)]`, `bg-[var(--surface2)]`, `border-[var(--border)]`,
-`rounded-[var(--radius-sm)]`, etc. Only fall back to inline styles when
-Tailwind genuinely cannot express the value (e.g. dynamic values computed at
-runtime from signals). The existing component classes from `input.css` are
-fine to use alongside Tailwind utilities.
-
 ### Server-Injected Data (gon pattern)
 
 When the frontend needs server-side data **at page load** (before any async
@@ -199,6 +204,16 @@ The WebSocket reader in `websocket.js` dispatches incoming event frames to
 all registered listeners via `eventListeners[frame.event]`. Do **not** use
 `window.addEventListener` / `CustomEvent` for server events — use this bus.
 
+## API Namespace Convention
+
+Each navigation tab in the UI should have its own API namespace, both for
+REST endpoints (`/api/<feature>/...`) and RPC methods (`<feature>.*`). This
+keeps concerns separated and makes it straightforward to gate each feature
+behind a cargo feature flag (e.g. `#[cfg(feature = "skills")]`).
+
+Examples: `/api/skills`, `/api/plugins`, `/api/channels`, with RPC methods
+`skills.list`, `plugins.install`, `channels.status`, etc. Never merge
+multiple features into a single endpoint.
 ## Authentication Architecture
 
 The gateway supports password and passkey (WebAuthn) authentication, managed

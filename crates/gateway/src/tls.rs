@@ -158,10 +158,11 @@ fn load_rustls_config(cert_path: &Path, key_path: &Path) -> Result<ServerConfig>
         .context("parse private key")?
         .context("no private key found")?;
 
-    let config = ServerConfig::builder()
+    let mut config = ServerConfig::builder()
         .with_no_client_auth()
         .with_single_cert(certs, key)
         .context("build rustls ServerConfig")?;
+    config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
     Ok(config)
 }
 

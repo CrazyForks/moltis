@@ -80,6 +80,26 @@ pub struct MoltisConfig {
     pub user: UserProfile,
     pub hooks: Option<HooksConfig>,
     pub memory: MemoryEmbeddingConfig,
+    pub tailscale: TailscaleConfig,
+}
+
+/// Tailscale Serve/Funnel configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TailscaleConfig {
+    /// Tailscale mode: "off", "serve", or "funnel".
+    pub mode: String,
+    /// Reset tailscale serve/funnel when the gateway shuts down.
+    pub reset_on_exit: bool,
+}
+
+impl Default for TailscaleConfig {
+    fn default() -> Self {
+        Self {
+            mode: "off".into(),
+            reset_on_exit: true,
+        }
+    }
 }
 
 /// Memory embedding provider configuration.
