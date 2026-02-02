@@ -222,7 +222,7 @@ pub enum MessageQueueMode {
 }
 
 /// Tools configuration (exec, sandbox, policy, web).
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ToolsConfig {
     pub exec: ExecConfig,
@@ -234,6 +234,18 @@ pub struct ToolsConfig {
     /// Maximum bytes for a single tool result before truncation. Default 50KB.
     #[serde(default = "default_max_tool_result_bytes")]
     pub max_tool_result_bytes: usize,
+}
+
+impl Default for ToolsConfig {
+    fn default() -> Self {
+        Self {
+            exec: ExecConfig::default(),
+            policy: ToolPolicyConfig::default(),
+            web: WebConfig::default(),
+            agent_timeout_secs: default_agent_timeout_secs(),
+            max_tool_result_bytes: default_max_tool_result_bytes(),
+        }
+    }
 }
 
 fn default_agent_timeout_secs() -> u64 {
