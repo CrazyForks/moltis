@@ -342,7 +342,7 @@ impl HookRegistry {
             let handlers = self.handlers.entry(event).or_default();
             handlers.push(entry);
             // Sort by priority descending (higher priority first).
-            handlers.sort_by(|a, b| b.handler.priority().cmp(&a.handler.priority()));
+            handlers.sort_by_key(|h| std::cmp::Reverse(h.handler.priority()));
         }
         info!(handler = handler.name(), "hook handler registered");
     }

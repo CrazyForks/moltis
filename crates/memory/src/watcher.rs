@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use {
     anyhow::Result,
     notify_debouncer_full::{
-        DebounceEventResult, Debouncer, FileIdMap, new_debouncer, notify::RecursiveMode,
+        DebounceEventResult, Debouncer, RecommendedCache, new_debouncer, notify::RecursiveMode,
     },
     tokio::sync::mpsc,
     tracing::{debug, info, warn},
@@ -20,7 +20,7 @@ pub enum WatchEvent {
 
 /// Watches directories for markdown file changes with debouncing.
 pub struct MemoryFileWatcher {
-    debouncer: Debouncer<notify_debouncer_full::notify::RecommendedWatcher, FileIdMap>,
+    debouncer: Debouncer<notify_debouncer_full::notify::RecommendedWatcher, RecommendedCache>,
 }
 
 impl MemoryFileWatcher {
