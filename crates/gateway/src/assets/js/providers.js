@@ -600,6 +600,16 @@ function renderLocalModelSelection(provider, sysInfo, modelsData) {
 		if (e.key === "Enter") doSearch();
 	});
 
+	// Auto-search with debounce when user stops typing
+	var searchTimeout = null;
+	searchInput.addEventListener("input", () => {
+		if (searchTimeout) clearTimeout(searchTimeout);
+		var query = searchInput.value.trim();
+		if (query.length >= 2) {
+			searchTimeout = setTimeout(doSearch, 500);
+		}
+	});
+
 	wrapper.appendChild(searchSection);
 
 	// Custom repo section
