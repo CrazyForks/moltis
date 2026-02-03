@@ -741,6 +741,10 @@ function createHfSearchResultCard(model, provider) {
 	card.appendChild(repo);
 
 	card.addEventListener("click", async () => {
+		// Prevent multiple clicks
+		if (card.dataset.configuring) return;
+		card.dataset.configuring = "true";
+
 		var params = {
 			hfRepo: model.id,
 			backend: model.backend,
@@ -748,16 +752,32 @@ function createHfSearchResultCard(model, provider) {
 		// For GGUF, we'd need to fetch the file list - for now, prompt user
 		if (model.backend === "GGUF") {
 			var filename = prompt("Enter the GGUF filename (e.g., model-q4_k_m.gguf):");
-			if (!filename) return;
+			if (!filename) {
+				delete card.dataset.configuring;
+				return;
+			}
 			params.hfFilename = filename;
 		}
 		card.style.opacity = "0.5";
+		card.style.pointerEvents = "none";
+
+		// Show configuring state in modal
+		var m = els();
+		m.body.innerHTML = "";
+		var status = document.createElement("div");
+		status.className = "provider-key-form";
+		status.innerHTML = `<div class="text-sm text-[var(--text)]">Configuring ${model.displayName}...</div>`;
+		m.body.appendChild(status);
+
 		var res = await sendRpc("providers.local.configure_custom", params);
-		card.style.opacity = "1";
 		if (res?.ok) {
 			fetchModels();
 			if (S.refreshProvidersPage) S.refreshProvidersPage();
-			showModelDownloadProgress({ id: res.payload.modelId, displayName: model.displayName }, provider);
+			status.innerHTML = `<div class="provider-status">${model.displayName} configured!</div>`;
+			setTimeout(closeProviderModal, 1500);
+		} else {
+			var err = res?.error?.message || "Failed to configure model";
+			status.innerHTML = `<div class="text-sm text-[var(--error)]">${err}</div>`;
 		}
 	});
 
