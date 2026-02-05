@@ -66,6 +66,47 @@ documentation, and avoids stringly-typed field access. Reserve
 - Prefer `#[must_use]` on functions whose return value should not be
   silently ignored.
 
+### Tracing and Metrics
+
+**All crates must include tracing and metrics instrumentation.** This is
+critical for telemetry, debugging, and production observability.
+
+- Add `tracing` feature to crate's `Cargo.toml` and gate instrumentation
+  with `#[cfg(feature = "tracing")]`
+- Add `metrics` feature and gate counters/gauges/histograms with
+  `#[cfg(feature = "metrics")]`
+- Use `tracing::instrument` on async functions for automatic span creation
+- Record metrics at key points: operation counts, durations, errors, and
+  resource usage
+
+```rust
+#[cfg(feature = "tracing")]
+use tracing::{debug, instrument, warn};
+
+#[cfg(feature = "metrics")]
+use moltis_metrics::{counter, histogram, labels};
+
+#[cfg_attr(feature = "tracing", instrument(skip(self)))]
+pub async fn process_request(&self, req: Request) -> Result<Response> {
+    #[cfg(feature = "metrics")]
+    let start = std::time::Instant::now();
+
+    // ... do work ...
+
+    #[cfg(feature = "metrics")]
+    {
+        counter!("my_crate_requests_total").increment(1);
+        histogram!("my_crate_request_duration_seconds")
+            .record(start.elapsed().as_secs_f64());
+    }
+
+    Ok(response)
+}
+```
+
+See `docs/metrics-and-tracing.md` for the full list of available metrics,
+Prometheus endpoint configuration, and best practices.
+
 ## Build and Development Commands
 
 ```bash
@@ -127,7 +168,9 @@ the use case. Duplicating styles (e.g. a second green-button class) leads to
 drift — consolidate instead.
 
 **Building Tailwind**: After adding or changing Tailwind utility classes in JS
-or HTML files, you must rebuild the CSS:
+or HTML files, you **MUST** rebuild the CSS for the changes to take effect.
+Tailwind only generates CSS for classes it finds in the source files at build
+time — new classes won't work until CSS is rebuilt:
 
 ```bash
 cd crates/gateway/ui
@@ -136,6 +179,8 @@ npx tailwindcss -i input.css -o ../src/assets/style.css --minify
 ```
 
 Use `npm run watch` during development for automatic rebuilds on file changes.
+If styles don't appear after adding new Tailwind classes, this rebuild step was
+likely missed.
 ### Server-Injected Data (gon pattern)
 
 When the frontend needs server-side data **at page load** (before any async
