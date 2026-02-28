@@ -25,6 +25,9 @@ extension SettingsSectionContent {
                                     .font(.system(.caption, design: .monospaced))
                                 environmentBadge(encrypted: item.encrypted)
                                 SecureField("New value", text: $settings.updatingEnvValue)
+                                    .onSubmit {
+                                        settings.confirmEnvironmentVariableUpdate(key: item.key)
+                                    }
                                 Button("Save") {
                                     settings.confirmEnvironmentVariableUpdate(key: item.key)
                                 }
@@ -69,15 +72,17 @@ extension SettingsSectionContent {
                     HStack(spacing: 8) {
                         TextField("KEY_NAME", text: $settings.newEnvKey)
                             .font(.system(.body, design: .monospaced))
+                            .onSubmit {
+                                settings.addEnvironmentVariable()
+                            }
                         SecureField("Value", text: $settings.newEnvValue)
+                            .onSubmit {
+                                settings.addEnvironmentVariable()
+                            }
                         Button(settings.environmentBusy ? "Saving..." : "Add") {
                             settings.addEnvironmentVariable()
                         }
-                        .disabled(
-                            settings.environmentBusy || settings.newEnvKey.trimmingCharacters(
-                                in: .whitespacesAndNewlines
-                            ).isEmpty
-                        )
+                        .disabled(settings.environmentBusy)
                     }
                     if let message = settings.envMessage {
                         Text(message)
