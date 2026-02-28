@@ -109,6 +109,13 @@ final class MoltisTests: XCTestCase {
         try client.refreshRegistry()
     }
 
+    func testListEnvVarsReturnsPayload() throws {
+        let client = MoltisClient()
+        let payload = try client.listEnvVars()
+        XCTAssertFalse(payload.vaultStatus.isEmpty)
+        _ = payload.envVars
+    }
+
     func testProviderStoreLoadsKnownProviders() throws {
         let store = ProviderStore()
         store.loadKnownProviders()

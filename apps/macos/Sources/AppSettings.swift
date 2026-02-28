@@ -10,6 +10,15 @@ final class AppSettings: ObservableObject {
 
     @Published var environmentConfigDir = ""
     @Published var environmentDataDir = ""
+    @Published var envVars: [EnvVarItem] = []
+    @Published var environmentVaultStatus = "disabled"
+    @Published var newEnvKey = ""
+    @Published var newEnvValue = ""
+    @Published var envMessage: String?
+    @Published var envError: String?
+    @Published var updatingEnvVarId: Int64?
+    @Published var updatingEnvValue = ""
+    @Published var environmentBusy = false
 
     @Published var memoryEnabled = true
     @Published var memoryMode = "workspace"
@@ -96,6 +105,8 @@ final class AppSettings: ObservableObject {
         } catch {
             logSettingsError("load config", error)
         }
+
+        loadEnvironmentVariables()
 
         do {
             let identity = try client.getIdentity()

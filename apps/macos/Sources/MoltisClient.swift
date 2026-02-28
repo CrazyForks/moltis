@@ -372,6 +372,21 @@ struct BridgeGetSoulPayload: Decodable {
     let soul: String?
 }
 
+// MARK: - Environment variables
+
+struct BridgeEnvVarEntry: Decodable, Identifiable {
+    let id: Int64
+    let key: String
+    let createdAt: String
+    let updatedAt: String
+    let encrypted: Bool
+}
+
+struct BridgeListEnvVarsPayload: Decodable {
+    let envVars: [BridgeEnvVarEntry]
+    let vaultStatus: String
+}
+
 // MARK: - Ok response
 
 private struct BridgeOkPayload: Decodable {
@@ -825,6 +840,25 @@ extension MoltisClient {
     }
 }
 
+// MARK: - Environment Variables
+
+extension MoltisClient {
+    func listEnvVars() throws -> BridgeListEnvVarsPayload {
+        let payload = try consumeCStringPointer(moltis_list_env_vars())
+        return try decode(payload, as: BridgeListEnvVarsPayload.self)
+    }
+
+    func setEnvVar(key: String, value: String) throws {
+        let request = SetEnvVarRequest(key: key, value: value)
+        let _: BridgeOkPayload = try callBridge(request, via: moltis_set_env_var)
+    }
+
+    func deleteEnvVar(id: Int64) throws {
+        let request = DeleteEnvVarRequest(id: id)
+        let _: BridgeOkPayload = try callBridge(request, via: moltis_delete_env_var)
+    }
+}
+
 // MARK: - Request types
 
 private struct ChatRequest: Encodable {
@@ -858,4 +892,13 @@ private struct SessionChatRequest: Encodable {
     let sessionKey: String
     let message: String
     let model: String?
+}
+
+private struct SetEnvVarRequest: Encodable {
+    let key: String
+    let value: String
+}
+
+private struct DeleteEnvVarRequest: Encodable {
+    let id: Int64
 }

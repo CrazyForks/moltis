@@ -15,6 +15,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (`moltis_get_config`, `moltis_save_config`, `moltis_get_soul`,
   `moltis_save_soul`, `moltis_save_identity`, `moltis_save_user_profile`)
 - Environment panel shows read-only `config_dir` and `data_dir` paths
+- Environment panel now matches web UI behavior with env-var CRUD backed by the
+  credential store (`moltis_list_env_vars`, `moltis_set_env_var`,
+  `moltis_delete_env_var`), including encrypted/plaintext badges and vault
+  status messaging
 - Tailscale panel uses mode picker (off/serve/funnel) matching config schema
 - Real-time session sync with web UI — sessions created, deleted, or patched in
   the web UI now instantly appear in the macOS sidebar (and vice versa) via the

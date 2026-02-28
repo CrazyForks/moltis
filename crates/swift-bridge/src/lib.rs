@@ -7,7 +7,7 @@ use std::{
     ffi::{CStr, CString, c_char, c_void},
     net::SocketAddr,
     panic::{AssertUnwindSafe, catch_unwind},
-    sync::{LazyLock, Mutex, OnceLock, RwLock},
+    sync::{Arc, LazyLock, Mutex, OnceLock, RwLock},
 };
 
 use {
@@ -37,6 +37,7 @@ struct BridgeState {
     registry: RwLock<ProviderRegistry>,
     session_store: SessionStore,
     session_metadata: SqliteSessionMetadata,
+    credential_store: Arc<moltis_gateway::auth::CredentialStore>,
 }
 
 impl BridgeState {
@@ -93,7 +94,34 @@ impl BridgeState {
             pool
         });
         let event_bus = SessionEventBus::new();
-        let session_metadata = SqliteSessionMetadata::with_event_bus(db_pool, event_bus);
+        let session_metadata = SqliteSessionMetadata::with_event_bus(db_pool.clone(), event_bus);
+        let credential_store = runtime.block_on(async {
+            // Keep vault metadata up to date so env var encryption status works
+            // even when the full gateway server is not running.
+            if let Err(e) = moltis_gateway::auth::moltis_vault::run_migrations(&db_pool).await {
+                emit_log("WARN", "bridge", &format!("vault migration: {e}"));
+            }
+
+            let vault = match moltis_gateway::auth::moltis_vault::Vault::new(db_pool.clone()).await
+            {
+                Ok(vault) => Some(Arc::new(vault)),
+                Err(e) => {
+                    emit_log("WARN", "bridge", &format!("vault init failed: {e}"));
+                    None
+                },
+            };
+
+            match moltis_gateway::auth::CredentialStore::with_vault(
+                db_pool.clone(),
+                &moltis_config::discover_and_load().auth,
+                vault,
+            )
+            .await
+            {
+                Ok(store) => Arc::new(store),
+                Err(e) => panic!("failed to init credential store: {e}"),
+            }
+        });
 
         emit_log("INFO", "bridge", "Bridge initialized successfully");
         Self {
@@ -101,6 +129,7 @@ impl BridgeState {
             registry: RwLock::new(registry),
             session_store,
             session_metadata,
+            credential_store,
         }
     }
 }
@@ -479,6 +508,24 @@ struct SaveUserProfileRequest {
     name: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+struct SetEnvVarRequest {
+    key: String,
+    #[serde(default)]
+    value: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct DeleteEnvVarRequest {
+    id: i64,
+}
+
+#[derive(Debug, Serialize)]
+struct ListEnvVarsResponse {
+    env_vars: Vec<moltis_gateway::auth::EnvVarEntry>,
+    vault_status: String,
+}
+
 // ── Encoding helpers ───────────────────────────────────────────────────────
 
 fn encode_json<T: Serialize>(value: &T) -> String {
@@ -552,6 +599,16 @@ fn config_dir_string() -> String {
 
 fn data_dir_string() -> String {
     moltis_config::data_dir().display().to_string()
+}
+
+fn vault_status_string() -> String {
+    let Some(vault) = BRIDGE.credential_store.vault() else {
+        return "disabled".to_owned();
+    };
+    match BRIDGE.runtime.block_on(async { vault.status().await }) {
+        Ok(status) => format!("{status:?}").to_lowercase(),
+        Err(_) => "error".to_owned(),
+    }
 }
 
 // ── Chat with real LLM ────────────────────────────────────────────────────
@@ -1992,6 +2049,118 @@ pub extern "C" fn moltis_save_user_profile(request_json: *const c_char) -> *mut 
     })
 }
 
+/// Returns runtime environment variables from the credential store.
+/// Values are never returned, only metadata (id/key/timestamps/encrypted).
+#[unsafe(no_mangle)]
+pub extern "C" fn moltis_list_env_vars() -> *mut c_char {
+    record_call("moltis_list_env_vars");
+    trace_call("moltis_list_env_vars");
+
+    with_ffi_boundary(|| {
+        let env_vars = match BRIDGE
+            .runtime
+            .block_on(BRIDGE.credential_store.list_env_vars())
+        {
+            Ok(vars) => vars,
+            Err(e) => {
+                record_error("moltis_list_env_vars", "ENV_LIST_FAILED");
+                return encode_error("ENV_LIST_FAILED", &e.to_string());
+            },
+        };
+
+        encode_json(&ListEnvVarsResponse {
+            env_vars,
+            vault_status: vault_status_string(),
+        })
+    })
+}
+
+/// Set (upsert) an environment variable in the credential store.
+/// Uses vault encryption automatically when the vault is unsealed.
+#[unsafe(no_mangle)]
+pub extern "C" fn moltis_set_env_var(request_json: *const c_char) -> *mut c_char {
+    record_call("moltis_set_env_var");
+    trace_call("moltis_set_env_var");
+
+    with_ffi_boundary(|| {
+        let raw = match read_c_string(request_json) {
+            Ok(value) => value,
+            Err(message) => {
+                record_error("moltis_set_env_var", "null_pointer_or_invalid_utf8");
+                return encode_error("null_pointer_or_invalid_utf8", &message);
+            },
+        };
+
+        let request = match serde_json::from_str::<SetEnvVarRequest>(&raw) {
+            Ok(r) => r,
+            Err(e) => {
+                record_error("moltis_set_env_var", "invalid_json");
+                return encode_error("invalid_json", &e.to_string());
+            },
+        };
+
+        let key = request.key.trim();
+        if key.is_empty() {
+            record_error("moltis_set_env_var", "ENV_KEY_REQUIRED");
+            return encode_error("ENV_KEY_REQUIRED", "key is required");
+        }
+        if !key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+            record_error("moltis_set_env_var", "ENV_KEY_INVALID");
+            return encode_error(
+                "ENV_KEY_INVALID",
+                "key must contain only letters, digits, and underscores",
+            );
+        }
+
+        match BRIDGE
+            .runtime
+            .block_on(BRIDGE.credential_store.set_env_var(key, &request.value))
+        {
+            Ok(_) => encode_json(&OkResponse { ok: true }),
+            Err(e) => {
+                record_error("moltis_set_env_var", "ENV_SET_FAILED");
+                encode_error("ENV_SET_FAILED", &e.to_string())
+            },
+        }
+    })
+}
+
+/// Delete an environment variable by ID.
+#[unsafe(no_mangle)]
+pub extern "C" fn moltis_delete_env_var(request_json: *const c_char) -> *mut c_char {
+    record_call("moltis_delete_env_var");
+    trace_call("moltis_delete_env_var");
+
+    with_ffi_boundary(|| {
+        let raw = match read_c_string(request_json) {
+            Ok(value) => value,
+            Err(message) => {
+                record_error("moltis_delete_env_var", "null_pointer_or_invalid_utf8");
+                return encode_error("null_pointer_or_invalid_utf8", &message);
+            },
+        };
+
+        let request = match serde_json::from_str::<DeleteEnvVarRequest>(&raw) {
+            Ok(r) => r,
+            Err(e) => {
+                record_error("moltis_delete_env_var", "invalid_json");
+                return encode_error("invalid_json", &e.to_string());
+            },
+        };
+
+        match BRIDGE
+            .runtime
+            .block_on(BRIDGE.credential_store.delete_env_var(request.id))
+        {
+            Ok(_) => encode_json(&OkResponse { ok: true }),
+            Err(e) => {
+                record_error("moltis_delete_env_var", "ENV_DELETE_FAILED");
+                encode_error("ENV_DELETE_FAILED", &e.to_string())
+            },
+        }
+    })
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn moltis_shutdown() {
     record_call("moltis_shutdown");
@@ -2420,5 +2589,95 @@ mod tests {
             .and_then(Value::as_str)
             .unwrap_or_default();
         assert_eq!(code, "null_pointer_or_invalid_utf8");
+    }
+
+    #[test]
+    fn list_env_vars_returns_env_vars_and_vault_status() {
+        let payload = json_from_ptr(moltis_list_env_vars());
+
+        assert!(
+            payload.get("env_vars").and_then(Value::as_array).is_some(),
+            "list_env_vars should return env_vars array"
+        );
+        assert!(
+            payload
+                .get("vault_status")
+                .and_then(Value::as_str)
+                .is_some(),
+            "list_env_vars should return vault_status"
+        );
+    }
+
+    #[test]
+    fn set_env_var_returns_error_for_null() {
+        let payload = json_from_ptr(moltis_set_env_var(std::ptr::null()));
+
+        let code = payload
+            .get("error")
+            .and_then(|v| v.get("code"))
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        assert_eq!(code, "null_pointer_or_invalid_utf8");
+    }
+
+    #[test]
+    fn set_env_var_rejects_invalid_key() {
+        let request = r#"{"key":"BAD-KEY","value":"secret"}"#;
+        let c_request = CString::new(request).unwrap_or_else(|e| panic!("{e}"));
+        let payload = json_from_ptr(moltis_set_env_var(c_request.as_ptr()));
+
+        let code = payload
+            .get("error")
+            .and_then(|v| v.get("code"))
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        assert_eq!(code, "ENV_KEY_INVALID");
+    }
+
+    #[test]
+    fn delete_env_var_returns_error_for_null() {
+        let payload = json_from_ptr(moltis_delete_env_var(std::ptr::null()));
+
+        let code = payload
+            .get("error")
+            .and_then(|v| v.get("code"))
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        assert_eq!(code, "null_pointer_or_invalid_utf8");
+    }
+
+    #[test]
+    fn set_and_delete_env_var_round_trip() {
+        let key = format!("MACOS_TEST_{}", uuid::Uuid::new_v4().simple());
+        let set_request = serde_json::json!({
+            "key": key,
+            "value": "secret-value"
+        })
+        .to_string();
+        let c_set_request = CString::new(set_request).unwrap_or_else(|e| panic!("{e}"));
+        let set_payload = json_from_ptr(moltis_set_env_var(c_set_request.as_ptr()));
+        assert_eq!(set_payload.get("ok").and_then(Value::as_bool), Some(true));
+
+        let list_payload = json_from_ptr(moltis_list_env_vars());
+        let env_vars = list_payload
+            .get("env_vars")
+            .and_then(Value::as_array)
+            .unwrap_or_else(|| panic!("env_vars missing"));
+        let item = env_vars
+            .iter()
+            .find(|entry| entry.get("key").and_then(Value::as_str) == Some(key.as_str()))
+            .unwrap_or_else(|| panic!("saved env var should appear in list"));
+        let id = item
+            .get("id")
+            .and_then(Value::as_i64)
+            .unwrap_or_else(|| panic!("env var id should be present"));
+
+        let delete_request = serde_json::json!({ "id": id }).to_string();
+        let c_delete_request = CString::new(delete_request).unwrap_or_else(|e| panic!("{e}"));
+        let delete_payload = json_from_ptr(moltis_delete_env_var(c_delete_request.as_ptr()));
+        assert_eq!(
+            delete_payload.get("ok").and_then(Value::as_bool),
+            Some(true)
+        );
     }
 }

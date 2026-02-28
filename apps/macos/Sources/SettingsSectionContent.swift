@@ -57,21 +57,6 @@ private extension SettingsSectionContent {
         }
     }
 
-    var environmentPane: some View {
-        Group {
-            LabeledContent("Config directory") {
-                Text(settings.environmentConfigDir)
-                    .textSelection(.enabled)
-                    .foregroundStyle(.secondary)
-            }
-            LabeledContent("Data directory") {
-                Text(settings.environmentDataDir)
-                    .textSelection(.enabled)
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
     var memoryPane: some View {
         Group {
             Toggle("Enable memory", isOn: $settings.memoryEnabled)

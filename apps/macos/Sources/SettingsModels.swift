@@ -1,5 +1,14 @@
 import Foundation
 
+// MARK: - Environment Variables
+
+struct EnvVarItem: Identifiable, Equatable {
+    let id: Int64
+    var key: String
+    var updatedAt: String
+    var encrypted: Bool
+}
+
 // MARK: - Channels
 
 struct ChannelItem: Identifiable, Equatable {
