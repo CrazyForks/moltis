@@ -106,7 +106,13 @@ private extension SettingsSectionContent {
             Toggle("Enable heartbeat", isOn: $settings.heartbeatEnabled)
                 .onChange(of: settings.heartbeatEnabled) { settings.saveHeartbeat() }
             Stepper(
-                "Interval: \(settings.heartbeatIntervalMinutes) min",
+                String(
+                    format: NSLocalizedString(
+                        "Interval: %d min",
+                        comment: "Heartbeat interval in minutes"
+                    ),
+                    settings.heartbeatIntervalMinutes
+                ),
                 value: $settings.heartbeatIntervalMinutes,
                 in: 1 ... 120
             )

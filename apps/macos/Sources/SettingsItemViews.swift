@@ -176,7 +176,13 @@ extension SettingsSectionContent {
                     .font(.system(.body, design: .monospaced))
             case .interval:
                 Stepper(
-                    "Every \(item.wrappedValue.intervalMinutes) min",
+                    String(
+                        format: NSLocalizedString(
+                            "Every %d min",
+                            comment: "Cron interval minutes"
+                        ),
+                        item.wrappedValue.intervalMinutes
+                    ),
                     value: item.intervalMinutes,
                     in: 1 ... 1440
                 )
@@ -192,7 +198,13 @@ extension SettingsSectionContent {
         case .cron:
             return item.cronExpr.isEmpty ? "no schedule" : item.cronExpr
         case .interval:
-            return "every \(item.intervalMinutes)m"
+            return String(
+                format: NSLocalizedString(
+                    "every %dm",
+                    comment: "Cron summary interval with minute suffix"
+                ),
+                item.intervalMinutes
+            )
         case .oneShot:
             return "one-shot"
         }

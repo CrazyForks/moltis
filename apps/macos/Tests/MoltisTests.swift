@@ -2,6 +2,32 @@
 import XCTest
 
 final class MoltisTests: XCTestCase {
+    private func localizedStringsDictionary(for localization: String) throws -> [String: String] {
+        guard
+            let path = Bundle.main.path(
+                forResource: "Localizable",
+                ofType: "strings",
+                inDirectory: nil,
+                forLocalization: localization
+            )
+        else {
+            throw NSError(
+                domain: "MoltisTests.Localization",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Missing \(localization).lproj/Localizable.strings"]
+            )
+        }
+
+        guard let dict = NSDictionary(contentsOfFile: path) as? [String: String] else {
+            throw NSError(
+                domain: "MoltisTests.Localization",
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "Failed to parse \(path)"]
+            )
+        }
+        return dict
+    }
+
     func testVersionPayloadDecodesCoreFields() throws {
         let client = MoltisClient()
         let payload = try client.version()
@@ -73,6 +99,43 @@ final class MoltisTests: XCTestCase {
 
         let reloaded = OnboardingState(defaults: defaults, completionKey: key)
         XCTAssertTrue(reloaded.isCompleted)
+    }
+
+    func testFrenchLocalizationIncludesSettingsTitle() throws {
+        guard
+            let frPath = Bundle.main.path(forResource: "fr", ofType: "lproj"),
+            let frBundle = Bundle(path: frPath)
+        else {
+            XCTFail("French localization bundle is missing")
+            return
+        }
+
+        let value = frBundle.localizedString(
+            forKey: "Settings",
+            value: nil,
+            table: "Localizable"
+        )
+        XCTAssertEqual(value, "Réglages")
+    }
+
+    func testEnglishAndFrenchLocalizationKeysAreInSync() throws {
+        let en = try localizedStringsDictionary(for: "en")
+        let fr = try localizedStringsDictionary(for: "fr")
+
+        XCTAssertFalse(en.isEmpty)
+        XCTAssertFalse(fr.isEmpty)
+
+        let missingInFrench = Set(en.keys).subtracting(fr.keys).sorted()
+        let missingInEnglish = Set(fr.keys).subtracting(en.keys).sorted()
+
+        XCTAssertTrue(
+            missingInFrench.isEmpty,
+            "Missing French localization keys: \(missingInFrench.joined(separator: ", "))"
+        )
+        XCTAssertTrue(
+            missingInEnglish.isEmpty,
+            "Unexpected French-only localization keys: \(missingInEnglish.joined(separator: ", "))"
+        )
     }
 
     // MARK: - Provider bridge tests

@@ -3,16 +3,7 @@ import SwiftUI
 extension SettingsSectionContent {
     var environmentPane: some View {
         Group {
-            Section("Environment Variables") {
-                Text(
-                    "Environment variables are injected into sandbox command execution. "
-                        + "Values are write-only and never displayed."
-                )
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-                environmentVaultStatusMessage
-
+            Section {
                 if settings.envVars.isEmpty {
                     Text("No environment variables set.")
                         .font(.caption)
@@ -72,7 +63,7 @@ extension SettingsSectionContent {
                     Text("Add Variable")
                         .font(.subheadline)
                     LabeledContent("Key") {
-                        TextField("ENV_NAME", text: $settings.newEnvKey)
+                        TextField("", text: $settings.newEnvKey)
                             .font(.system(.body, design: .monospaced))
                             .textFieldStyle(.roundedBorder)
                             .frame(minWidth: 300)
@@ -82,7 +73,7 @@ extension SettingsSectionContent {
                             .accessibilityIdentifier("settings-env-add-key")
                     }
                     LabeledContent("Value") {
-                        SecureField("Type secret value", text: $settings.newEnvValue)
+                        SecureField("", text: $settings.newEnvValue)
                             .textFieldStyle(.roundedBorder)
                             .frame(minWidth: 300)
                             .onSubmit {
@@ -111,6 +102,15 @@ extension SettingsSectionContent {
                             .accessibilityIdentifier("settings-env-error")
                     }
                 }
+            } header: {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Environment Variables")
+                        .textCase(nil)
+                    Text(environmentOverviewText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .textCase(nil)
+                }
             }
 
             Section("Paths") {
@@ -130,25 +130,52 @@ extension SettingsSectionContent {
 }
 
 extension SettingsSectionContent {
-    @ViewBuilder
-    var environmentVaultStatusMessage: some View {
+    var environmentOverviewText: String {
         switch settings.environmentVaultStatus {
         case "unsealed":
-            Text("Vault unlocked. Your keys are stored encrypted.")
-                .font(.caption)
-                .foregroundStyle(.green)
-        case "sealed":
-            Text(
-                "Vault locked. Encrypted keys cannot be read until you unlock encryption in Security settings."
+            return NSLocalizedString(
+                "env.overview.unsealed",
+                tableName: "Localizable",
+                bundle: .main,
+                value:
+                    "Environment variables are injected into sandbox command execution. "
+                    + "Values are write-only and never displayed. "
+                    + "Vault unlocked, your keys are stored encrypted.",
+                comment: "Environment section overview with unlocked vault"
             )
-            .font(.caption)
-            .foregroundStyle(.orange)
+        case "sealed":
+            return NSLocalizedString(
+                "env.overview.sealed",
+                tableName: "Localizable",
+                bundle: .main,
+                value:
+                    "Environment variables are injected into sandbox command execution. "
+                    + "Values are write-only and never displayed. "
+                    + "Vault locked, encrypted keys cannot be read until you unlock "
+                    + "encryption in Security settings.",
+                comment: "Environment section overview with locked vault"
+            )
         case "uninitialized":
-            Text("Vault not set up. Set a password in Security to encrypt stored keys.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            return NSLocalizedString(
+                "env.overview.uninitialized",
+                tableName: "Localizable",
+                bundle: .main,
+                value:
+                    "Environment variables are injected into sandbox command execution. "
+                    + "Values are write-only and never displayed. "
+                    + "Vault not set up, configure Security to encrypt stored keys.",
+                comment: "Environment section overview with uninitialized vault"
+            )
         default:
-            EmptyView()
+            return NSLocalizedString(
+                "env.overview.default",
+                tableName: "Localizable",
+                bundle: .main,
+                value:
+                    "Environment variables are injected into sandbox command execution. "
+                    + "Values are write-only and never displayed.",
+                comment: "Environment section overview default"
+            )
         }
     }
 

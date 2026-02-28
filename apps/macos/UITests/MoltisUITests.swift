@@ -27,7 +27,9 @@ final class MoltisUITests: XCTestCase {
         XCTAssertTrue(openSettingsButton.waitForExistence(timeout: 20))
         openSettingsButton.click()
 
-        let settingsWindow = app.windows["Settings"].firstMatch
+        let settingsWindow = app.windows
+            .matching(NSPredicate(format: "identifier CONTAINS %@", "settings-AppWindow"))
+            .firstMatch
         XCTAssertTrue(settingsWindow.waitForExistence(timeout: 20))
 
         let environmentSection = settingsWindow

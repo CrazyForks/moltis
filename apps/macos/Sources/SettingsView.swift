@@ -8,6 +8,10 @@ enum SettingsGroup: String, CaseIterable, Hashable {
     case integrations = "Integrations"
     case systems = "Systems"
 
+    var title: String {
+        NSLocalizedString(rawValue, comment: "Settings group title")
+    }
+
     var sections: [SettingsSection] {
         SettingsSection.allCases.filter { $0.group == self }
     }
@@ -36,7 +40,9 @@ enum SettingsSection: String, CaseIterable, Hashable {
     case httpd = "HTTP Server"
     case configuration = "Configuration"
 
-    var title: String { rawValue }
+    var title: String {
+        NSLocalizedString(rawValue, comment: "Settings section title")
+    }
 
     var icon: String {
         Self.iconMap[self] ?? "gearshape"
@@ -181,7 +187,7 @@ struct SettingsView: View {
 
             List(selection: $selectedSection) {
                 ForEach(filteredGroups, id: \.group) { item in
-                    Section(item.group.rawValue) {
+                    Section(item.group.title) {
                         ForEach(item.sections, id: \.self) { section in
                             Label {
                                 Text(section.title)
