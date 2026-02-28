@@ -8,6 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Settings panels connected to Rust backend — all settings (Identity, Soul,
+  Heartbeat, Memory, Security, Tailscale, Monitoring, GraphQL, Sandbox, Voice,
+  Channels, Hooks, MCP, Skills) now load from and save to `moltis.toml`,
+  `IDENTITY.md`, `USER.md`, and `SOUL.md` via 6 new FFI functions
+  (`moltis_get_config`, `moltis_save_config`, `moltis_get_soul`,
+  `moltis_save_soul`, `moltis_save_identity`, `moltis_save_user_profile`)
+- Environment panel shows read-only `config_dir` and `data_dir` paths
+- Tailscale panel uses mode picker (off/serve/funnel) matching config schema
 - Real-time session sync with web UI — sessions created, deleted, or patched in
   the web UI now instantly appear in the macOS sidebar (and vice versa) via the
   new `SessionEventBus` and `moltis_set_session_event_callback` FFI

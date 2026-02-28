@@ -326,6 +326,52 @@ enum BridgeContentBlock: Decodable {
     }
 }
 
+// MARK: - Config response (raw dictionary for round-tripping)
+
+struct BridgeGetConfigResult {
+    let config: [String: Any]
+    let configDir: String
+    let dataDir: String
+}
+
+struct BridgeGetConfigPayload: Decodable {
+    let config: AnyCodable
+    let configDir: String
+    let dataDir: String
+}
+
+/// Wrapper to decode arbitrary JSON into `Any` (used for config round-trip).
+struct AnyCodable: Decodable {
+    let value: Any
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let dict = try? container.decode([String: AnyCodable].self) {
+            value = dict.mapValues { $0.value }
+        } else if let array = try? container.decode([AnyCodable].self) {
+            value = array.map { $0.value }
+        } else if let string = try? container.decode(String.self) {
+            value = string
+        } else if let bool = try? container.decode(Bool.self) {
+            value = bool
+        } else if let int = try? container.decode(Int.self) {
+            value = int
+        } else if let double = try? container.decode(Double.self) {
+            value = double
+        } else if container.decodeNil() {
+            value = NSNull()
+        } else {
+            value = NSNull()
+        }
+    }
+}
+
+// MARK: - Soul response
+
+struct BridgeGetSoulPayload: Decodable {
+    let soul: String?
+}
+
 // MARK: - Ok response
 
 private struct BridgeOkPayload: Decodable {
@@ -688,6 +734,94 @@ struct MoltisClient {
         }
 
         return String(cString: value)
+    }
+}
+
+// MARK: - Config / Identity / Soul
+
+extension MoltisClient {
+    /// Loads the full config as a raw dictionary, plus config_dir and data_dir.
+    func getConfig() throws -> BridgeGetConfigResult {
+        let payload = try consumeCStringPointer(moltis_get_config())
+        let parsed = try decode(payload, as: BridgeGetConfigPayload.self)
+        guard let dict = parsed.config.value as? [String: Any] else {
+            throw MoltisClientError.bridgeError(
+                code: "decode_error",
+                message: "Config is not a JSON object"
+            )
+        }
+        return BridgeGetConfigResult(
+            config: dict,
+            configDir: parsed.configDir,
+            dataDir: parsed.dataDir
+        )
+    }
+
+    /// Saves the full config from a raw dictionary. The Rust side deserializes
+    /// to `MoltisConfig` and writes TOML preserving comments.
+    func saveConfig(_ config: [String: Any]) throws {
+        let data = try JSONSerialization.data(withJSONObject: config)
+        guard let json = String(data: data, encoding: .utf8) else {
+            throw MoltisClientError.jsonEncodingFailed
+        }
+        let payload = try json.withCString { ptr in
+            try consumeCStringPointer(moltis_save_config(ptr))
+        }
+        _ = try decode(payload, as: BridgeOkPayload.self)
+    }
+
+    /// Returns the soul text from SOUL.md, or nil if empty/missing.
+    func getSoul() throws -> String? {
+        let payload = try consumeCStringPointer(moltis_get_soul())
+        let parsed = try decode(payload, as: BridgeGetSoulPayload.self)
+        return parsed.soul
+    }
+
+    /// Saves soul text to SOUL.md. Pass nil to clear.
+    func saveSoul(_ text: String?) throws {
+        let request: [String: Any?] = ["soul": text]
+        let data = try JSONSerialization.data(
+            withJSONObject: request.compactMapValues { $0 ?? NSNull() }
+        )
+        guard let json = String(data: data, encoding: .utf8) else {
+            throw MoltisClientError.jsonEncodingFailed
+        }
+        let payload = try json.withCString { ptr in
+            try consumeCStringPointer(moltis_save_soul(ptr))
+        }
+        _ = try decode(payload, as: BridgeOkPayload.self)
+    }
+
+    /// Saves identity (name, emoji, theme) to IDENTITY.md.
+    func saveIdentity(name: String?, emoji: String?, theme: String?) throws {
+        let request: [String: String?] = [
+            "name": name,
+            "emoji": emoji,
+            "theme": theme
+        ]
+        let dict = request.compactMapValues { $0 }
+        let data = try JSONSerialization.data(withJSONObject: dict)
+        guard let json = String(data: data, encoding: .utf8) else {
+            throw MoltisClientError.jsonEncodingFailed
+        }
+        let payload = try json.withCString { ptr in
+            try consumeCStringPointer(moltis_save_identity(ptr))
+        }
+        _ = try decode(payload, as: BridgeOkPayload.self)
+    }
+
+    /// Saves user profile (name) to USER.md.
+    func saveUserProfile(name: String?) throws {
+        let request: [String: String?] = ["name": name]
+        let dict = request.compactMapValues { $0 }
+        let data = try JSONSerialization.data(withJSONObject: dict)
+        guard let json = String(data: data, encoding: .utf8) else {
+            throw MoltisClientError.jsonEncodingFailed
+        }
+        let payload = try json.withCString { ptr in
+            try consumeCStringPointer(moltis_save_user_profile(ptr))
+        }
+        _ = try decode(payload, as: BridgeOkPayload.self)
     }
 }
 

@@ -443,6 +443,42 @@ struct OkResponse {
     ok: bool,
 }
 
+// ── Config / Identity / Soul request/response types ─────────────────────
+
+#[derive(Debug, Serialize)]
+struct GetConfigResponse {
+    config: serde_json::Value,
+    config_dir: String,
+    data_dir: String,
+}
+
+#[derive(Debug, Serialize)]
+struct GetSoulResponse {
+    soul: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SaveSoulRequest {
+    #[serde(default)]
+    soul: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SaveIdentityRequest {
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    emoji: Option<String>,
+    #[serde(default)]
+    theme: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SaveUserProfileRequest {
+    #[serde(default)]
+    name: Option<String>,
+}
+
 // ── Encoding helpers ───────────────────────────────────────────────────────
 
 fn encode_json<T: Serialize>(value: &T) -> String {
@@ -512,6 +548,10 @@ fn config_dir_string() -> String {
         Some(path) => path.display().to_string(),
         None => "unavailable".to_owned(),
     }
+}
+
+fn data_dir_string() -> String {
+    moltis_config::data_dir().display().to_string()
 }
 
 // ── Chat with real LLM ────────────────────────────────────────────────────
@@ -1729,6 +1769,229 @@ pub unsafe extern "C" fn moltis_session_chat_stream(
     });
 }
 
+// ── Config / Identity / Soul FFI ─────────────────────────────────────────
+
+/// Returns the full `MoltisConfig` as JSON together with `config_dir` and
+/// `data_dir` paths. Swift uses this to populate all settings panels.
+#[unsafe(no_mangle)]
+pub extern "C" fn moltis_get_config() -> *mut c_char {
+    record_call("moltis_get_config");
+    trace_call("moltis_get_config");
+
+    with_ffi_boundary(|| {
+        emit_log("DEBUG", "bridge", "moltis_get_config called");
+        let config = moltis_config::discover_and_load();
+        let config_value = match serde_json::to_value(&config) {
+            Ok(v) => v,
+            Err(e) => return encode_error("serialization_error", &e.to_string()),
+        };
+        let response = GetConfigResponse {
+            config: config_value,
+            config_dir: config_dir_string(),
+            data_dir: data_dir_string(),
+        };
+        emit_log("INFO", "bridge", "Config loaded for settings");
+        encode_json(&response)
+    })
+}
+
+/// Accepts a full `MoltisConfig` JSON and saves it via `save_config()`.
+/// The TOML writer preserves existing comments in the config file.
+#[unsafe(no_mangle)]
+pub extern "C" fn moltis_save_config(request_json: *const c_char) -> *mut c_char {
+    record_call("moltis_save_config");
+    trace_call("moltis_save_config");
+
+    with_ffi_boundary(|| {
+        let raw = match read_c_string(request_json) {
+            Ok(value) => value,
+            Err(message) => {
+                record_error("moltis_save_config", "null_pointer_or_invalid_utf8");
+                return encode_error("null_pointer_or_invalid_utf8", &message);
+            },
+        };
+
+        let config = match serde_json::from_str::<moltis_config::MoltisConfig>(&raw) {
+            Ok(c) => c,
+            Err(e) => {
+                record_error("moltis_save_config", "invalid_json");
+                return encode_error("invalid_json", &e.to_string());
+            },
+        };
+
+        emit_log("INFO", "bridge.config", "Saving full config from settings");
+        match moltis_config::save_config(&config) {
+            Ok(path) => {
+                emit_log(
+                    "INFO",
+                    "bridge.config",
+                    &format!("Config saved to {}", path.display()),
+                );
+                encode_json(&OkResponse { ok: true })
+            },
+            Err(e) => {
+                emit_log("ERROR", "bridge.config", &format!("Save failed: {e}"));
+                encode_error("save_failed", &e.to_string())
+            },
+        }
+    })
+}
+
+/// Returns the soul text from `SOUL.md`.
+#[unsafe(no_mangle)]
+pub extern "C" fn moltis_get_soul() -> *mut c_char {
+    record_call("moltis_get_soul");
+    trace_call("moltis_get_soul");
+
+    with_ffi_boundary(|| {
+        emit_log("DEBUG", "bridge", "moltis_get_soul called");
+        let soul = moltis_config::load_soul();
+        encode_json(&GetSoulResponse { soul })
+    })
+}
+
+/// Saves soul text to `SOUL.md`. Pass `{"soul": null}` to clear.
+#[unsafe(no_mangle)]
+pub extern "C" fn moltis_save_soul(request_json: *const c_char) -> *mut c_char {
+    record_call("moltis_save_soul");
+    trace_call("moltis_save_soul");
+
+    with_ffi_boundary(|| {
+        let raw = match read_c_string(request_json) {
+            Ok(value) => value,
+            Err(message) => {
+                record_error("moltis_save_soul", "null_pointer_or_invalid_utf8");
+                return encode_error("null_pointer_or_invalid_utf8", &message);
+            },
+        };
+
+        let request = match serde_json::from_str::<SaveSoulRequest>(&raw) {
+            Ok(r) => r,
+            Err(e) => {
+                record_error("moltis_save_soul", "invalid_json");
+                return encode_error("invalid_json", &e.to_string());
+            },
+        };
+
+        emit_log("INFO", "bridge.config", "Saving soul from settings");
+        match moltis_config::save_soul(request.soul.as_deref()) {
+            Ok(path) => {
+                emit_log(
+                    "INFO",
+                    "bridge.config",
+                    &format!("Soul saved to {}", path.display()),
+                );
+                encode_json(&OkResponse { ok: true })
+            },
+            Err(e) => {
+                emit_log("ERROR", "bridge.config", &format!("Soul save failed: {e}"));
+                encode_error("save_failed", &e.to_string())
+            },
+        }
+    })
+}
+
+/// Saves identity (name, emoji, theme) to `IDENTITY.md`.
+#[unsafe(no_mangle)]
+pub extern "C" fn moltis_save_identity(request_json: *const c_char) -> *mut c_char {
+    record_call("moltis_save_identity");
+    trace_call("moltis_save_identity");
+
+    with_ffi_boundary(|| {
+        let raw = match read_c_string(request_json) {
+            Ok(value) => value,
+            Err(message) => {
+                record_error("moltis_save_identity", "null_pointer_or_invalid_utf8");
+                return encode_error("null_pointer_or_invalid_utf8", &message);
+            },
+        };
+
+        let request = match serde_json::from_str::<SaveIdentityRequest>(&raw) {
+            Ok(r) => r,
+            Err(e) => {
+                record_error("moltis_save_identity", "invalid_json");
+                return encode_error("invalid_json", &e.to_string());
+            },
+        };
+
+        let identity = moltis_config::AgentIdentity {
+            name: request.name,
+            emoji: request.emoji,
+            theme: request.theme,
+        };
+
+        emit_log("INFO", "bridge.config", "Saving identity from settings");
+        match moltis_config::save_identity(&identity) {
+            Ok(path) => {
+                emit_log(
+                    "INFO",
+                    "bridge.config",
+                    &format!("Identity saved to {}", path.display()),
+                );
+                encode_json(&OkResponse { ok: true })
+            },
+            Err(e) => {
+                emit_log(
+                    "ERROR",
+                    "bridge.config",
+                    &format!("Identity save failed: {e}"),
+                );
+                encode_error("save_failed", &e.to_string())
+            },
+        }
+    })
+}
+
+/// Saves user profile (name) to `USER.md`.
+#[unsafe(no_mangle)]
+pub extern "C" fn moltis_save_user_profile(request_json: *const c_char) -> *mut c_char {
+    record_call("moltis_save_user_profile");
+    trace_call("moltis_save_user_profile");
+
+    with_ffi_boundary(|| {
+        let raw = match read_c_string(request_json) {
+            Ok(value) => value,
+            Err(message) => {
+                record_error("moltis_save_user_profile", "null_pointer_or_invalid_utf8");
+                return encode_error("null_pointer_or_invalid_utf8", &message);
+            },
+        };
+
+        let request = match serde_json::from_str::<SaveUserProfileRequest>(&raw) {
+            Ok(r) => r,
+            Err(e) => {
+                record_error("moltis_save_user_profile", "invalid_json");
+                return encode_error("invalid_json", &e.to_string());
+            },
+        };
+
+        let user = moltis_config::UserProfile {
+            name: request.name,
+            ..Default::default()
+        };
+
+        emit_log("INFO", "bridge.config", "Saving user profile from settings");
+        match moltis_config::save_user(&user) {
+            Ok(path) => {
+                emit_log(
+                    "INFO",
+                    "bridge.config",
+                    &format!("User profile saved to {}", path.display()),
+                );
+                encode_json(&OkResponse { ok: true })
+            },
+            Err(e) => {
+                emit_log(
+                    "ERROR",
+                    "bridge.config",
+                    &format!("User profile save failed: {e}"),
+                );
+                encode_error("save_failed", &e.to_string())
+            },
+        }
+    })
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn moltis_shutdown() {
     record_call("moltis_shutdown");
@@ -2058,5 +2321,104 @@ mod tests {
             payload.get("label").and_then(Value::as_str),
             Some("New Session"),
         );
+    }
+
+    // ── Config / Identity / Soul tests ──────────────────────────────────
+
+    #[test]
+    fn get_config_returns_config_and_paths() {
+        let payload = json_from_ptr(moltis_get_config());
+
+        assert!(
+            payload.get("config").is_some(),
+            "get_config should return a 'config' field"
+        );
+        assert!(
+            payload.get("config_dir").and_then(Value::as_str).is_some(),
+            "get_config should return config_dir"
+        );
+        assert!(
+            payload.get("data_dir").and_then(Value::as_str).is_some(),
+            "get_config should return data_dir"
+        );
+
+        // The config should be an object with expected top-level keys.
+        let config = payload.get("config").unwrap_or_else(|| panic!("no config"));
+        assert!(
+            config.get("server").is_some(),
+            "config should have a 'server' section"
+        );
+    }
+
+    #[test]
+    fn save_config_returns_error_for_null() {
+        let payload = json_from_ptr(moltis_save_config(std::ptr::null()));
+
+        let code = payload
+            .get("error")
+            .and_then(|v| v.get("code"))
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        assert_eq!(code, "null_pointer_or_invalid_utf8");
+    }
+
+    #[test]
+    fn save_config_returns_error_for_invalid_json() {
+        let bad = CString::new("not valid json").unwrap_or_else(|e| panic!("{e}"));
+        let payload = json_from_ptr(moltis_save_config(bad.as_ptr()));
+
+        let code = payload
+            .get("error")
+            .and_then(|v| v.get("code"))
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        assert_eq!(code, "invalid_json");
+    }
+
+    #[test]
+    fn get_soul_returns_soul_field() {
+        let payload = json_from_ptr(moltis_get_soul());
+
+        // soul field should exist (may be null or a string)
+        assert!(
+            payload.get("soul").is_some(),
+            "get_soul should return a 'soul' field"
+        );
+    }
+
+    #[test]
+    fn save_soul_returns_error_for_null() {
+        let payload = json_from_ptr(moltis_save_soul(std::ptr::null()));
+
+        let code = payload
+            .get("error")
+            .and_then(|v| v.get("code"))
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        assert_eq!(code, "null_pointer_or_invalid_utf8");
+    }
+
+    #[test]
+    fn save_identity_returns_error_for_null() {
+        let payload = json_from_ptr(moltis_save_identity(std::ptr::null()));
+
+        let code = payload
+            .get("error")
+            .and_then(|v| v.get("code"))
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        assert_eq!(code, "null_pointer_or_invalid_utf8");
+    }
+
+    #[test]
+    fn save_user_profile_returns_error_for_null() {
+        let payload = json_from_ptr(moltis_save_user_profile(std::ptr::null()));
+
+        let code = payload
+            .get("error")
+            .and_then(|v| v.get("code"))
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        assert_eq!(code, "null_pointer_or_invalid_utf8");
     }
 }

@@ -232,6 +232,11 @@ struct SettingsView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+        .onAppear {
+            if !settings.isLoaded {
+                settings.load()
+            }
+        }
     }
 }
 

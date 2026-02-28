@@ -42,26 +42,40 @@ private extension SettingsSectionContent {
         Group {
             Section("Agent") {
                 TextField("Name", text: $settings.identityName, prompt: Text("e.g. Rex"))
+                    .onSubmit { settings.saveIdentity() }
                 TextField("Emoji", text: $settings.identityEmoji)
+                    .onSubmit { settings.saveIdentity() }
                 TextField("Theme", text: $settings.identityTheme, prompt: Text("e.g. wise owl, chill fox"))
+                    .onSubmit { settings.saveIdentity() }
             }
             Section("User") {
                 TextField("Your name", text: $settings.identityUserName, prompt: Text("e.g. Alice"))
+                    .onSubmit { settings.saveUserProfile() }
             }
             editorRow("Soul", text: $settings.identitySoul)
+                .onChange(of: settings.identitySoul) { settings.saveSoul() }
         }
     }
 
     var environmentPane: some View {
         Group {
-            TextField("Config directory", text: $settings.environmentConfigDir)
-            TextField("Data directory", text: $settings.environmentDataDir)
+            LabeledContent("Config directory") {
+                Text(settings.environmentConfigDir)
+                    .textSelection(.enabled)
+                    .foregroundStyle(.secondary)
+            }
+            LabeledContent("Data directory") {
+                Text(settings.environmentDataDir)
+                    .textSelection(.enabled)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 
     var memoryPane: some View {
         Group {
             Toggle("Enable memory", isOn: $settings.memoryEnabled)
+                .onChange(of: settings.memoryEnabled) { settings.saveMemory() }
             Picker("Memory mode", selection: $settings.memoryMode) {
                 ForEach(settings.memoryModes, id: \.self) { mode in
                     Text(mode.capitalized).tag(mode)
@@ -83,7 +97,7 @@ private extension SettingsSectionContent {
                 SettingsEmptyState(
                     icon: "clock.arrow.circlepath",
                     title: "No Cron Jobs",
-                    subtitle: "Add scheduled tasks to run automatically"
+                    subtitle: "Scheduled tasks require the gateway to be running"
                 )
             } else {
                 ForEach($settings.cronJobs) { $item in
@@ -105,11 +119,13 @@ private extension SettingsSectionContent {
     var heartbeatPane: some View {
         Group {
             Toggle("Enable heartbeat", isOn: $settings.heartbeatEnabled)
+                .onChange(of: settings.heartbeatEnabled) { settings.saveHeartbeat() }
             Stepper(
                 "Interval: \(settings.heartbeatIntervalMinutes) min",
                 value: $settings.heartbeatIntervalMinutes,
                 in: 1 ... 120
             )
+            .onChange(of: settings.heartbeatIntervalMinutes) { settings.saveHeartbeat() }
         }
     }
 }
@@ -120,14 +136,22 @@ private extension SettingsSectionContent {
     var securityPane: some View {
         Group {
             Toggle("Require password login", isOn: $settings.requirePassword)
+                .onChange(of: settings.requirePassword) { settings.saveSecurity() }
             Toggle("Enable passkeys", isOn: $settings.passkeysEnabled)
         }
     }
 
     var tailscalePane: some View {
         Group {
-            Toggle("Enable Tailscale", isOn: $settings.tailscaleEnabled)
-            TextField("Hostname", text: $settings.tailscaleHostname)
+            Picker("Tailscale mode", selection: $settings.tailscaleMode) {
+                ForEach(settings.tailscaleModes, id: \.self) { mode in
+                    Text(mode.capitalized).tag(mode)
+                }
+            }
+            .onChange(of: settings.tailscaleMode) {
+                settings.tailscaleEnabled = settings.tailscaleMode != "off"
+                settings.saveTailscale()
+            }
         }
     }
 }
@@ -154,6 +178,7 @@ private extension SettingsSectionContent {
             }
             Button {
                 settings.channels.append(ChannelItem())
+                settings.saveChannels()
             } label: {
                 Label("Add Channel", systemImage: "plus")
             }
@@ -179,6 +204,7 @@ private extension SettingsSectionContent {
             }
             Button {
                 settings.hooks.append(HookItem())
+                settings.saveHooks()
             } label: {
                 Label("Add Hook", systemImage: "plus")
             }
@@ -208,6 +234,7 @@ private extension SettingsSectionContent {
             }
             Button {
                 settings.mcpServers.append(McpServerItem())
+                settings.saveMcp()
             } label: {
                 Label("Add MCP Server", systemImage: "plus")
             }
@@ -233,6 +260,7 @@ private extension SettingsSectionContent {
             }
             Button {
                 settings.skillPacks.append(SkillPackItem())
+                settings.saveSkills()
             } label: {
                 Label("Add Skill Pack", systemImage: "plus")
             }
@@ -257,7 +285,9 @@ private extension SettingsSectionContent {
                     Text(backend.capitalized).tag(backend)
                 }
             }
+            .onChange(of: settings.sandboxBackend) { settings.saveSandbox() }
             TextField("Default image", text: $settings.sandboxImage)
+                .onSubmit { settings.saveSandbox() }
         }
     }
 
@@ -273,6 +303,7 @@ private extension SettingsSectionContent {
         Group {
             Toggle("Enable monitoring", isOn: $settings.monitoringEnabled)
             Toggle("Enable metrics", isOn: $settings.metricsEnabled)
+                .onChange(of: settings.metricsEnabled) { settings.saveMonitoring() }
             Toggle("Enable tracing", isOn: $settings.tracingEnabled)
         }
     }
@@ -293,7 +324,7 @@ private extension SettingsSectionContent {
     var graphqlPane: some View {
         Group {
             Toggle("Enable GraphQL", isOn: $settings.graphqlEnabled)
-            TextField("GraphQL path", text: $settings.graphqlPath)
+                .onChange(of: settings.graphqlEnabled) { settings.saveGraphql() }
         }
     }
 
