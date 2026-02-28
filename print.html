@@ -2614,6 +2614,17 @@ home_persistence = "session"   # "off", "session", or "shared" (default)
 (defaults to <code>data_dir()/sandbox/home/shared</code>, or <code>shared_home_dir</code> if set)</li>
 </ul>
 <p>Moltis stores persisted homes under <code>data_dir()/sandbox/home/</code>.</p>
+<h2 id="network-policy"><a class="header" href="#network-policy">Network policy</a></h2>
+<p>By default, sandbox containers have no network access (<code>no_network = true</code>).
+For tasks that need filtered internet access, use
+<a href="trusted-network.html">trusted network mode</a> — a proxy-based allowlist that
+lets containers reach approved domains while blocking everything else.</p>
+<pre><code class="language-toml">[tools.exec.sandbox]
+network = "trusted"
+trusted_domains = ["registry.npmjs.org", "github.com"]
+</code></pre>
+<p>See <a href="trusted-network.html">Trusted Network</a> for full configuration and the
+network audit log.</p>
 <blockquote>
 <p><strong>Note</strong>: Home persistence applies to Docker, Apple Container, and WASM
 backends. The restricted-host backend uses <code>HOME=/tmp</code> and does not mount
@@ -2644,7 +2655,199 @@ pids_max = 256
 <tr><td>Platform</td><td>macOS 26+</td><td>any</td><td>any</td><td>any</td><td>any</td></tr>
 <tr><td>Overhead</td><td>low</td><td>medium</td><td>minimal</td><td>minimal</td><td>none</td></tr>
 </tbody></table>
-</div><div style="break-before: page; page-break-before: always;"></div><h1 id="voice-services"><a class="header" href="#voice-services">Voice Services</a></h1>
+</div><div style="break-before: page; page-break-before: always;"></div><h1 id="trusted-network-mode"><a class="header" href="#trusted-network-mode">Trusted Network Mode</a></h1>
+<p>Trusted network mode gives sandbox containers filtered internet access
+through a local HTTP proxy, so LLM-generated code can reach approved
+domains (package registries, APIs) while everything else is blocked.</p>
+<h2 id="why"><a class="header" href="#why">Why</a></h2>
+<p>By default, sandbox containers run with <code>no_network = true</code> — full network
+isolation. This is the safest option but breaks any task that needs to
+install packages, fetch data, or call an API.</p>
+<p>Setting <code>no_network = false</code> opens the network entirely, which defeats much
+of the sandbox’s purpose: a malicious command could exfiltrate data or
+download additional payloads.</p>
+<p>Trusted network mode sits between these extremes. It routes all outbound
+traffic through a filtering proxy that only allows connections to domains
+you explicitly trust.</p>
+<pre><code>┌──────────────┐      CONNECT        ┌────────────┐       ┌──────────────┐
+│   Sandbox    │ ──────────────────▶  │   Proxy    │ ────▶ │  github.com  │ ✓
+│  Container   │                      │ :18791     │       └──────────────┘
+│              │      CONNECT         │            │       ┌──────────────┐
+│  HTTP_PROXY  │ ──────────────────▶  │  Domain    │ ──✗─▶ │  evil.com    │ ✗
+│  = proxy:18791                      │  Filter    │       └──────────────┘
+└──────────────┘                      └────────────┘
+</code></pre>
+<h2 id="configuration-6"><a class="header" href="#configuration-6">Configuration</a></h2>
+<p>Enable trusted network mode in <code>moltis.toml</code>:</p>
+<pre><code class="language-toml">[tools.exec.sandbox]
+network = "trusted"
+trusted_domains = [
+  # Package registries
+  "registry.npmjs.org",
+  "pypi.org",
+  "files.pythonhosted.org",
+  "crates.io",
+  "static.crates.io",
+
+  # Git hosting
+  "github.com",
+  "gitlab.com",
+
+  # Common APIs
+  "api.openai.com",
+  "httpbin.org",
+]
+</code></pre>
+<h3 id="network-policies"><a class="header" href="#network-policies">Network policies</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Policy</th><th>Behavior</th><th>Use case</th></tr></thead><tbody>
+<tr><td><em>(empty / default)</em></td><td>Uses legacy <code>no_network</code> flag</td><td>Backward compatible</td></tr>
+<tr><td><code>blocked</code></td><td>No network at all</td><td>Maximum isolation</td></tr>
+<tr><td><code>trusted</code></td><td>Proxy-filtered by domain allowlist</td><td>Development tasks</td></tr>
+<tr><td><code>open</code></td><td>Unrestricted network</td><td>Fully trusted workloads</td></tr>
+</tbody></table>
+</div><div id="admonition-open-mode" class="admonition admonish-warning" role="note" aria-labelledby="admonition-open-mode-title">
+<div class="admonition-title">
+<div id="admonition-open-mode-title">
+<p>open mode</p>
+</div>
+<a class="admonition-anchor-link" href="trusted-network.html#admonition-open-mode"></a>
+</div>
+<div>
+<p><code>network = "open"</code> disables all network filtering. Only use this when you
+fully trust the LLM output or are running on a throw-away machine.</p>
+</div>
+</div>
+<h3 id="domain-patterns"><a class="header" href="#domain-patterns">Domain patterns</a></h3>
+<p>The <code>trusted_domains</code> list supports three pattern types:</p>
+<div class="table-wrapper"><table><thead><tr><th>Pattern</th><th>Example</th><th>Matches</th></tr></thead><tbody>
+<tr><td>Exact</td><td><code>github.com</code></td><td>Only <code>github.com</code></td></tr>
+<tr><td>Wildcard subdomain</td><td><code>*.npmjs.org</code></td><td><code>registry.npmjs.org</code>, <code>www.npmjs.org</code>, etc.</td></tr>
+<tr><td>Full wildcard</td><td><code>*</code></td><td>Everything (equivalent to <code>open</code> mode)</td></tr>
+</tbody></table>
+</div>
+<h2 id="how-the-proxy-works"><a class="header" href="#how-the-proxy-works">How the proxy works</a></h2>
+<p>When <code>network = "trusted"</code>, the gateway starts an HTTP CONNECT proxy on
+<code>127.0.0.1:18791</code> at startup. Sandbox containers are configured to route
+traffic through this proxy via <code>HTTP_PROXY</code> / <code>HTTPS_PROXY</code> environment
+variables.</p>
+<p>For each connection the proxy:</p>
+<ol>
+<li>Extracts the target domain from the <code>CONNECT</code> request (or <code>Host</code> header
+for plain HTTP).</li>
+<li>Checks the domain against the allowlist in <code>DomainApprovalManager</code>.</li>
+<li>If <strong>allowed</strong> — opens a TCP tunnel to the target and relays data
+bidirectionally.</li>
+<li>If <strong>denied</strong> — returns <code>403 Forbidden</code> and logs the attempt.</li>
+</ol>
+<p>Both allowed and denied requests are recorded in the network audit log.</p>
+<h2 id="network-audit"><a class="header" href="#network-audit">Network Audit</a></h2>
+<p>Every proxied request is logged to an in-memory ring buffer (2048 entries)
+and persisted to <code>~/.moltis/network-audit.jsonl</code>. The audit log is
+accessible from:</p>
+<ul>
+<li><strong>Settings &gt; Network Audit</strong> in the web UI</li>
+<li><strong>RPC methods</strong>: <code>network.audit.list</code>, <code>network.audit.tail</code>,
+<code>network.audit.stats</code></li>
+<li><strong>WebSocket events</strong>: <code>network.audit.entry</code> streams entries in real time</li>
+</ul>
+<h3 id="audit-entry-fields"><a class="header" href="#audit-entry-fields">Audit entry fields</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Field</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>timestamp</code></td><td>ISO 8601 timestamp (RFC 3339)</td></tr>
+<tr><td><code>domain</code></td><td>Target domain name</td></tr>
+<tr><td><code>port</code></td><td>Target port number</td></tr>
+<tr><td><code>protocol</code></td><td><code>https</code>, <code>http</code>, or <code>connect</code></td></tr>
+<tr><td><code>action</code></td><td><code>allowed</code> or <code>denied</code></td></tr>
+<tr><td><code>source</code></td><td>Why the decision was made (<code>config_allowlist</code>, <code>session</code>, etc.)</td></tr>
+</tbody></table>
+</div>
+<h3 id="filtering-the-audit-log"><a class="header" href="#filtering-the-audit-log">Filtering the audit log</a></h3>
+<p>The web UI provides real-time filtering by:</p>
+<ul>
+<li><strong>Domain</strong> — free-text search across domain names</li>
+<li><strong>Protocol</strong> — filter by <code>https</code>, <code>http</code>, or <code>connect</code></li>
+<li><strong>Action</strong> — show only <code>allowed</code> or <code>denied</code> entries</li>
+</ul>
+<p>The RPC methods accept the same filter parameters:</p>
+<pre><code class="language-json">{
+  "method": "network.audit.list",
+  "params": {
+    "domain": "github",
+    "protocol": "https",
+    "action": "denied",
+    "limit": 100
+  }
+}
+</code></pre>
+<h3 id="audit-stats"><a class="header" href="#audit-stats">Audit stats</a></h3>
+<p><code>network.audit.stats</code> returns aggregate counts:</p>
+<pre><code class="language-json">{
+  "total": 847,
+  "allowed": 812,
+  "denied": 35,
+  "by_domain": [
+    { "domain": "registry.npmjs.org", "count": 423 },
+    { "domain": "github.com", "count": 312 }
+  ]
+}
+</code></pre>
+<h2 id="recommended-domain-lists"><a class="header" href="#recommended-domain-lists">Recommended domain lists</a></h2>
+<h3 id="nodejs--npm"><a class="header" href="#nodejs--npm">Node.js / npm</a></h3>
+<pre><code class="language-toml">trusted_domains = [
+  "registry.npmjs.org",
+  "*.npmjs.org",
+]
+</code></pre>
+<h3 id="python--pip"><a class="header" href="#python--pip">Python / pip</a></h3>
+<pre><code class="language-toml">trusted_domains = [
+  "pypi.org",
+  "files.pythonhosted.org",
+]
+</code></pre>
+<h3 id="rust--cargo"><a class="header" href="#rust--cargo">Rust / cargo</a></h3>
+<pre><code class="language-toml">trusted_domains = [
+  "crates.io",
+  "static.crates.io",
+  "index.crates.io",
+]
+</code></pre>
+<h3 id="git-operations"><a class="header" href="#git-operations">Git operations</a></h3>
+<pre><code class="language-toml">trusted_domains = [
+  "github.com",
+  "gitlab.com",
+  "bitbucket.org",
+]
+</code></pre>
+<div id="admonition-start-narrow-widen-as-needed" class="admonition admonish-tip" role="note" aria-labelledby="admonition-start-narrow-widen-as-needed-title">
+<div class="admonition-title">
+<div id="admonition-start-narrow-widen-as-needed-title">
+<p>Start narrow, widen as needed</p>
+</div>
+<a class="admonition-anchor-link" href="trusted-network.html#admonition-start-narrow-widen-as-needed"></a>
+</div>
+<div>
+<p>Begin with only the registries your project uses. The audit log will show
+denied domains — add them to the allowlist only if they are legitimate.</p>
+</div>
+</div>
+<h2 id="relationship-to-other-settings"><a class="header" href="#relationship-to-other-settings">Relationship to other settings</a></h2>
+<ul>
+<li><code>no_network = true</code> (legacy) is equivalent to <code>network = "blocked"</code>.
+When <code>network</code> is set, it takes precedence over <code>no_network</code>.</li>
+<li><code>mode = "off"</code> disables sandboxing entirely — network policy has no
+effect because commands run directly on the host.</li>
+<li>Resource limits (<code>memory_limit</code>, <code>cpu_quota</code>, <code>pids_max</code>) apply
+independently of the network policy.</li>
+</ul>
+<h2 id="troubleshooting-4"><a class="header" href="#troubleshooting-4">Troubleshooting</a></h2>
+<p><strong>Proxy not starting</strong>: Check the gateway startup log for
+<code>trusted-network proxy started on port 18791</code>. If missing, verify
+<code>network = "trusted"</code> is set in <code>moltis.toml</code>.</p>
+<p><strong>Connections timing out</strong>: Some tools don’t respect <code>HTTP_PROXY</code>. Verify
+the tool uses the proxy by checking the audit log — if no entries appear
+for the domain, the tool is bypassing the proxy.</p>
+<p><strong>Too many denied entries</strong>: Review the audit log to identify legitimate
+domains being blocked, then add them to <code>trusted_domains</code>.</p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="voice-services"><a class="header" href="#voice-services">Voice Services</a></h1>
 <p>Moltis provides text-to-speech (TTS) and speech-to-text (STT) capabilities
 through the <code>moltis-voice</code> crate and gateway integration.</p>
 <h2 id="feature-flag-1"><a class="header" href="#feature-flag-1">Feature Flag</a></h2>
@@ -2707,7 +2910,7 @@ voice = ["dep:moltis-voice"]
 </tbody></table>
 </div>
 <p><em>More voice providers are coming soon.</em></p>
-<h3 id="configuration-6"><a class="header" href="#configuration-6">Configuration</a></h3>
+<h3 id="configuration-7"><a class="header" href="#configuration-7">Configuration</a></h3>
 <p>Set API keys via environment variables:</p>
 <pre><code class="language-bash">export ELEVENLABS_API_KEY=your-key-here
 export OPENAI_API_KEY=your-key-here
@@ -2892,7 +3095,7 @@ endpoint = "http://localhost:5002"
 </tbody></table>
 </div>
 <p><em>More voice providers are coming soon.</em></p>
-<h3 id="configuration-7"><a class="header" href="#configuration-7">Configuration</a></h3>
+<h3 id="configuration-8"><a class="header" href="#configuration-8">Configuration</a></h3>
 <pre><code class="language-toml">[voice.stt]
 enabled = true
 # provider = "whisper"  # Omit to auto-select the first configured provider
@@ -3244,7 +3447,7 @@ logs, but your <code>moltis.toml</code> file is plain text on disk. Consider usi
 <a href="vault.html">Vault</a> for encryption at rest.</p>
 </div>
 </div>
-<h2 id="configuration-8"><a class="header" href="#configuration-8">Configuration</a></h2>
+<h2 id="configuration-9"><a class="header" href="#configuration-9">Configuration</a></h2>
 <p>Add a <code>[channels.discord.&lt;account-id&gt;]</code> section to your <code>moltis.toml</code>:</p>
 <pre><code class="language-toml">[channels.discord.my-bot]
 token = "MTIzNDU2Nzg5.example.bot-token"
@@ -3502,7 +3705,7 @@ and is working on a reply.</p>
 <tr><td><code>ChannelStatus</code></td><td>Health probes (connected / disconnected)</td></tr>
 </tbody></table>
 </div>
-<h2 id="troubleshooting-4"><a class="header" href="#troubleshooting-4">Troubleshooting</a></h2>
+<h2 id="troubleshooting-5"><a class="header" href="#troubleshooting-5">Troubleshooting</a></h2>
 <h3 id="bot-doesnt-respond"><a class="header" href="#bot-doesnt-respond">Bot doesn’t respond</a></h3>
 <ul>
 <li>Verify <strong>Message Content Intent</strong> is enabled in the Developer Portal</li>
@@ -3851,7 +4054,7 @@ the bot replies asking the user to send a text message instead.</p>
 <li><strong>Approve</strong> or <strong>Deny</strong> users directly</li>
 <li>View pending OTP challenges with the code displayed</li>
 </ul>
-<h2 id="troubleshooting-5"><a class="header" href="#troubleshooting-5">Troubleshooting</a></h2>
+<h2 id="troubleshooting-6"><a class="header" href="#troubleshooting-6">Troubleshooting</a></h2>
 <h3 id="qr-code-not-appearing"><a class="header" href="#qr-code-not-appearing">QR Code Not Appearing</a></h3>
 <ul>
 <li>Ensure the <code>whatsapp</code> feature is enabled (it is by default)</li>
@@ -3928,7 +4131,7 @@ faster and more lightweight.</p>
 <li><strong>BrowserPool</strong> (<code>crates/browser/src/pool.rs</code>) - Chrome instance management</li>
 <li><strong>Snapshot</strong> (<code>crates/browser/src/snapshot.rs</code>) - DOM element extraction</li>
 </ul>
-<h2 id="configuration-9"><a class="header" href="#configuration-9">Configuration</a></h2>
+<h2 id="configuration-10"><a class="header" href="#configuration-10">Configuration</a></h2>
 <p>Browser automation is <strong>enabled by default</strong>. To customize, add to your <code>moltis.toml</code>:</p>
 <pre><code class="language-toml">[tools.browser]
 enabled = true              # Enable browser support
@@ -4262,7 +4465,7 @@ tool calls with missing required fields. Moltis handles this gracefully:</p>
 <li><strong>Muted error display</strong>: Validation errors show as muted/informational cards
 in the UI (60% opacity, gray text) to indicate they’re expected, not alarming</li>
 </ul>
-<h2 id="troubleshooting-6"><a class="header" href="#troubleshooting-6">Troubleshooting</a></h2>
+<h2 id="troubleshooting-7"><a class="header" href="#troubleshooting-7">Troubleshooting</a></h2>
 <h3 id="browser-not-launching"><a class="header" href="#browser-not-launching">Browser not launching</a></h3>
 <ul>
 <li>Ensure Chrome/Chromium is installed</li>
@@ -4305,7 +4508,7 @@ agent gains a <code>caldav</code> tool that can list calendars, query events, an
 update, or delete entries on your behalf.</p>
 <p>The feature is compiled in by default (the <code>caldav</code> cargo feature) and can be
 disabled at build time with <code>--no-default-features</code>.</p>
-<h2 id="configuration-10"><a class="header" href="#configuration-10">Configuration</a></h2>
+<h2 id="configuration-11"><a class="header" href="#configuration-11">Configuration</a></h2>
 <p>Add a <code>[caldav]</code> section to your <code>moltis.toml</code> (usually <code>~/.moltis/moltis.toml</code>):</p>
 <pre><code class="language-toml">[caldav]
 enabled = true
@@ -4995,7 +5198,7 @@ before deleting a skill.</p>
 }
 </code></pre>
 <p>Clicking a notification will open or focus the app and navigate to the relevant chat.</p>
-<h2 id="configuration-11"><a class="header" href="#configuration-11">Configuration</a></h2>
+<h2 id="configuration-12"><a class="header" href="#configuration-12">Configuration</a></h2>
 <h3 id="feature-flag-3"><a class="header" href="#feature-flag-3">Feature Flag</a></h3>
 <p>Push notifications are controlled by the <code>push-notifications</code> feature flag, which is enabled by default. To disable:</p>
 <pre><code class="language-toml"># In your Cargo.toml or when building
@@ -5034,7 +5237,7 @@ moltis-gateway = { default-features = false, features = ["web-ui", "tls"] }
 </tbody></table>
 </div>
 <p>Note: iOS push notifications require iOS 16.4 or later and the app must be installed as a PWA.</p>
-<h2 id="troubleshooting-7"><a class="header" href="#troubleshooting-7">Troubleshooting</a></h2>
+<h2 id="troubleshooting-8"><a class="header" href="#troubleshooting-8">Troubleshooting</a></h2>
 <h3 id="notifications-not-working"><a class="header" href="#notifications-not-working">Notifications Not Working</a></h3>
 <ol>
 <li><strong>Check permissions</strong>: Ensure notifications are allowed in browser/OS settings</li>
@@ -5444,7 +5647,7 @@ JSON object <code>{"kind":"created","sessionKey":"..."}</code> dispatched to
 <p>Unmapped provider names are passed through as-is.</p>
 <h2 id="unsupported-channels"><a class="header" href="#unsupported-channels">Unsupported Channels</a></h2>
 <p>Currently only Telegram channels are imported. If your OpenClaw configuration includes other channel types (Slack, Discord, etc.), they will appear as warnings in the scan output but will not be imported.</p>
-<h2 id="troubleshooting-8"><a class="header" href="#troubleshooting-8">Troubleshooting</a></h2>
+<h2 id="troubleshooting-9"><a class="header" href="#troubleshooting-9">Troubleshooting</a></h2>
 <h3 id="import-not-detected"><a class="header" href="#import-not-detected">Import not detected</a></h3>
 <ul>
 <li>Verify the OpenClaw directory exists: <code>ls ~/.openclaw/</code></li>
@@ -6087,8 +6290,11 @@ cpu_quota = 1.0
 pids_max = 256
 </code></pre>
 <h3 id="network-isolation"><a class="header" href="#network-isolation">Network Isolation</a></h3>
-<p>Sandbox containers have limited network access by default. Outbound connections
-are allowed but the sandbox cannot bind to host ports.</p>
+<p>Sandbox containers have no network access by default (<code>no_network = true</code>).</p>
+<p>For tasks that need internet access, <a href="trusted-network.html">trusted network mode</a>
+provides a proxy-filtered allowlist — only connections to explicitly approved
+domains are permitted. All requests (allowed and denied) are recorded in the
+network audit log for review.</p>
 <h2 id="channel-authorization"><a class="header" href="#channel-authorization">Channel Authorization</a></h2>
 <p>Channels (Telegram, Slack, etc.) allow external parties to interact with your
 Moltis agent. This requires careful access control.</p>
@@ -6693,7 +6899,7 @@ docker buildx build --platform linux/amd64,linux/arm64 -t moltis:local .
 <p>OrbStack on macOS works identically to Docker — use the same socket path
 (<code>/var/run/docker.sock</code>). OrbStack’s lightweight Linux VM provides good
 isolation with lower resource usage than Docker Desktop.</p>
-<h2 id="troubleshooting-9"><a class="header" href="#troubleshooting-9">Troubleshooting</a></h2>
+<h2 id="troubleshooting-10"><a class="header" href="#troubleshooting-10">Troubleshooting</a></h2>
 <h3 id="cannot-connect-to-docker-daemon"><a class="header" href="#cannot-connect-to-docker-daemon">“Cannot connect to Docker daemon”</a></h3>
 <p>The Docker socket is not mounted or the Moltis user doesn’t have permission
 to access it. Verify:</p>
@@ -7467,7 +7673,7 @@ async fn test_session_operations() {
 <span class="boring">}</span></code></pre></pre>
 <p>The <code>init()</code> methods are retained (marked <code>#[doc(hidden)]</code>) specifically for tests.
 In production, migrations handle schema creation.</p>
-<h2 id="troubleshooting-10"><a class="header" href="#troubleshooting-10">Troubleshooting</a></h2>
+<h2 id="troubleshooting-11"><a class="header" href="#troubleshooting-11">Troubleshooting</a></h2>
 <h3 id="failed-to-run-migrations"><a class="header" href="#failed-to-run-migrations">“failed to run migrations”</a></h3>
 <ol>
 <li>Check file permissions on <code>~/.moltis/</code></li>
@@ -7851,7 +8057,7 @@ pub mod my_feature {
 
 counter!(my_feature::OPERATIONS_TOTAL).increment(1);
 <span class="boring">}</span></code></pre></pre>
-<h2 id="configuration-12"><a class="header" href="#configuration-12">Configuration</a></h2>
+<h2 id="configuration-13"><a class="header" href="#configuration-13">Configuration</a></h2>
 <p>Metrics configuration in <code>moltis.toml</code>:</p>
 <pre><code class="language-toml">[metrics]
 enabled = true              # Enable metrics collection (default: true)
@@ -7870,7 +8076,7 @@ labels = { env = "prod" }   # Add custom labels to all metrics
 <li><strong>Feature-gate everything</strong>: Use <code>#[cfg(feature = "metrics")]</code> to ensure zero overhead when disabled</li>
 <li><strong>Use predefined buckets</strong>: The <code>buckets</code> module has standard histogram buckets for common metric types</li>
 </ol>
-<h2 id="troubleshooting-11"><a class="header" href="#troubleshooting-11">Troubleshooting</a></h2>
+<h2 id="troubleshooting-12"><a class="header" href="#troubleshooting-12">Troubleshooting</a></h2>
 <h3 id="metrics-not-appearing"><a class="header" href="#metrics-not-appearing">Metrics not appearing</a></h3>
 <ol>
 <li>Verify the <code>metrics</code> feature is enabled at compile time</li>
@@ -7952,6 +8158,11 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
 <h2 id="unreleased"><a class="header" href="#unreleased">[Unreleased]</a></h2>
 <h3 id="added"><a class="header" href="#added">Added</a></h3>
 <ul>
+<li><strong>Trusted network mode</strong>: sandbox containers now default to <code>sandbox.network = "trusted"</code>, routing outbound traffic through an HTTP CONNECT proxy with full audit logging. When <code>trusted_domains</code> is empty (the default), all domains are allowed (audit-only mode); when configured, only listed domains pass without approval. Includes real-time network audit log with domain, protocol, and action filtering via Settings &gt; Network Audit. Configurable via <code>sandbox.trusted_domains</code> in <code>moltis.toml</code>. Proxy env vars (<code>HTTP_PROXY</code>, <code>HTTPS_PROXY</code>, <code>NO_PROXY</code>) are now automatically injected into both Docker and Apple Container sandboxes, and the proxy binds to <code>0.0.0.0</code> so it is reachable from container VMs. The proxy rejects connections from non-private IPs (only loopback, RFC 1918, link-local, and CGNAT ranges are accepted)</li>
+<li><strong>New <code>moltis-network-filter</code> crate</strong>: domain filtering, proxy, and audit buffer logic extracted from <code>moltis-tools</code> and <code>moltis-gateway</code> into a standalone crate with feature flags (<code>proxy</code>, <code>service</code>, <code>metrics</code>). The macOS app can now depend on it directly for network audit log display via <code>moltis-swift-bridge</code></li>
+<li><strong>macOS Network Audit pane</strong>: new Settings &gt; Network Audit section with real-time log display, action filtering (allowed/denied), search, pause/resume, clipboard export, and JSONL download — matching the web UI pattern. New FFI callback <code>moltis_set_network_audit_callback</code> bridges Rust audit entries to Swift</li>
+<li><strong>Proxy-compliant HTTP tools</strong>: all HTTP tools (<code>web_fetch</code>, <code>web_search</code>, <code>location</code>, <code>map</code>) now route through the trusted-network proxy when active, so their traffic appears in the Network Audit log and respects domain filtering. The shared <code>reqwest</code> client is initialized with proxy config at gateway startup; <code>web_fetch</code> uses a per-tool proxy setting for its custom redirect-following client</li>
+<li><strong>Network policy rename</strong>: <code>sandbox.network = "open"</code> has been renamed to <code>"bypass"</code> to make explicit that traffic bypasses the proxy entirely (no audit logging)</li>
 <li><strong>Real WASM sandbox</strong> (<code>wasm</code> feature, default on) — Wasmtime + WASI sandbox with filesystem isolation, fuel metering, epoch-based timeouts, and ~20 built-in coreutils (echo, cat, ls, mkdir, rm, cp, mv, etc.). Two execution tiers: built-in commands operate on a sandboxed directory tree; <code>.wasm</code> modules run via Wasmtime with preopened dirs and captured I/O. Backend: <code>"wasm"</code> in config</li>
 <li><strong>Restricted-host sandbox</strong> — new <code>"restricted-host"</code> backend (extracted from the old <code>WasmtimeSandbox</code>) providing honest naming for what it does: env clearing, restricted PATH, and <code>ulimit</code> resource wrappers without containers or WASM. Always compiled (no feature gate)</li>
 <li><strong>Docker security hardening</strong> — containers now launch with <code>--cap-drop ALL</code>, <code>--security-opt no-new-privileges</code>, tmpfs mounts for <code>/tmp</code> and <code>/run</code>, and <code>--read-only</code> root filesystem for prebuilt images</li>
@@ -8016,6 +8227,7 @@ onboarding-ready configs.</li>
 <h3 id="removed"><a class="header" href="#removed">Removed</a></h3>
 <h3 id="fixed"><a class="header" href="#fixed">Fixed</a></h3>
 <ul>
+<li><strong>Slow SQLite writes</strong>: <code>moltis.db</code> and <code>memory.db</code> now use <code>journal_mode=WAL</code> and <code>synchronous=NORMAL</code> (matching <code>metrics.db</code>), eliminating multi-second write contention that caused 3–10 s INSERT times under concurrent access</li>
 <li>Channel image delivery now parses the actual MIME type from data URIs instead of hardcoding <code>image/png</code></li>
 <li>Docker image now installs Docker CLI from Docker’s official Debian repository (<code>docker-ce-cli</code>), avoiding API mismatches with newer host daemons during sandbox builds/exec</li>
 <li>Chat UI now shows a first-run sandbox preparation status message before container/image setup begins, so startup delays are visible while sandbox resources are created</li>

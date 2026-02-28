@@ -392,6 +392,17 @@ home_persistence = "session"   # "off", "session", or "shared" (default)
 (defaults to <code>data_dir()/sandbox/home/shared</code>, or <code>shared_home_dir</code> if set)</li>
 </ul>
 <p>Moltis stores persisted homes under <code>data_dir()/sandbox/home/</code>.</p>
+<h2 id="network-policy"><a class="header" href="#network-policy">Network policy</a></h2>
+<p>By default, sandbox containers have no network access (<code>no_network = true</code>).
+For tasks that need filtered internet access, use
+<a href="trusted-network.html">trusted network mode</a> — a proxy-based allowlist that
+lets containers reach approved domains while blocking everything else.</p>
+<pre><code class="language-toml">[tools.exec.sandbox]
+network = "trusted"
+trusted_domains = ["registry.npmjs.org", "github.com"]
+</code></pre>
+<p>See <a href="trusted-network.html">Trusted Network</a> for full configuration and the
+network audit log.</p>
 <blockquote>
 <p><strong>Note</strong>: Home persistence applies to Docker, Apple Container, and WASM
 backends. The restricted-host backend uses <code>HOME=/tmp</code> and does not mount
@@ -431,7 +442,7 @@ pids_max = 256
                                 <i class="fa fa-angle-left"></i>
                             </a>
 
-                            <a rel="next prefetch" href="voice.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="trusted-network.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <i class="fa fa-angle-right"></i>
                             </a>
 
@@ -445,7 +456,7 @@ pids_max = 256
                         <i class="fa fa-angle-left"></i>
                     </a>
 
-                    <a rel="next prefetch" href="voice.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="trusted-network.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <i class="fa fa-angle-right"></i>
                     </a>
             </nav>

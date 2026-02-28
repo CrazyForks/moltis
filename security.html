@@ -254,8 +254,11 @@ cpu_quota = 1.0
 pids_max = 256
 </code></pre>
 <h3 id="network-isolation"><a class="header" href="#network-isolation">Network Isolation</a></h3>
-<p>Sandbox containers have limited network access by default. Outbound connections
-are allowed but the sandbox cannot bind to host ports.</p>
+<p>Sandbox containers have no network access by default (<code>no_network = true</code>).</p>
+<p>For tasks that need internet access, <a href="trusted-network.html">trusted network mode</a>
+provides a proxy-filtered allowlist — only connections to explicitly approved
+domains are permitted. All requests (allowed and denied) are recorded in the
+network audit log for review.</p>
 <h2 id="channel-authorization"><a class="header" href="#channel-authorization">Channel Authorization</a></h2>
 <p>Channels (Telegram, Slack, etc.) allow external parties to interact with your
 Moltis agent. This requires careful access control.</p>
