@@ -200,6 +200,7 @@ private struct ChatDetailView: View {
             }
             .buttonStyle(.borderless)
             .help("Settings")
+            .accessibilityIdentifier("open-settings-button")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)

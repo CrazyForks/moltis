@@ -42,6 +42,13 @@ enum SettingsSection: String, CaseIterable, Hashable {
         Self.iconMap[self] ?? "gearshape"
     }
 
+    var accessibilityIdentifier: String {
+        let normalized = rawValue
+            .lowercased()
+            .replacingOccurrences(of: " ", with: "-")
+        return "settings-section-\(normalized)"
+    }
+
     var iconColor: Color {
         Self.colorMap[self] ?? .gray
     }
@@ -185,6 +192,7 @@ struct SettingsView: View {
                                 )
                             }
                             .tag(section)
+                            .accessibilityIdentifier(section.accessibilityIdentifier)
                         }
                     }
                 }

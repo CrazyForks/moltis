@@ -75,24 +75,29 @@ extension SettingsSectionContent {
                             .onSubmit {
                                 settings.addEnvironmentVariable()
                             }
+                            .accessibilityIdentifier("settings-env-add-key")
                         SecureField("Value", text: $settings.newEnvValue)
                             .onSubmit {
                                 settings.addEnvironmentVariable()
                             }
+                            .accessibilityIdentifier("settings-env-add-value")
                         Button(settings.environmentBusy ? "Saving..." : "Add") {
                             settings.addEnvironmentVariable()
                         }
                         .disabled(settings.environmentBusy)
+                        .accessibilityIdentifier("settings-env-add-button")
                     }
                     if let message = settings.envMessage {
                         Text(message)
                             .font(.caption)
                             .foregroundStyle(.green)
+                            .accessibilityIdentifier("settings-env-message")
                     }
                     if let error = settings.envError {
                         Text(error)
                             .font(.caption)
                             .foregroundStyle(.red)
+                            .accessibilityIdentifier("settings-env-error")
                     }
                 }
             }
