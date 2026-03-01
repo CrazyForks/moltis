@@ -425,6 +425,93 @@ private struct BridgeAuthPasskeysPayload: Decodable {
     let passkeys: [BridgeAuthPasskeyEntry]
 }
 
+// MARK: - Sandboxes
+
+struct BridgeSandboxStatusPayload: Decodable {
+    let backend: String
+    let os: String
+    let defaultImage: String
+}
+
+struct BridgeSandboxImageEntry: Decodable, Identifiable, Equatable {
+    let tag: String
+    let size: String
+    let created: String
+    let kind: String
+
+    var id: String { tag }
+}
+
+private struct BridgeSandboxImagesPayload: Decodable {
+    let images: [BridgeSandboxImageEntry]
+}
+
+private struct BridgeSandboxPrunePayload: Decodable {
+    let pruned: Int
+}
+
+private struct BridgeSandboxCheckPackagesPayload: Decodable {
+    let found: [String: Bool]
+}
+
+private struct BridgeSandboxBuildImagePayload: Decodable {
+    let tag: String
+}
+
+private struct BridgeSandboxDefaultImagePayload: Decodable {
+    let image: String
+}
+
+struct BridgeSandboxSharedHomePayload: Decodable {
+    let enabled: Bool
+    let mode: String
+    let path: String
+    let configuredPath: String?
+}
+
+private struct BridgeSandboxSharedHomeSavePayload: Decodable {
+    let ok: Bool
+    let restartRequired: Bool
+    let configPath: String
+    let config: BridgeSandboxSharedHomePayload
+}
+
+struct BridgeSandboxContainerEntry: Decodable, Identifiable, Equatable {
+    let name: String
+    let image: String
+    let state: String
+    let backend: String
+    let cpus: UInt32?
+    let memoryMb: UInt64?
+    let started: String?
+    let addr: String?
+
+    var id: String { name }
+}
+
+private struct BridgeSandboxContainersPayload: Decodable {
+    let containers: [BridgeSandboxContainerEntry]
+}
+
+private struct BridgeSandboxCleanContainersPayload: Decodable {
+    let ok: Bool
+    let removed: Int
+}
+
+struct BridgeSandboxDiskUsagePayload: Decodable, Equatable {
+    let containersTotal: UInt64
+    let containersActive: UInt64
+    let containersSizeBytes: UInt64
+    let containersReclaimableBytes: UInt64
+    let imagesTotal: UInt64
+    let imagesActive: UInt64
+    let imagesSizeBytes: UInt64
+}
+
+private struct BridgeSandboxDiskUsageEnvelope: Decodable {
+    let usage: BridgeSandboxDiskUsagePayload
+}
+
 // MARK: - Environment variables
 
 struct BridgeEnvVarEntry: Decodable, Identifiable {
@@ -907,6 +994,112 @@ extension MoltisClient {
         let _: BridgeOkPayload = try callBridge(request, via: moltis_auth_rename_passkey)
     }
 
+    func sandboxStatus() throws -> BridgeSandboxStatusPayload {
+        let payload = try consumeCStringPointer(moltis_sandbox_status())
+        return try decode(payload, as: BridgeSandboxStatusPayload.self)
+    }
+
+    func sandboxListImages() throws -> [BridgeSandboxImageEntry] {
+        let payload = try consumeCStringPointer(moltis_sandbox_list_images())
+        let parsed = try decode(payload, as: BridgeSandboxImagesPayload.self)
+        return parsed.images
+    }
+
+    func sandboxDeleteImage(tag: String) throws {
+        let request = SandboxDeleteImageRequest(tag: tag)
+        let _: BridgeOkPayload = try callBridge(request, via: moltis_sandbox_delete_image)
+    }
+
+    func sandboxPruneImages() throws -> Int {
+        let payload = try consumeCStringPointer(moltis_sandbox_prune_images())
+        let parsed = try decode(payload, as: BridgeSandboxPrunePayload.self)
+        return parsed.pruned
+    }
+
+    func sandboxCheckPackages(base: String, packages: [String]) throws -> [String: Bool] {
+        let request = SandboxCheckPackagesRequest(base: base, packages: packages)
+        let parsed: BridgeSandboxCheckPackagesPayload = try callBridge(
+            request,
+            via: moltis_sandbox_check_packages
+        )
+        return parsed.found
+    }
+
+    func sandboxBuildImage(name: String, base: String, packages: [String]) throws -> String {
+        let request = SandboxBuildImageRequest(name: name, base: base, packages: packages)
+        let parsed: BridgeSandboxBuildImagePayload = try callBridge(
+            request,
+            via: moltis_sandbox_build_image
+        )
+        return parsed.tag
+    }
+
+    func sandboxGetDefaultImage() throws -> String {
+        let payload = try consumeCStringPointer(moltis_sandbox_get_default_image())
+        let parsed = try decode(payload, as: BridgeSandboxDefaultImagePayload.self)
+        return parsed.image
+    }
+
+    func sandboxSetDefaultImage(image: String?) throws -> String {
+        let request = SandboxSetDefaultImageRequest(image: image)
+        let parsed: BridgeSandboxDefaultImagePayload = try callBridge(
+            request,
+            via: moltis_sandbox_set_default_image
+        )
+        return parsed.image
+    }
+
+    func sandboxGetSharedHome() throws -> BridgeSandboxSharedHomePayload {
+        let payload = try consumeCStringPointer(moltis_sandbox_get_shared_home())
+        return try decode(payload, as: BridgeSandboxSharedHomePayload.self)
+    }
+
+    func sandboxSetSharedHome(enabled: Bool, path: String?) throws -> BridgeSandboxSharedHomePayload {
+        let request = SandboxSetSharedHomeRequest(enabled: enabled, path: path)
+        let parsed: BridgeSandboxSharedHomeSavePayload = try callBridge(
+            request,
+            via: moltis_sandbox_set_shared_home
+        )
+        _ = parsed.ok
+        _ = parsed.restartRequired
+        _ = parsed.configPath
+        return parsed.config
+    }
+
+    func sandboxListContainers() throws -> [BridgeSandboxContainerEntry] {
+        let payload = try consumeCStringPointer(moltis_sandbox_list_containers())
+        let parsed = try decode(payload, as: BridgeSandboxContainersPayload.self)
+        return parsed.containers
+    }
+
+    func sandboxStopContainer(name: String) throws {
+        let request = SandboxContainerNameRequest(name: name)
+        let _: BridgeOkPayload = try callBridge(request, via: moltis_sandbox_stop_container)
+    }
+
+    func sandboxRemoveContainer(name: String) throws {
+        let request = SandboxContainerNameRequest(name: name)
+        let _: BridgeOkPayload = try callBridge(request, via: moltis_sandbox_remove_container)
+    }
+
+    func sandboxCleanContainers() throws -> Int {
+        let payload = try consumeCStringPointer(moltis_sandbox_clean_containers())
+        let parsed = try decode(payload, as: BridgeSandboxCleanContainersPayload.self)
+        _ = parsed.ok
+        return parsed.removed
+    }
+
+    func sandboxDiskUsage() throws -> BridgeSandboxDiskUsagePayload {
+        let payload = try consumeCStringPointer(moltis_sandbox_disk_usage())
+        let parsed = try decode(payload, as: BridgeSandboxDiskUsageEnvelope.self)
+        return parsed.usage
+    }
+
+    func sandboxRestartDaemon() throws {
+        let payload = try consumeCStringPointer(moltis_sandbox_restart_daemon())
+        _ = try decode(payload, as: BridgeOkPayload.self)
+    }
+
     /// Returns the soul text from SOUL.md, or nil if empty/missing.
     func getSoul() throws -> String? {
         let payload = try consumeCStringPointer(moltis_get_soul())
@@ -1031,6 +1224,34 @@ private struct MemoryConfigUpdateRequest: Encodable {
 
 private struct DeleteEnvVarRequest: Encodable {
     let id: Int64
+}
+
+private struct SandboxDeleteImageRequest: Encodable {
+    let tag: String
+}
+
+private struct SandboxCheckPackagesRequest: Encodable {
+    let base: String
+    let packages: [String]
+}
+
+private struct SandboxBuildImageRequest: Encodable {
+    let name: String
+    let base: String
+    let packages: [String]
+}
+
+private struct SandboxSetDefaultImageRequest: Encodable {
+    let image: String?
+}
+
+private struct SandboxSetSharedHomeRequest: Encodable {
+    let enabled: Bool
+    let path: String?
+}
+
+private struct SandboxContainerNameRequest: Encodable {
+    let name: String
 }
 
 private struct AuthPasswordChangeRequest: Encodable {

@@ -26,6 +26,7 @@ use {
         session_events::{SessionEvent, SessionEventBus},
         store::SessionStore,
     },
+    moltis_tools::image_cache::ImageBuilder,
     serde::{Deserialize, Serialize},
     tokio_stream::StreamExt,
 };
@@ -38,6 +39,7 @@ struct BridgeState {
     session_store: SessionStore,
     session_metadata: SqliteSessionMetadata,
     credential_store: Arc<moltis_gateway::auth::CredentialStore>,
+    sandbox_default_image_override: RwLock<Option<String>>,
 }
 
 impl BridgeState {
@@ -130,6 +132,7 @@ impl BridgeState {
             session_store,
             session_metadata,
             credential_store,
+            sandbox_default_image_override: RwLock::new(None),
         }
     }
 }
@@ -611,6 +614,139 @@ struct AuthPasskeyRenameRequest {
     name: String,
 }
 
+const IMAGE_CACHE_DELETE_FAILED: &str = "IMAGE_CACHE_DELETE_FAILED";
+const IMAGE_CACHE_PRUNE_FAILED: &str = "IMAGE_CACHE_PRUNE_FAILED";
+const SANDBOX_CHECK_PACKAGES_FAILED: &str = "SANDBOX_CHECK_PACKAGES_FAILED";
+const SANDBOX_BACKEND_UNAVAILABLE: &str = "SANDBOX_BACKEND_UNAVAILABLE";
+const SANDBOX_IMAGE_NAME_REQUIRED: &str = "SANDBOX_IMAGE_NAME_REQUIRED";
+const SANDBOX_IMAGE_PACKAGES_REQUIRED: &str = "SANDBOX_IMAGE_PACKAGES_REQUIRED";
+const SANDBOX_IMAGE_NAME_INVALID: &str = "SANDBOX_IMAGE_NAME_INVALID";
+const SANDBOX_TMP_DIR_CREATE_FAILED: &str = "SANDBOX_TMP_DIR_CREATE_FAILED";
+const SANDBOX_DOCKERFILE_WRITE_FAILED: &str = "SANDBOX_DOCKERFILE_WRITE_FAILED";
+const SANDBOX_IMAGE_BUILD_FAILED: &str = "SANDBOX_IMAGE_BUILD_FAILED";
+const SANDBOX_CONTAINERS_LIST_FAILED: &str = "SANDBOX_CONTAINERS_LIST_FAILED";
+const SANDBOX_CONTAINER_PREFIX_MISMATCH: &str = "SANDBOX_CONTAINER_PREFIX_MISMATCH";
+const SANDBOX_CONTAINER_STOP_FAILED: &str = "SANDBOX_CONTAINER_STOP_FAILED";
+const SANDBOX_CONTAINER_REMOVE_FAILED: &str = "SANDBOX_CONTAINER_REMOVE_FAILED";
+const SANDBOX_CONTAINERS_CLEAN_FAILED: &str = "SANDBOX_CONTAINERS_CLEAN_FAILED";
+const SANDBOX_DISK_USAGE_FAILED: &str = "SANDBOX_DISK_USAGE_FAILED";
+const SANDBOX_DAEMON_RESTART_FAILED: &str = "SANDBOX_DAEMON_RESTART_FAILED";
+const SANDBOX_SHARED_HOME_SAVE_FAILED: &str = "SANDBOX_SHARED_HOME_SAVE_FAILED";
+
+#[derive(Debug, Serialize)]
+struct SandboxStatusResponse {
+    backend: String,
+    os: String,
+    default_image: String,
+}
+
+#[derive(Debug, Serialize)]
+struct SandboxImageEntry {
+    tag: String,
+    size: String,
+    created: String,
+    kind: String,
+}
+
+#[derive(Debug, Serialize)]
+struct SandboxImagesResponse {
+    images: Vec<SandboxImageEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SandboxDeleteImageRequest {
+    tag: String,
+}
+
+#[derive(Debug, Serialize)]
+struct SandboxPruneImagesResponse {
+    pruned: usize,
+}
+
+#[derive(Debug, Deserialize)]
+struct SandboxCheckPackagesRequest {
+    #[serde(default)]
+    base: Option<String>,
+    #[serde(default)]
+    packages: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct SandboxCheckPackagesResponse {
+    found: HashMap<String, bool>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SandboxBuildImageRequest {
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    base: Option<String>,
+    #[serde(default)]
+    packages: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct SandboxBuildImageResponse {
+    tag: String,
+}
+
+#[derive(Debug, Serialize)]
+struct SandboxDefaultImageResponse {
+    image: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct SandboxSetDefaultImageRequest {
+    #[serde(default)]
+    image: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct SandboxSharedHomeConfigResponse {
+    enabled: bool,
+    mode: String,
+    path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    configured_path: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SandboxSharedHomeUpdateRequest {
+    enabled: bool,
+    #[serde(default)]
+    path: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct SandboxSharedHomeSaveResponse {
+    ok: bool,
+    restart_required: bool,
+    config_path: String,
+    config: SandboxSharedHomeConfigResponse,
+}
+
+#[derive(Debug, Deserialize)]
+struct SandboxContainerNameRequest {
+    name: String,
+}
+
+#[derive(Debug, Serialize)]
+struct SandboxContainersResponse {
+    containers: Vec<moltis_tools::sandbox::RunningContainer>,
+}
+
+#[derive(Debug, Serialize)]
+struct SandboxCleanContainersResponse {
+    ok: bool,
+    removed: usize,
+}
+
+#[derive(Debug, Serialize)]
+struct SandboxDiskUsageResponse {
+    usage: moltis_tools::sandbox::ContainerDiskUsage,
+}
+
 // ── Encoding helpers ───────────────────────────────────────────────────────
 
 fn encode_json<T: Serialize>(value: &T) -> String {
@@ -705,6 +841,68 @@ fn vault_status_string() -> String {
     match BRIDGE.runtime.block_on(async { vault.status().await }) {
         Ok(status) => format!("{status:?}").to_lowercase(),
         Err(_) => "error".to_owned(),
+    }
+}
+
+fn sandbox_effective_default_image(config: &moltis_config::MoltisConfig) -> String {
+    if let Some(value) = BRIDGE
+        .sandbox_default_image_override
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone()
+    {
+        return value;
+    }
+    config
+        .tools
+        .exec
+        .sandbox
+        .image
+        .clone()
+        .unwrap_or_else(|| moltis_tools::sandbox::DEFAULT_SANDBOX_IMAGE.to_owned())
+}
+
+fn sandbox_backend_name(config: &moltis_config::MoltisConfig) -> String {
+    let runtime_cfg = moltis_tools::sandbox::SandboxConfig::from(&config.tools.exec.sandbox);
+    let backend = moltis_tools::sandbox::create_sandbox(runtime_cfg);
+    backend.backend_name().to_owned()
+}
+
+fn sandbox_status_from_config(config: &moltis_config::MoltisConfig) -> SandboxStatusResponse {
+    SandboxStatusResponse {
+        backend: sandbox_backend_name(config),
+        os: std::env::consts::OS.to_owned(),
+        default_image: sandbox_effective_default_image(config),
+    }
+}
+
+fn sandbox_container_prefix(config: &moltis_config::MoltisConfig) -> String {
+    let runtime_cfg = moltis_tools::sandbox::SandboxConfig::from(&config.tools.exec.sandbox);
+    runtime_cfg
+        .container_prefix
+        .unwrap_or_else(|| "moltis-sandbox".to_owned())
+}
+
+fn sandbox_shared_home_config_from_config(
+    config: &moltis_config::MoltisConfig,
+) -> SandboxSharedHomeConfigResponse {
+    let runtime_cfg = moltis_tools::sandbox::SandboxConfig::from(&config.tools.exec.sandbox);
+    let mode = match config.tools.exec.sandbox.home_persistence {
+        moltis_config::schema::HomePersistenceConfig::Off => "off",
+        moltis_config::schema::HomePersistenceConfig::Session => "session",
+        moltis_config::schema::HomePersistenceConfig::Shared => "shared",
+    };
+
+    SandboxSharedHomeConfigResponse {
+        enabled: matches!(
+            config.tools.exec.sandbox.home_persistence,
+            moltis_config::schema::HomePersistenceConfig::Shared
+        ),
+        mode: mode.to_owned(),
+        path: moltis_tools::sandbox::shared_home_dir_path(&runtime_cfg)
+            .display()
+            .to_string(),
+        configured_path: config.tools.exec.sandbox.shared_home_dir.clone(),
     }
 }
 
@@ -2808,6 +3006,706 @@ pub extern "C" fn moltis_auth_rename_passkey(request_json: *const c_char) -> *mu
             Err(error) => {
                 record_error("moltis_auth_rename_passkey", "AUTH_PASSKEY_RENAME_FAILED");
                 encode_error("AUTH_PASSKEY_RENAME_FAILED", &error.to_string())
+            },
+        }
+    })
+}
+
+/// Returns sandbox runtime status used by Settings > Sandboxes.
+#[unsafe(no_mangle)]
+pub extern "C" fn moltis_sandbox_status() -> *mut c_char {
+    record_call("moltis_sandbox_status");
+    trace_call("moltis_sandbox_status");
+
+    with_ffi_boundary(|| {
+        let config = moltis_config::discover_and_load();
+        encode_json(&sandbox_status_from_config(&config))
+    })
+}
+
+/// Returns cached tool and sandbox images.
+#[unsafe(no_mangle)]
+pub extern "C" fn moltis_sandbox_list_images() -> *mut c_char {
+    record_call("moltis_sandbox_list_images");
+    trace_call("moltis_sandbox_list_images");
+
+    with_ffi_boundary(|| {
+        let builder = moltis_tools::image_cache::DockerImageBuilder::new();
+        let (cached, sandbox) = BRIDGE.runtime.block_on(async {
+            tokio::join!(
+                builder.list_cached(),
+                moltis_tools::sandbox::list_sandbox_images()
+            )
+        });
+
+        let mut images = Vec::new();
+
+        if let Ok(list) = cached {
+            images.extend(list.into_iter().map(|img| SandboxImageEntry {
+                tag: img.tag,
+                size: img.size,
+                created: img.created,
+                kind: "tool".to_owned(),
+            }));
+        }
+
+        if let Ok(list) = sandbox {
+            images.extend(list.into_iter().map(|img| SandboxImageEntry {
+                tag: img.tag,
+                size: img.size,
+                created: img.created,
+                kind: "sandbox".to_owned(),
+            }));
+        }
+
+        encode_json(&SandboxImagesResponse { images })
+    })
+}
+
+/// Deletes one cached image by tag.
+#[unsafe(no_mangle)]
+pub extern "C" fn moltis_sandbox_delete_image(request_json: *const c_char) -> *mut c_char {
+    record_call("moltis_sandbox_delete_image");
+    trace_call("moltis_sandbox_delete_image");
+
+    with_ffi_boundary(|| {
+        let raw = match read_c_string(request_json) {
+            Ok(value) => value,
+            Err(message) => {
+                record_error(
+                    "moltis_sandbox_delete_image",
+                    "null_pointer_or_invalid_utf8",
+                );
+                return encode_error("null_pointer_or_invalid_utf8", &message);
+            },
+        };
+
+        let request = match serde_json::from_str::<SandboxDeleteImageRequest>(&raw) {
+            Ok(r) => r,
+            Err(error) => {
+                record_error("moltis_sandbox_delete_image", "invalid_json");
+                return encode_error("invalid_json", &error.to_string());
+            },
+        };
+
+        let tag = request.tag.trim();
+        if tag.is_empty() {
+            record_error("moltis_sandbox_delete_image", "IMAGE_TAG_REQUIRED");
+            return encode_error("IMAGE_TAG_REQUIRED", "tag is required");
+        }
+
+        let result = BRIDGE.runtime.block_on(async {
+            if tag.contains("-sandbox:") {
+                moltis_tools::sandbox::remove_sandbox_image(tag).await
+            } else {
+                let builder = moltis_tools::image_cache::DockerImageBuilder::new();
+                let full_tag = if tag.starts_with("moltis-cache/") {
+                    tag.to_owned()
+                } else {
+                    format!("moltis-cache/{tag}")
+                };
+                builder.remove_cached(&full_tag).await
+            }
+        });
+
+        match result {
+            Ok(()) => encode_json(&OkResponse { ok: true }),
+            Err(error) => {
+                record_error("moltis_sandbox_delete_image", IMAGE_CACHE_DELETE_FAILED);
+                encode_error(IMAGE_CACHE_DELETE_FAILED, &error.to_string())
+            },
+        }
+    })
+}
+
+/// Removes all cached tool and sandbox images.
+#[unsafe(no_mangle)]
+pub extern "C" fn moltis_sandbox_prune_images() -> *mut c_char {
+    record_call("moltis_sandbox_prune_images");
+    trace_call("moltis_sandbox_prune_images");
+
+    with_ffi_boundary(|| {
+        let builder = moltis_tools::image_cache::DockerImageBuilder::new();
+        let (tool_result, sandbox_result) = BRIDGE.runtime.block_on(async {
+            tokio::join!(
+                builder.prune_all(),
+                moltis_tools::sandbox::clean_sandbox_images()
+            )
+        });
+
+        let mut count = 0usize;
+        if let Ok(n) = tool_result {
+            count += n;
+        }
+        if let Ok(n) = sandbox_result {
+            count += n;
+        }
+
+        if let (Err(e1), Err(e2)) = (&tool_result, &sandbox_result) {
+            let message = format!("tool images: {e1}; sandbox images: {e2}");
+            record_error("moltis_sandbox_prune_images", IMAGE_CACHE_PRUNE_FAILED);
+            return encode_error(IMAGE_CACHE_PRUNE_FAILED, &message);
+        }
+
+        encode_json(&SandboxPruneImagesResponse { pruned: count })
+    })
+}
+
+/// Checks package presence in a base Docker image.
+#[unsafe(no_mangle)]
+pub extern "C" fn moltis_sandbox_check_packages(request_json: *const c_char) -> *mut c_char {
+    record_call("moltis_sandbox_check_packages");
+    trace_call("moltis_sandbox_check_packages");
+
+    with_ffi_boundary(|| {
+        let raw = match read_c_string(request_json) {
+            Ok(value) => value,
+            Err(message) => {
+                record_error(
+                    "moltis_sandbox_check_packages",
+                    "null_pointer_or_invalid_utf8",
+                );
+                return encode_error("null_pointer_or_invalid_utf8", &message);
+            },
+        };
+
+        let request = match serde_json::from_str::<SandboxCheckPackagesRequest>(&raw) {
+            Ok(r) => r,
+            Err(error) => {
+                record_error("moltis_sandbox_check_packages", "invalid_json");
+                return encode_error("invalid_json", &error.to_string());
+            },
+        };
+
+        let base = request
+            .base
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .unwrap_or("ubuntu:25.10")
+            .to_owned();
+        let packages: Vec<String> = request
+            .packages
+            .into_iter()
+            .map(|p| p.trim().to_owned())
+            .filter(|p| !p.is_empty())
+            .collect();
+
+        if packages.is_empty() {
+            return encode_json(&SandboxCheckPackagesResponse {
+                found: HashMap::new(),
+            });
+        }
+
+        let checks: Vec<String> = packages
+            .iter()
+            .map(|pkg| {
+                format!(
+                    r#"if dpkg -s '{pkg}' >/dev/null 2>&1 || command -v '{pkg}' >/dev/null 2>&1; then echo "FOUND:{pkg}"; fi"#
+                )
+            })
+            .collect();
+        let script = checks.join("\n");
+
+        let output = BRIDGE.runtime.block_on(async {
+            tokio::process::Command::new("docker")
+                .args(["run", "--rm", "--entrypoint", "sh", &base, "-c", &script])
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .output()
+                .await
+        });
+
+        match output {
+            Ok(output) => {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let mut found = HashMap::new();
+                for pkg in packages {
+                    let present = stdout
+                        .lines()
+                        .any(|line| line.trim() == format!("FOUND:{pkg}"));
+                    found.insert(pkg, present);
+                }
+                encode_json(&SandboxCheckPackagesResponse { found })
+            },
+            Err(error) => {
+                record_error(
+                    "moltis_sandbox_check_packages",
+                    SANDBOX_CHECK_PACKAGES_FAILED,
+                );
+                encode_error(SANDBOX_CHECK_PACKAGES_FAILED, &error.to_string())
+            },
+        }
+    })
+}
+
+/// Builds a sandbox image from base image + apt package list.
+#[unsafe(no_mangle)]
+pub extern "C" fn moltis_sandbox_build_image(request_json: *const c_char) -> *mut c_char {
+    record_call("moltis_sandbox_build_image");
+    trace_call("moltis_sandbox_build_image");
+
+    with_ffi_boundary(|| {
+        let raw = match read_c_string(request_json) {
+            Ok(value) => value,
+            Err(message) => {
+                record_error("moltis_sandbox_build_image", "null_pointer_or_invalid_utf8");
+                return encode_error("null_pointer_or_invalid_utf8", &message);
+            },
+        };
+
+        let request = match serde_json::from_str::<SandboxBuildImageRequest>(&raw) {
+            Ok(r) => r,
+            Err(error) => {
+                record_error("moltis_sandbox_build_image", "invalid_json");
+                return encode_error("invalid_json", &error.to_string());
+            },
+        };
+
+        let name = request.name.trim();
+        if name.is_empty() {
+            record_error("moltis_sandbox_build_image", SANDBOX_IMAGE_NAME_REQUIRED);
+            return encode_error(SANDBOX_IMAGE_NAME_REQUIRED, "name is required");
+        }
+
+        if !name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        {
+            record_error("moltis_sandbox_build_image", SANDBOX_IMAGE_NAME_INVALID);
+            return encode_error(
+                SANDBOX_IMAGE_NAME_INVALID,
+                "name must be alphanumeric, dash, or underscore",
+            );
+        }
+
+        let base = request
+            .base
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .unwrap_or("ubuntu:25.10")
+            .to_owned();
+        let packages: Vec<String> = request
+            .packages
+            .into_iter()
+            .map(|p| p.trim().to_owned())
+            .filter(|p| !p.is_empty())
+            .collect();
+
+        if packages.is_empty() {
+            record_error(
+                "moltis_sandbox_build_image",
+                SANDBOX_IMAGE_PACKAGES_REQUIRED,
+            );
+            return encode_error(SANDBOX_IMAGE_PACKAGES_REQUIRED, "packages list is empty");
+        }
+
+        let pkg_list = packages.join(" ");
+        let dockerfile_contents = format!(
+            "FROM {base}\n\
+RUN apt-get update && apt-get install -y {pkg_list}\n\
+RUN mkdir -p /home/sandbox\n\
+ENV HOME=/home/sandbox\n\
+WORKDIR /home/sandbox\n"
+        );
+
+        let tmp_dir = std::env::temp_dir().join(format!("moltis-build-{}", uuid::Uuid::new_v4()));
+        if let Err(error) = std::fs::create_dir_all(&tmp_dir) {
+            record_error("moltis_sandbox_build_image", SANDBOX_TMP_DIR_CREATE_FAILED);
+            return encode_error(SANDBOX_TMP_DIR_CREATE_FAILED, &error.to_string());
+        }
+
+        let dockerfile_path = tmp_dir.join("Dockerfile");
+        if let Err(error) = std::fs::write(&dockerfile_path, &dockerfile_contents) {
+            let _ = std::fs::remove_dir_all(&tmp_dir);
+            record_error(
+                "moltis_sandbox_build_image",
+                SANDBOX_DOCKERFILE_WRITE_FAILED,
+            );
+            return encode_error(SANDBOX_DOCKERFILE_WRITE_FAILED, &error.to_string());
+        }
+
+        let builder = moltis_tools::image_cache::DockerImageBuilder::new();
+        let result =
+            BRIDGE
+                .runtime
+                .block_on(builder.ensure_image(name, &dockerfile_path, &tmp_dir));
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+
+        match result {
+            Ok(tag) => encode_json(&SandboxBuildImageResponse { tag }),
+            Err(error) => {
+                record_error("moltis_sandbox_build_image", SANDBOX_IMAGE_BUILD_FAILED);
+                encode_error(SANDBOX_IMAGE_BUILD_FAILED, &error.to_string())
+            },
+        }
+    })
+}
+
+/// Returns the effective default sandbox image.
+#[unsafe(no_mangle)]
+pub extern "C" fn moltis_sandbox_get_default_image() -> *mut c_char {
+    record_call("moltis_sandbox_get_default_image");
+    trace_call("moltis_sandbox_get_default_image");
+
+    with_ffi_boundary(|| {
+        let config = moltis_config::discover_and_load();
+        let image = sandbox_effective_default_image(&config);
+        encode_json(&SandboxDefaultImageResponse { image })
+    })
+}
+
+/// Sets a runtime default sandbox image override.
+#[unsafe(no_mangle)]
+pub extern "C" fn moltis_sandbox_set_default_image(request_json: *const c_char) -> *mut c_char {
+    record_call("moltis_sandbox_set_default_image");
+    trace_call("moltis_sandbox_set_default_image");
+
+    with_ffi_boundary(|| {
+        let raw = match read_c_string(request_json) {
+            Ok(value) => value,
+            Err(message) => {
+                record_error(
+                    "moltis_sandbox_set_default_image",
+                    "null_pointer_or_invalid_utf8",
+                );
+                return encode_error("null_pointer_or_invalid_utf8", &message);
+            },
+        };
+
+        let request = match serde_json::from_str::<SandboxSetDefaultImageRequest>(&raw) {
+            Ok(r) => r,
+            Err(error) => {
+                record_error("moltis_sandbox_set_default_image", "invalid_json");
+                return encode_error("invalid_json", &error.to_string());
+            },
+        };
+
+        let config = moltis_config::discover_and_load();
+        if sandbox_backend_name(&config) == "none" {
+            record_error(
+                "moltis_sandbox_set_default_image",
+                SANDBOX_BACKEND_UNAVAILABLE,
+            );
+            return encode_error(SANDBOX_BACKEND_UNAVAILABLE, "no sandbox backend available");
+        }
+
+        let value = request
+            .image
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(ToOwned::to_owned);
+
+        *BRIDGE
+            .sandbox_default_image_override
+            .write()
+            .unwrap_or_else(|e| e.into_inner()) = value;
+
+        let image = sandbox_effective_default_image(&config);
+        encode_json(&SandboxDefaultImageResponse { image })
+    })
+}
+
+/// Returns shared `/home/sandbox` persistence config.
+#[unsafe(no_mangle)]
+pub extern "C" fn moltis_sandbox_get_shared_home() -> *mut c_char {
+    record_call("moltis_sandbox_get_shared_home");
+    trace_call("moltis_sandbox_get_shared_home");
+
+    with_ffi_boundary(|| {
+        let config = moltis_config::discover_and_load();
+        let response = sandbox_shared_home_config_from_config(&config);
+        encode_json(&response)
+    })
+}
+
+/// Updates shared `/home/sandbox` persistence config.
+#[unsafe(no_mangle)]
+pub extern "C" fn moltis_sandbox_set_shared_home(request_json: *const c_char) -> *mut c_char {
+    record_call("moltis_sandbox_set_shared_home");
+    trace_call("moltis_sandbox_set_shared_home");
+
+    with_ffi_boundary(|| {
+        let raw = match read_c_string(request_json) {
+            Ok(value) => value,
+            Err(message) => {
+                record_error(
+                    "moltis_sandbox_set_shared_home",
+                    "null_pointer_or_invalid_utf8",
+                );
+                return encode_error("null_pointer_or_invalid_utf8", &message);
+            },
+        };
+
+        let request = match serde_json::from_str::<SandboxSharedHomeUpdateRequest>(&raw) {
+            Ok(r) => r,
+            Err(error) => {
+                record_error("moltis_sandbox_set_shared_home", "invalid_json");
+                return encode_error("invalid_json", &error.to_string());
+            },
+        };
+
+        let path = request
+            .path
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned);
+
+        let update_result = moltis_config::update_config(|cfg| {
+            cfg.tools.exec.sandbox.shared_home_dir = path.clone();
+            if request.enabled {
+                cfg.tools.exec.sandbox.home_persistence =
+                    moltis_config::schema::HomePersistenceConfig::Shared;
+            } else if matches!(
+                cfg.tools.exec.sandbox.home_persistence,
+                moltis_config::schema::HomePersistenceConfig::Shared
+            ) {
+                cfg.tools.exec.sandbox.home_persistence =
+                    moltis_config::schema::HomePersistenceConfig::Off;
+            }
+        });
+
+        match update_result {
+            Ok(saved_path) => {
+                let config = moltis_config::discover_and_load();
+                let response = SandboxSharedHomeSaveResponse {
+                    ok: true,
+                    restart_required: true,
+                    config_path: saved_path.display().to_string(),
+                    config: sandbox_shared_home_config_from_config(&config),
+                };
+                encode_json(&response)
+            },
+            Err(error) => {
+                record_error(
+                    "moltis_sandbox_set_shared_home",
+                    SANDBOX_SHARED_HOME_SAVE_FAILED,
+                );
+                encode_error(SANDBOX_SHARED_HOME_SAVE_FAILED, &error.to_string())
+            },
+        }
+    })
+}
+
+/// Returns running containers for the configured sandbox prefix.
+#[unsafe(no_mangle)]
+pub extern "C" fn moltis_sandbox_list_containers() -> *mut c_char {
+    record_call("moltis_sandbox_list_containers");
+    trace_call("moltis_sandbox_list_containers");
+
+    with_ffi_boundary(|| {
+        let config = moltis_config::discover_and_load();
+        let prefix = sandbox_container_prefix(&config);
+        match BRIDGE
+            .runtime
+            .block_on(moltis_tools::sandbox::list_running_containers(&prefix))
+        {
+            Ok(containers) => encode_json(&SandboxContainersResponse { containers }),
+            Err(error) => {
+                record_error(
+                    "moltis_sandbox_list_containers",
+                    SANDBOX_CONTAINERS_LIST_FAILED,
+                );
+                encode_error(SANDBOX_CONTAINERS_LIST_FAILED, &error.to_string())
+            },
+        }
+    })
+}
+
+/// Stops one sandbox container.
+#[unsafe(no_mangle)]
+pub extern "C" fn moltis_sandbox_stop_container(request_json: *const c_char) -> *mut c_char {
+    record_call("moltis_sandbox_stop_container");
+    trace_call("moltis_sandbox_stop_container");
+
+    with_ffi_boundary(|| {
+        let raw = match read_c_string(request_json) {
+            Ok(value) => value,
+            Err(message) => {
+                record_error(
+                    "moltis_sandbox_stop_container",
+                    "null_pointer_or_invalid_utf8",
+                );
+                return encode_error("null_pointer_or_invalid_utf8", &message);
+            },
+        };
+
+        let request = match serde_json::from_str::<SandboxContainerNameRequest>(&raw) {
+            Ok(r) => r,
+            Err(error) => {
+                record_error("moltis_sandbox_stop_container", "invalid_json");
+                return encode_error("invalid_json", &error.to_string());
+            },
+        };
+
+        let name = request.name.trim();
+        if name.is_empty() {
+            record_error(
+                "moltis_sandbox_stop_container",
+                "SANDBOX_CONTAINER_NAME_REQUIRED",
+            );
+            return encode_error("SANDBOX_CONTAINER_NAME_REQUIRED", "name is required");
+        }
+
+        let config = moltis_config::discover_and_load();
+        let prefix = sandbox_container_prefix(&config);
+        if !name.starts_with(&prefix) {
+            record_error(
+                "moltis_sandbox_stop_container",
+                SANDBOX_CONTAINER_PREFIX_MISMATCH,
+            );
+            return encode_error(
+                SANDBOX_CONTAINER_PREFIX_MISMATCH,
+                "container name does not match expected prefix",
+            );
+        }
+
+        match BRIDGE
+            .runtime
+            .block_on(moltis_tools::sandbox::stop_container(name))
+        {
+            Ok(()) => encode_json(&OkResponse { ok: true }),
+            Err(error) => {
+                record_error(
+                    "moltis_sandbox_stop_container",
+                    SANDBOX_CONTAINER_STOP_FAILED,
+                );
+                encode_error(SANDBOX_CONTAINER_STOP_FAILED, &error.to_string())
+            },
+        }
+    })
+}
+
+/// Removes one sandbox container.
+#[unsafe(no_mangle)]
+pub extern "C" fn moltis_sandbox_remove_container(request_json: *const c_char) -> *mut c_char {
+    record_call("moltis_sandbox_remove_container");
+    trace_call("moltis_sandbox_remove_container");
+
+    with_ffi_boundary(|| {
+        let raw = match read_c_string(request_json) {
+            Ok(value) => value,
+            Err(message) => {
+                record_error(
+                    "moltis_sandbox_remove_container",
+                    "null_pointer_or_invalid_utf8",
+                );
+                return encode_error("null_pointer_or_invalid_utf8", &message);
+            },
+        };
+
+        let request = match serde_json::from_str::<SandboxContainerNameRequest>(&raw) {
+            Ok(r) => r,
+            Err(error) => {
+                record_error("moltis_sandbox_remove_container", "invalid_json");
+                return encode_error("invalid_json", &error.to_string());
+            },
+        };
+
+        let name = request.name.trim();
+        if name.is_empty() {
+            record_error(
+                "moltis_sandbox_remove_container",
+                "SANDBOX_CONTAINER_NAME_REQUIRED",
+            );
+            return encode_error("SANDBOX_CONTAINER_NAME_REQUIRED", "name is required");
+        }
+
+        let config = moltis_config::discover_and_load();
+        let prefix = sandbox_container_prefix(&config);
+        if !name.starts_with(&prefix) {
+            record_error(
+                "moltis_sandbox_remove_container",
+                SANDBOX_CONTAINER_PREFIX_MISMATCH,
+            );
+            return encode_error(
+                SANDBOX_CONTAINER_PREFIX_MISMATCH,
+                "container name does not match expected prefix",
+            );
+        }
+
+        match BRIDGE
+            .runtime
+            .block_on(moltis_tools::sandbox::remove_container(name))
+        {
+            Ok(()) => encode_json(&OkResponse { ok: true }),
+            Err(error) => {
+                record_error(
+                    "moltis_sandbox_remove_container",
+                    SANDBOX_CONTAINER_REMOVE_FAILED,
+                );
+                encode_error(SANDBOX_CONTAINER_REMOVE_FAILED, &error.to_string())
+            },
+        }
+    })
+}
+
+/// Stops and removes all sandbox containers.
+#[unsafe(no_mangle)]
+pub extern "C" fn moltis_sandbox_clean_containers() -> *mut c_char {
+    record_call("moltis_sandbox_clean_containers");
+    trace_call("moltis_sandbox_clean_containers");
+
+    with_ffi_boundary(|| {
+        let config = moltis_config::discover_and_load();
+        let prefix = sandbox_container_prefix(&config);
+        match BRIDGE
+            .runtime
+            .block_on(moltis_tools::sandbox::clean_all_containers(&prefix))
+        {
+            Ok(removed) => encode_json(&SandboxCleanContainersResponse { ok: true, removed }),
+            Err(error) => {
+                record_error(
+                    "moltis_sandbox_clean_containers",
+                    SANDBOX_CONTAINERS_CLEAN_FAILED,
+                );
+                encode_error(SANDBOX_CONTAINERS_CLEAN_FAILED, &error.to_string())
+            },
+        }
+    })
+}
+
+/// Returns container runtime disk usage.
+#[unsafe(no_mangle)]
+pub extern "C" fn moltis_sandbox_disk_usage() -> *mut c_char {
+    record_call("moltis_sandbox_disk_usage");
+    trace_call("moltis_sandbox_disk_usage");
+
+    with_ffi_boundary(|| {
+        match BRIDGE
+            .runtime
+            .block_on(moltis_tools::sandbox::container_disk_usage())
+        {
+            Ok(usage) => encode_json(&SandboxDiskUsageResponse { usage }),
+            Err(error) => {
+                record_error("moltis_sandbox_disk_usage", SANDBOX_DISK_USAGE_FAILED);
+                encode_error(SANDBOX_DISK_USAGE_FAILED, &error.to_string())
+            },
+        }
+    })
+}
+
+/// Restarts the container daemon.
+#[unsafe(no_mangle)]
+pub extern "C" fn moltis_sandbox_restart_daemon() -> *mut c_char {
+    record_call("moltis_sandbox_restart_daemon");
+    trace_call("moltis_sandbox_restart_daemon");
+
+    with_ffi_boundary(|| {
+        match BRIDGE
+            .runtime
+            .block_on(moltis_tools::sandbox::restart_container_daemon())
+        {
+            Ok(()) => encode_json(&OkResponse { ok: true }),
+            Err(error) => {
+                record_error(
+                    "moltis_sandbox_restart_daemon",
+                    SANDBOX_DAEMON_RESTART_FAILED,
+                );
+                encode_error(SANDBOX_DAEMON_RESTART_FAILED, &error.to_string())
             },
         }
     })

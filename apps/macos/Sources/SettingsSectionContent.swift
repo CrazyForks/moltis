@@ -598,16 +598,7 @@ private extension SettingsSectionContent {
 
 private extension SettingsSectionContent {
     var sandboxesPane: some View {
-        Group {
-            Picker("Backend", selection: $settings.sandboxBackend) {
-                ForEach(settings.sandboxBackends, id: \.self) { backend in
-                    Text(backend.capitalized).tag(backend)
-                }
-            }
-            .onChange(of: settings.sandboxBackend) { settings.saveSandbox() }
-            TextField("Default image", text: $settings.sandboxImage)
-                .onSubmit { settings.saveSandbox() }
-        }
+        SandboxesPane(settings: settings)
     }
 
     var networkAuditPane: some View {

@@ -86,6 +86,43 @@ final class AppSettings: ObservableObject {
 
     @Published var sandboxBackend = "auto"
     @Published var sandboxImage = "moltis/sandbox:latest"
+    @Published var sandboxLoading = false
+    @Published var sandboxError: String?
+    @Published var sandboxRuntimeBackend = "none"
+    @Published var sandboxRuntimeOS = "unknown"
+    @Published var sandboxRuntimeDefaultImage = "ubuntu:25.10"
+    @Published var sandboxDefaultImageDraft = ""
+    @Published var sandboxDefaultImageSaving = false
+    @Published var sandboxDefaultImageError: String?
+    @Published var sandboxDefaultImageMessage: String?
+
+    @Published var sandboxImages: [BridgeSandboxImageEntry] = []
+    @Published var sandboxImagesLoading = false
+    @Published var sandboxImagesBusy = false
+    @Published var sandboxImagesError: String?
+    @Published var sandboxImagesMessage: String?
+
+    @Published var sandboxBuildName = ""
+    @Published var sandboxBuildBase = "ubuntu:25.10"
+    @Published var sandboxBuildPackages = ""
+    @Published var sandboxBuilding = false
+    @Published var sandboxBuildStatus = ""
+    @Published var sandboxBuildWarning = ""
+
+    @Published var sandboxContainers: [BridgeSandboxContainerEntry] = []
+    @Published var sandboxContainersLoading = false
+    @Published var sandboxContainersBusy = false
+    @Published var sandboxContainerError: String?
+    @Published var sandboxDiskUsage: BridgeSandboxDiskUsagePayload?
+
+    @Published var sandboxSharedHomeEnabled = false
+    @Published var sandboxSharedHomeMode = "off"
+    @Published var sandboxSharedHomePath = ""
+    @Published var sandboxSharedHomeConfiguredPath = ""
+    @Published var sandboxSharedHomeLoading = false
+    @Published var sandboxSharedHomeSaving = false
+    @Published var sandboxSharedHomeError: String?
+    @Published var sandboxSharedHomeMessage: String?
 
     @Published var monitoringEnabled = true
     @Published var metricsEnabled = true
@@ -110,6 +147,10 @@ final class AppSettings: ObservableObject {
     let sandboxBackends = ["auto", "docker", "apple-container"]
     let logLevels = ["trace", "debug", "info", "warn", "error"]
     let tailscaleModes = ["off", "serve", "funnel"]
+
+    var sandboxRuntimeAvailable: Bool {
+        sandboxRuntimeBackend != "none"
+    }
 
     /// Whether settings have been loaded from the backend at least once.
     @Published private(set) var isLoaded = false
@@ -554,6 +595,8 @@ extension AppSettings {
            let sandbox = exec["sandbox"] as? [String: Any] {
             sandboxBackend = sandbox["backend"] as? String ?? "auto"
             sandboxImage = sandbox["image"] as? String ?? "moltis/sandbox:latest"
+            sandboxRuntimeDefaultImage = sandboxImage
+            sandboxDefaultImageDraft = sandboxImage
         }
         if let voice = config["voice"] as? [String: Any],
            let tts = voice["tts"] as? [String: Any] {

@@ -201,6 +201,21 @@ final class MoltisTests: XCTestCase {
         _ = payload.available
     }
 
+    func testSandboxStatusReturnsPayload() throws {
+        let client = MoltisClient()
+        let payload = try client.sandboxStatus()
+        XCTAssertFalse(payload.backend.isEmpty)
+        XCTAssertFalse(payload.os.isEmpty)
+        XCTAssertFalse(payload.defaultImage.isEmpty)
+    }
+
+    func testSandboxSharedHomeReturnsPayload() throws {
+        let client = MoltisClient()
+        let payload = try client.sandboxGetSharedHome()
+        XCTAssertFalse(payload.mode.isEmpty)
+        XCTAssertFalse(payload.path.isEmpty)
+    }
+
     func testAuthStatusReturnsPayload() throws {
         let client = MoltisClient()
         let status = try client.authStatus()

@@ -6384,6 +6384,7 @@ dependencies = [
  "moltis-provider-setup",
  "moltis-providers",
  "moltis-sessions",
+ "moltis-tools",
  "moltis-web",
  "serde",
  "serde_json",

@@ -51,6 +51,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - New memory bridge endpoints for macOS settings:
   `moltis_memory_status`, `moltis_memory_config_get`,
   `moltis_memory_config_update`, `moltis_memory_qmd_status`
+- Sandboxes settings now match web UI behavior: runtime backend status and
+  recommendations, default image override, shared home controls, running
+  container management, cached image management, and custom image build flow
+  via new sandbox bridge endpoints
 
 ### Changed
 
