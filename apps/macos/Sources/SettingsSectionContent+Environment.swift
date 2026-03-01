@@ -82,7 +82,7 @@ extension SettingsSectionContent {
                     }
                     HStack {
                         Spacer()
-                        Button(settings.environmentBusy ? "Saving..." : "Add") {
+                        Button(settings.environmentBusy ? "Saving\u{2026}" : "Add") {
                             settings.addEnvironmentVariable()
                         }
                         .disabled(settings.environmentBusy)

@@ -32,7 +32,7 @@ struct ChannelItem: Identifiable, Equatable {
         self.enabled = enabled
     }
 
-    static let channelTypes = ["telegram", "slack", "discord"]
+    static let channelTypes = ["telegram", "discord", "whatsapp", "msteams", "slack"]
 }
 
 // MARK: - Hooks

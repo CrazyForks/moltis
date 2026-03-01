@@ -632,6 +632,26 @@ const SANDBOX_CONTAINERS_CLEAN_FAILED: &str = "SANDBOX_CONTAINERS_CLEAN_FAILED";
 const SANDBOX_DISK_USAGE_FAILED: &str = "SANDBOX_DISK_USAGE_FAILED";
 const SANDBOX_DAEMON_RESTART_FAILED: &str = "SANDBOX_DAEMON_RESTART_FAILED";
 const SANDBOX_SHARED_HOME_SAVE_FAILED: &str = "SANDBOX_SHARED_HOME_SAVE_FAILED";
+const SANDBOX_PACKAGE_NAME_INVALID: &str = "SANDBOX_PACKAGE_NAME_INVALID";
+const SANDBOX_BASE_IMAGE_INVALID: &str = "SANDBOX_BASE_IMAGE_INVALID";
+
+/// Validates a package name to prevent shell injection.
+/// Allows alphanumeric, hyphen, dot, plus, colon (covers dpkg naming conventions).
+fn is_valid_package_name(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '.' | '+' | ':'))
+}
+
+/// Validates a container/base image reference (e.g. "ubuntu:25.10", "docker.io/library/ubuntu").
+/// Allows alphanumeric, hyphen, dot, colon, slash, underscore.
+fn is_valid_image_ref(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '.' | ':' | '/' | '_'))
+}
 
 #[derive(Debug, Serialize)]
 struct SandboxStatusResponse {
@@ -3197,6 +3217,22 @@ pub extern "C" fn moltis_sandbox_check_packages(request_json: *const c_char) -> 
             });
         }
 
+        if !is_valid_image_ref(&base) {
+            record_error("moltis_sandbox_check_packages", SANDBOX_BASE_IMAGE_INVALID);
+            return encode_error(
+                SANDBOX_BASE_IMAGE_INVALID,
+                "base image contains invalid characters",
+            );
+        }
+
+        if let Some(bad) = packages.iter().find(|p| !is_valid_package_name(p)) {
+            record_error("moltis_sandbox_check_packages", SANDBOX_PACKAGE_NAME_INVALID);
+            return encode_error(
+                SANDBOX_PACKAGE_NAME_INVALID,
+                &format!("invalid package name: {bad}"),
+            );
+        }
+
         let checks: Vec<String> = packages
             .iter()
             .map(|pkg| {
@@ -3293,12 +3329,28 @@ pub extern "C" fn moltis_sandbox_build_image(request_json: *const c_char) -> *mu
             .filter(|p| !p.is_empty())
             .collect();
 
+        if !is_valid_image_ref(&base) {
+            record_error("moltis_sandbox_build_image", SANDBOX_BASE_IMAGE_INVALID);
+            return encode_error(
+                SANDBOX_BASE_IMAGE_INVALID,
+                "base image contains invalid characters",
+            );
+        }
+
         if packages.is_empty() {
             record_error(
                 "moltis_sandbox_build_image",
                 SANDBOX_IMAGE_PACKAGES_REQUIRED,
             );
             return encode_error(SANDBOX_IMAGE_PACKAGES_REQUIRED, "packages list is empty");
+        }
+
+        if let Some(bad) = packages.iter().find(|p| !is_valid_package_name(p)) {
+            record_error("moltis_sandbox_build_image", SANDBOX_PACKAGE_NAME_INVALID);
+            return encode_error(
+                SANDBOX_PACKAGE_NAME_INVALID,
+                &format!("invalid package name: {bad}"),
+            );
         }
 
         let pkg_list = packages.join(" ");

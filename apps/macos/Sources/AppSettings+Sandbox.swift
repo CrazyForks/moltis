@@ -113,9 +113,8 @@ extension AppSettings {
             return
         }
 
-        let base = sandboxBuildBase.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            ? "ubuntu:25.10"
-            : sandboxBuildBase.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedBase = sandboxBuildBase.trimmingCharacters(in: .whitespacesAndNewlines)
+        let base = trimmedBase.isEmpty ? "ubuntu:25.10" : trimmedBase
         let requestedPackages = parseSandboxPackages(sandboxBuildPackages)
         if requestedPackages.isEmpty {
             sandboxBuildStatus = "Please specify at least one package."
@@ -180,13 +179,13 @@ extension AppSettings {
 
     func loadSandboxContainers() {
         sandboxContainersLoading = true
-        sandboxContainerError = nil
+        sandboxContainersError = nil
 
         do {
             sandboxContainers = try client.sandboxListContainers()
         } catch {
             sandboxContainers = []
-            sandboxContainerError = error.localizedDescription
+            sandboxContainersError = error.localizedDescription
             logSettingsError("load sandbox containers", error)
         }
 
@@ -204,13 +203,13 @@ extension AppSettings {
     func stopSandboxContainer(name: String) {
         guard sandboxRuntimeAvailable else { return }
         sandboxContainersBusy = true
-        sandboxContainerError = nil
+        sandboxContainersError = nil
 
         do {
             try client.sandboxStopContainer(name: name)
             refreshSandboxContainersAndDiskUsage()
         } catch {
-            sandboxContainerError = error.localizedDescription
+            sandboxContainersError = error.localizedDescription
             logSettingsError("stop sandbox container", error)
         }
 
@@ -220,13 +219,13 @@ extension AppSettings {
     func removeSandboxContainer(name: String) {
         guard sandboxRuntimeAvailable else { return }
         sandboxContainersBusy = true
-        sandboxContainerError = nil
+        sandboxContainersError = nil
 
         do {
             try client.sandboxRemoveContainer(name: name)
             refreshSandboxContainersAndDiskUsage()
         } catch {
-            sandboxContainerError = error.localizedDescription
+            sandboxContainersError = error.localizedDescription
             logSettingsError("remove sandbox container", error)
         }
 
@@ -236,13 +235,13 @@ extension AppSettings {
     func cleanAllSandboxContainers() {
         guard sandboxRuntimeAvailable else { return }
         sandboxContainersBusy = true
-        sandboxContainerError = nil
+        sandboxContainersError = nil
 
         do {
             _ = try client.sandboxCleanContainers()
             refreshSandboxContainersAndDiskUsage()
         } catch {
-            sandboxContainerError = error.localizedDescription
+            sandboxContainersError = error.localizedDescription
             logSettingsError("clean sandbox containers", error)
         }
 
@@ -252,13 +251,13 @@ extension AppSettings {
     func restartSandboxDaemon() {
         guard sandboxRuntimeAvailable else { return }
         sandboxContainersBusy = true
-        sandboxContainerError = nil
+        sandboxContainersError = nil
 
         do {
             try client.sandboxRestartDaemon()
             refreshSandboxContainersAndDiskUsage()
         } catch {
-            sandboxContainerError = error.localizedDescription
+            sandboxContainersError = error.localizedDescription
             logSettingsError("restart sandbox daemon", error)
         }
 

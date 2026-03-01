@@ -112,7 +112,7 @@ final class AppSettings: ObservableObject {
     @Published var sandboxContainers: [BridgeSandboxContainerEntry] = []
     @Published var sandboxContainersLoading = false
     @Published var sandboxContainersBusy = false
-    @Published var sandboxContainerError: String?
+    @Published var sandboxContainersError: String?
     @Published var sandboxDiskUsage: BridgeSandboxDiskUsagePayload?
 
     @Published var sandboxSharedHomeEnabled = false
@@ -286,8 +286,8 @@ final class AppSettings: ObservableObject {
             applyMemoryConfig(updated)
             syncMemoryConfigIntoRawConfig()
             memorySaved = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                self.memorySaved = false
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+                self?.memorySaved = false
             }
         } catch {
             memoryError = error.localizedDescription
@@ -341,7 +341,6 @@ final class AppSettings: ObservableObject {
                 currentPassword: currentPassword,
                 newPassword: newPassword
             )
-            _ = result.ok
             securityMessage = hadPassword ? "Password changed." : "Password set."
             securityRecoveryKey = result.recoveryKey
             loadSecuritySettings()
@@ -412,7 +411,6 @@ final class AppSettings: ObservableObject {
 
     func saveMonitoring() {
         setConfigValue(metricsEnabled, at: ["metrics", "enabled"])
-        setConfigValue(metricsEnabled, at: ["metrics", "prometheus_endpoint"])
         persistConfig("monitoring")
     }
 
@@ -431,9 +429,10 @@ final class AppSettings: ObservableObject {
     func saveChannels() {
         // Convert ChannelItem array back to config shape.
         // Each channel type is a HashMap<String, Value> keyed by channel name.
-        var telegram: [String: Any] = [:]
-        var discord: [String: Any] = [:]
-        // (Other channel types can be added as needed)
+        var channelsByType: [String: [String: Any]] = [:]
+        for channelType in ChannelItem.channelTypes {
+            channelsByType[channelType] = [:]
+        }
 
         for channel in channels {
             var entry: [String: Any] = [
@@ -442,18 +441,13 @@ final class AppSettings: ObservableObject {
             if !channel.botToken.isEmpty {
                 entry["bot_token"] = channel.botToken
             }
-            switch channel.channelType {
-            case "telegram":
-                telegram[channel.name.isEmpty ? "default" : channel.name] = entry
-            case "discord":
-                discord[channel.name.isEmpty ? "default" : channel.name] = entry
-            default:
-                telegram[channel.name.isEmpty ? "default" : channel.name] = entry
-            }
+            let key = channel.name.isEmpty ? "default" : channel.name
+            channelsByType[channel.channelType, default: [:]][key] = entry
         }
 
-        setConfigValue(telegram, at: ["channels", "telegram"])
-        setConfigValue(discord, at: ["channels", "discord"])
+        for (channelType, entries) in channelsByType {
+            setConfigValue(entries, at: ["channels", channelType])
+        }
         persistConfig("channels")
     }
 
@@ -526,7 +520,6 @@ extension AppSettings {
         memoryLlmReranking = config.llmReranking
         memorySessionExport = config.sessionExport
         memoryQmdFeatureEnabled = config.qmdFeatureEnabled
-        memoryHasEmbeddings = !config.disableRag
     }
 
     private func applyMemoryStatus(_ status: BridgeMemoryStatusPayload) {
@@ -613,7 +606,7 @@ extension AppSettings {
     private func populateChannels(from config: [String: Any]) {
         channels = []
         guard let channelsConfig = config["channels"] as? [String: Any] else { return }
-        for channelType in ["telegram", "discord", "whatsapp", "msteams"] {
+        for channelType in ChannelItem.channelTypes {
             guard let typeMap = channelsConfig[channelType] as? [String: Any] else { continue }
             for (name, value) in typeMap {
                 guard let entry = value as? [String: Any] else { continue }
@@ -686,7 +679,8 @@ extension AppSettings {
             parents.append((current, key))
             current = current[key] as? [String: Any] ?? [:]
         }
-        current[keyPath.last!] = value // swiftlint:disable:this force_unwrapping
+        guard let lastKey = keyPath.last else { return }
+        current[lastKey] = value
 
         // Walk back up rebuilding parent dictionaries.
         for (parent, key) in parents.reversed() {

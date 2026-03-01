@@ -161,7 +161,7 @@ struct SandboxesPane: View {
                     .foregroundStyle(.secondary)
                 }
 
-                if let error = settings.sandboxContainerError {
+                if let error = settings.sandboxContainersError {
                     Text(error)
                         .font(.caption)
                         .foregroundStyle(.red)

@@ -147,7 +147,6 @@ struct SettingsView: View {
     @ObservedObject var networkAuditStore: NetworkAuditStore
     @State private var selectedSection: SettingsSection? = .identity
     @State private var searchText = ""
-    @FocusState private var focusedField: String?
 
     private func isSectionVisible(_ section: SettingsSection) -> Bool {
         switch section {
@@ -242,7 +241,6 @@ struct SettingsView: View {
                         )
                     }
                     .formStyle(.grouped)
-                    .focused($focusedField, equals: "none")
                 }
             } else {
                 VStack(spacing: 8) {
