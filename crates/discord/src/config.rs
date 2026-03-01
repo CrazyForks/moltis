@@ -1,5 +1,8 @@
 use {
-    moltis_channels::gating::{DmPolicy, GroupPolicy, MentionMode},
+    moltis_channels::{
+        config_view::ChannelConfigView,
+        gating::{DmPolicy, GroupPolicy, MentionMode},
+    },
     secrecy::{ExposeSecret, Secret},
     serde::{Deserialize, Serialize},
 };
@@ -108,6 +111,32 @@ impl std::fmt::Debug for DiscordAccountConfig {
             .field("otp_self_approval", &self.otp_self_approval)
             .field("otp_cooldown_secs", &self.otp_cooldown_secs)
             .finish()
+    }
+}
+
+impl ChannelConfigView for DiscordAccountConfig {
+    fn allowlist(&self) -> &[String] {
+        &self.allowlist
+    }
+
+    fn group_allowlist(&self) -> &[String] {
+        &self.guild_allowlist
+    }
+
+    fn dm_policy(&self) -> DmPolicy {
+        self.dm_policy.clone()
+    }
+
+    fn group_policy(&self) -> GroupPolicy {
+        self.group_policy.clone()
+    }
+
+    fn model(&self) -> Option<&str> {
+        self.model.as_deref()
+    }
+
+    fn model_provider(&self) -> Option<&str> {
+        self.model_provider.as_deref()
     }
 }
 

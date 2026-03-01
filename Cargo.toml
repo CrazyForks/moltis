@@ -36,6 +36,7 @@ default-members = [
   "crates/service-traits",
   "crates/sessions",
   "crates/skills",
+  "crates/slack",
   "crates/swift-bridge",
   "crates/tailscale",
   "crates/telegram",
@@ -85,6 +86,7 @@ members = [
   "crates/service-traits",
   "crates/sessions",
   "crates/skills",
+  "crates/slack",
   "crates/swift-bridge",
   "crates/tailscale",
   "crates/telegram",
@@ -311,6 +313,7 @@ moltis-schema-export   = { path = "crates/schema-export" }
 moltis-service-traits  = { path = "crates/service-traits" }
 moltis-sessions        = { path = "crates/sessions" }
 moltis-skills          = { path = "crates/skills" }
+moltis-slack           = { path = "crates/slack" }
 moltis-swift-bridge    = { path = "crates/swift-bridge" }
 moltis-tailscale       = { path = "crates/tailscale" }
 moltis-telegram        = { path = "crates/telegram" }

@@ -1,5 +1,8 @@
 use {
-    moltis_channels::gating::{DmPolicy, GroupPolicy, MentionMode},
+    moltis_channels::{
+        config_view::ChannelConfigView,
+        gating::{DmPolicy, GroupPolicy, MentionMode},
+    },
     secrecy::{ExposeSecret, Secret},
     serde::{Deserialize, Serialize},
 };
@@ -89,6 +92,32 @@ fn serialize_secret<S: serde::Serializer>(
     serializer: S,
 ) -> Result<S::Ok, S::Error> {
     serializer.serialize_str(secret.expose_secret())
+}
+
+impl ChannelConfigView for TelegramAccountConfig {
+    fn allowlist(&self) -> &[String] {
+        &self.allowlist
+    }
+
+    fn group_allowlist(&self) -> &[String] {
+        &self.group_allowlist
+    }
+
+    fn dm_policy(&self) -> DmPolicy {
+        self.dm_policy.clone()
+    }
+
+    fn group_policy(&self) -> GroupPolicy {
+        self.group_policy.clone()
+    }
+
+    fn model(&self) -> Option<&str> {
+        self.model.as_deref()
+    }
+
+    fn model_provider(&self) -> Option<&str> {
+        self.model_provider.as_deref()
+    }
 }
 
 impl Default for TelegramAccountConfig {

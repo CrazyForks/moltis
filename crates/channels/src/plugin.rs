@@ -1,12 +1,15 @@
+use std::sync::Arc;
+
 use {async_trait::async_trait, moltis_common::types::ReplyPayload, tokio::sync::mpsc};
 
-use crate::{Error, Result};
+use crate::{Error, Result, config_view::ChannelConfigView};
 
 // ── Channel type enum ───────────────────────────────────────────────────────
 
 /// Supported channel types.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[non_exhaustive]
 pub enum ChannelType {
     Telegram,
     Whatsapp,
@@ -304,6 +307,46 @@ pub trait ChannelPlugin: Send + Sync {
 
     /// Get status adapter for health checks.
     fn status(&self) -> Option<&dyn ChannelStatus>;
+
+    /// Whether the given account is currently active.
+    fn has_account(&self, account_id: &str) -> bool;
+
+    /// List all active account IDs.
+    fn account_ids(&self) -> Vec<String>;
+
+    /// Get the typed config view for a specific account.
+    fn account_config(&self, account_id: &str) -> Option<Box<dyn ChannelConfigView>>;
+
+    /// Update the in-memory config for an account without restarting.
+    ///
+    /// Accepts raw JSON because the store persists `Value`. Each plugin
+    /// deserializes into its concrete config type internally.
+    fn update_account_config(&self, account_id: &str, config: serde_json::Value) -> Result<()>;
+
+    /// Get a shared outbound sender for routing outside the plugin.
+    fn shared_outbound(&self) -> Arc<dyn ChannelOutbound>;
+
+    /// Get a shared streaming outbound sender for routing outside the plugin.
+    fn shared_stream_outbound(&self) -> Arc<dyn ChannelStreamOutbound>;
+
+    /// Get the raw JSON config for an account (for API status responses).
+    ///
+    /// Each plugin serializes its concrete config type. Returns `None` if the
+    /// account is not found.
+    fn account_config_json(&self, _account_id: &str) -> Option<serde_json::Value> {
+        None
+    }
+
+    /// Downcast to OTP provider if this channel supports OTP self-approval.
+    fn as_otp_provider(&self) -> Option<&dyn ChannelOtpProvider> {
+        None
+    }
+}
+
+/// OTP challenge provider for channels that support self-approval.
+pub trait ChannelOtpProvider: Send + Sync {
+    /// List pending OTP challenges for the given account.
+    fn pending_otp_challenges(&self, account_id: &str) -> Vec<crate::otp::OtpChallengeInfo>;
 }
 
 /// Send messages to a channel.

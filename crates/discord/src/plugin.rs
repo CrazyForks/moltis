@@ -10,7 +10,7 @@ use {
 };
 
 use moltis_channels::{
-    Error as ChannelError, Result as ChannelResult,
+    ChannelConfigView, Error as ChannelError, Result as ChannelResult,
     message_log::MessageLog,
     plugin::{
         ChannelEventSink, ChannelHealthSnapshot, ChannelOutbound, ChannelPlugin, ChannelStatus,
@@ -220,6 +220,57 @@ impl ChannelPlugin for DiscordPlugin {
 
     fn status(&self) -> Option<&dyn ChannelStatus> {
         Some(self)
+    }
+
+    fn has_account(&self, account_id: &str) -> bool {
+        let accounts = self.accounts.read().unwrap_or_else(|e| e.into_inner());
+        accounts.contains_key(account_id)
+    }
+
+    fn account_ids(&self) -> Vec<String> {
+        let accounts = self.accounts.read().unwrap_or_else(|e| e.into_inner());
+        accounts.keys().cloned().collect()
+    }
+
+    fn account_config(&self, account_id: &str) -> Option<Box<dyn ChannelConfigView>> {
+        let accounts = self.accounts.read().unwrap_or_else(|e| e.into_inner());
+        accounts
+            .get(account_id)
+            .map(|s| Box::new(s.config.clone()) as Box<dyn ChannelConfigView>)
+    }
+
+    fn account_config_json(&self, account_id: &str) -> Option<serde_json::Value> {
+        let accounts = self.accounts.read().unwrap_or_else(|e| e.into_inner());
+        accounts
+            .get(account_id)
+            .and_then(|s| serde_json::to_value(&s.config).ok())
+    }
+
+    fn update_account_config(
+        &self,
+        account_id: &str,
+        config: serde_json::Value,
+    ) -> ChannelResult<()> {
+        let parsed: DiscordAccountConfig = serde_json::from_value(config)?;
+        let mut accounts = self.accounts.write().unwrap_or_else(|e| e.into_inner());
+        if let Some(state) = accounts.get_mut(account_id) {
+            state.config = parsed;
+            Ok(())
+        } else {
+            Err(ChannelError::unknown_account(account_id))
+        }
+    }
+
+    fn shared_outbound(&self) -> Arc<dyn ChannelOutbound> {
+        Arc::new(DiscordOutbound {
+            accounts: Arc::clone(&self.accounts),
+        })
+    }
+
+    fn shared_stream_outbound(&self) -> Arc<dyn ChannelStreamOutbound> {
+        Arc::new(DiscordOutbound {
+            accounts: Arc::clone(&self.accounts),
+        })
     }
 }
 

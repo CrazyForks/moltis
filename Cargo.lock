@@ -6021,6 +6021,7 @@ dependencies = [
  "moltis-service-traits",
  "moltis-sessions",
  "moltis-skills",
+ "moltis-slack",
  "moltis-tailscale",
  "moltis-telegram",
  "moltis-tls",
@@ -6460,6 +6461,19 @@ dependencies = [
  "serde_yaml",
  "tar",
  "tempfile",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "moltis-slack"
+version = "0.10.3"
+dependencies = [
+ "async-trait",
+ "moltis-channels",
+ "moltis-common",
+ "serde",
+ "serde_json",
  "tokio",
  "tracing",
 ]

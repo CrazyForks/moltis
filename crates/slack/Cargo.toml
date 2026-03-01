@@ -1,0 +1,18 @@
+[package]
+edition.workspace = true
+name              = "moltis-slack"
+version.workspace = true
+
+[dependencies]
+async-trait     = { workspace = true }
+moltis-channels = { workspace = true }
+moltis-common   = { workspace = true }
+serde           = { workspace = true }
+serde_json      = { workspace = true }
+tracing         = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
+
+[lints]
+workspace = true

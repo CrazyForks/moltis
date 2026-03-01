@@ -11,10 +11,12 @@ use {
 };
 
 use moltis_channels::{
-    ChannelEventSink, Result as ChannelResult,
+    ChannelConfigView, ChannelEventSink, Error as ChannelError, Result as ChannelResult,
     message_log::MessageLog,
+    otp::OtpChallengeInfo,
     plugin::{
-        ChannelHealthSnapshot, ChannelOutbound, ChannelPlugin, ChannelStatus, ChannelStreamOutbound,
+        ChannelHealthSnapshot, ChannelOtpProvider, ChannelOutbound, ChannelPlugin, ChannelStatus,
+        ChannelStreamOutbound,
     },
 };
 
@@ -121,7 +123,7 @@ impl WhatsAppPlugin {
     }
 
     /// List pending OTP challenges for a specific account.
-    pub fn pending_otp_challenges(&self, account_id: &str) -> Vec<crate::otp::OtpChallengeInfo> {
+    pub fn pending_otp_challenges(&self, account_id: &str) -> Vec<OtpChallengeInfo> {
         let accounts = self.accounts.read().unwrap_or_else(|e| e.into_inner());
         accounts
             .get(account_id)
@@ -190,6 +192,74 @@ impl ChannelPlugin for WhatsAppPlugin {
 
     fn status(&self) -> Option<&dyn ChannelStatus> {
         Some(self)
+    }
+
+    fn has_account(&self, account_id: &str) -> bool {
+        let accounts = self.accounts.read().unwrap_or_else(|e| e.into_inner());
+        accounts.contains_key(account_id)
+    }
+
+    fn account_ids(&self) -> Vec<String> {
+        let accounts = self.accounts.read().unwrap_or_else(|e| e.into_inner());
+        accounts.keys().cloned().collect()
+    }
+
+    fn account_config(&self, account_id: &str) -> Option<Box<dyn ChannelConfigView>> {
+        let accounts = self.accounts.read().unwrap_or_else(|e| e.into_inner());
+        accounts
+            .get(account_id)
+            .map(|s| Box::new(s.config.clone()) as Box<dyn ChannelConfigView>)
+    }
+
+    fn account_config_json(&self, account_id: &str) -> Option<serde_json::Value> {
+        let accounts = self.accounts.read().unwrap_or_else(|e| e.into_inner());
+        accounts
+            .get(account_id)
+            .and_then(|s| serde_json::to_value(&s.config).ok())
+    }
+
+    fn update_account_config(
+        &self,
+        account_id: &str,
+        config: serde_json::Value,
+    ) -> ChannelResult<()> {
+        let wa_config: WhatsAppAccountConfig = serde_json::from_value(config)?;
+        let mut accounts = self.accounts.write().unwrap_or_else(|e| e.into_inner());
+        if let Some(state) = accounts.get_mut(account_id) {
+            state.config = wa_config;
+            Ok(())
+        } else {
+            Err(ChannelError::unknown_account(account_id))
+        }
+    }
+
+    fn shared_outbound(&self) -> Arc<dyn ChannelOutbound> {
+        Arc::new(WhatsAppOutbound {
+            accounts: Arc::clone(&self.accounts),
+        })
+    }
+
+    fn shared_stream_outbound(&self) -> Arc<dyn ChannelStreamOutbound> {
+        Arc::new(WhatsAppOutbound {
+            accounts: Arc::clone(&self.accounts),
+        })
+    }
+
+    fn as_otp_provider(&self) -> Option<&dyn ChannelOtpProvider> {
+        Some(self)
+    }
+}
+
+impl ChannelOtpProvider for WhatsAppPlugin {
+    fn pending_otp_challenges(&self, account_id: &str) -> Vec<OtpChallengeInfo> {
+        let accounts = self.accounts.read().unwrap_or_else(|e| e.into_inner());
+        accounts
+            .get(account_id)
+            .map(|s| {
+                let otp = s.otp.lock().unwrap_or_else(|e| e.into_inner());
+                otp.list_pending()
+            })
+            .unwrap_or_default()
     }
 }
 

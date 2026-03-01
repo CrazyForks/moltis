@@ -1153,6 +1153,29 @@ pub struct ChannelsConfig {
     /// Discord bot accounts, keyed by account ID.
     #[serde(default)]
     pub discord: HashMap<String, serde_json::Value>,
+    /// Additional channel types not covered by the named fields above.
+    ///
+    /// Adding `[channels.slack.my-bot]` in the config file will appear here
+    /// under `extra["slack"]["my-bot"]`. This allows new channel plugins to be
+    /// configured without changing this struct.
+    #[serde(flatten, default)]
+    pub extra: HashMap<String, HashMap<String, serde_json::Value>>,
+}
+
+impl ChannelsConfig {
+    /// Iterate all channel configs (named + extra) as `(channel_type, accounts)` pairs.
+    pub fn all_channel_configs(&self) -> Vec<(&str, &HashMap<String, serde_json::Value>)> {
+        let mut v = vec![
+            ("telegram", &self.telegram),
+            ("whatsapp", &self.whatsapp),
+            ("msteams", &self.msteams),
+            ("discord", &self.discord),
+        ];
+        for (ct, accounts) in &self.extra {
+            v.push((ct.as_str(), accounts));
+        }
+        v
+    }
 }
 
 fn default_channels_offered() -> Vec<String> {
@@ -1167,6 +1190,7 @@ impl Default for ChannelsConfig {
             whatsapp: HashMap::new(),
             msteams: HashMap::new(),
             discord: HashMap::new(),
+            extra: HashMap::new(),
         }
     }
 }
