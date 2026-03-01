@@ -2427,7 +2427,11 @@ pub async fn prepare_gateway(
 
         #[cfg(feature = "slack")]
         {
-            let slack_plugin = Arc::new(tokio::sync::RwLock::new(moltis_slack::SlackPlugin::new()));
+            let slack_plugin = Arc::new(tokio::sync::RwLock::new(
+                moltis_slack::SlackPlugin::new()
+                    .with_message_log(Arc::clone(&message_log))
+                    .with_event_sink(Arc::clone(&channel_sink)),
+            ));
             registry
                 .register(slack_plugin as Arc<tokio::sync::RwLock<dyn ChannelPlugin>>)
                 .await;

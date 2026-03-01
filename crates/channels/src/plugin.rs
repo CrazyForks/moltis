@@ -16,6 +16,7 @@ pub enum ChannelType {
     #[serde(rename = "msteams")]
     MsTeams,
     Discord,
+    Slack,
 }
 
 impl ChannelType {
@@ -26,6 +27,7 @@ impl ChannelType {
             Self::Whatsapp => "whatsapp",
             Self::MsTeams => "msteams",
             Self::Discord => "discord",
+            Self::Slack => "slack",
         }
     }
 
@@ -36,6 +38,7 @@ impl ChannelType {
             Self::Whatsapp => "WhatsApp",
             Self::MsTeams => "Microsoft Teams",
             Self::Discord => "Discord",
+            Self::Slack => "Slack",
         }
     }
 }
@@ -55,6 +58,7 @@ impl std::str::FromStr for ChannelType {
             "whatsapp" => Ok(Self::Whatsapp),
             "msteams" | "microsoft_teams" | "microsoft-teams" | "teams" => Ok(Self::MsTeams),
             "discord" => Ok(Self::Discord),
+            "slack" => Ok(Self::Slack),
             other => Err(Error::invalid_input(format!(
                 "unknown channel type: {other}"
             ))),
@@ -550,6 +554,7 @@ mod tests {
             ChannelType::Whatsapp,
             ChannelType::MsTeams,
             ChannelType::Discord,
+            ChannelType::Slack,
         ] {
             let json = serde_json::to_string(&ct).unwrap();
             let parsed: ChannelType = serde_json::from_str(&json).unwrap();
@@ -643,6 +648,7 @@ mod tests {
             ("telegram", ChannelType::Telegram),
             ("msteams", ChannelType::MsTeams),
             ("discord", ChannelType::Discord),
+            ("slack", ChannelType::Slack),
         ] {
             let parsed: ChannelType = s.parse().unwrap_or_else(|e| panic!("parse {s}: {e}"));
             assert_eq!(parsed, expected);
@@ -653,7 +659,7 @@ mod tests {
 
     #[test]
     fn channel_type_from_str_invalid() {
-        assert!("slack".parse::<ChannelType>().is_err());
+        assert!("foobar".parse::<ChannelType>().is_err());
         assert!("".parse::<ChannelType>().is_err());
     }
 
@@ -663,6 +669,7 @@ mod tests {
             ChannelType::Telegram,
             ChannelType::MsTeams,
             ChannelType::Discord,
+            ChannelType::Slack,
         ] {
             let json = serde_json::to_string(&ct).unwrap_or_else(|e| panic!("serialize: {e}"));
             let back: ChannelType =

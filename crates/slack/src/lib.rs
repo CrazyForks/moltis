@@ -1,11 +1,14 @@
-//! Slack channel plugin (skeleton).
+//! Slack channel plugin for moltis.
 //!
-//! Minimal implementation to prove the channel registry pattern:
-//! adding a new channel requires only this crate + one `registry.register()`
-//! call in the gateway — zero changes to `channel.rs`, `ChannelsConfig`, or
-//! `ChannelType`.
+//! Connects to Slack via Socket Mode using the `slack-morphism` crate.
+//! Handles inbound DMs and channel messages, applies access control
+//! policies, and dispatches messages to the chat session.
 
 pub mod config;
+pub mod markdown;
+pub mod outbound;
 pub mod plugin;
+pub mod socket;
+pub mod state;
 
-pub use plugin::SlackPlugin;
+pub use {config::SlackAccountConfig, plugin::SlackPlugin};

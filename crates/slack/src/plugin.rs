@@ -3,82 +3,29 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use {async_trait::async_trait, tracing::info};
+use {
+    async_trait::async_trait,
+    secrecy::ExposeSecret,
+    tracing::{info, warn},
+};
 
 use moltis_channels::{
     ChannelConfigView, Error as ChannelError, Result as ChannelResult,
-    plugin::{ChannelOutbound, ChannelPlugin, ChannelStreamOutbound},
+    message_log::MessageLog,
+    plugin::{
+        ChannelEventSink, ChannelHealthSnapshot, ChannelOutbound, ChannelPlugin, ChannelStatus,
+        ChannelStreamOutbound,
+    },
 };
 
-use crate::config::SlackAccountConfig;
+use crate::{config::SlackAccountConfig, outbound::SlackOutbound, state::AccountStateMap};
 
-/// In-memory state for a single Slack account.
-struct AccountState {
-    config: SlackAccountConfig,
-}
-
-type AccountStateMap = Arc<RwLock<HashMap<String, AccountState>>>;
-
-/// Slack outbound message sender (stub).
-struct SlackOutbound {
-    accounts: AccountStateMap,
-}
-
-#[async_trait]
-impl ChannelOutbound for SlackOutbound {
-    async fn send_text(
-        &self,
-        account_id: &str,
-        to: &str,
-        text: &str,
-        _reply_to: Option<&str>,
-    ) -> ChannelResult<()> {
-        let accounts = self.accounts.read().unwrap_or_else(|e| e.into_inner());
-        if !accounts.contains_key(account_id) {
-            return Err(ChannelError::unknown_account(account_id));
-        }
-        tracing::debug!(account_id, to, "slack send_text stub: {text}");
-        Ok(())
-    }
-
-    async fn send_media(
-        &self,
-        account_id: &str,
-        to: &str,
-        _payload: &moltis_common::types::ReplyPayload,
-        _reply_to: Option<&str>,
-    ) -> ChannelResult<()> {
-        let accounts = self.accounts.read().unwrap_or_else(|e| e.into_inner());
-        if !accounts.contains_key(account_id) {
-            return Err(ChannelError::unknown_account(account_id));
-        }
-        tracing::debug!(account_id, to, "slack send_media stub");
-        Ok(())
-    }
-}
-
-#[async_trait]
-impl ChannelStreamOutbound for SlackOutbound {
-    async fn send_stream(
-        &self,
-        account_id: &str,
-        to: &str,
-        _reply_to: Option<&str>,
-        _stream: moltis_channels::StreamReceiver,
-    ) -> ChannelResult<()> {
-        let accounts = self.accounts.read().unwrap_or_else(|e| e.into_inner());
-        if !accounts.contains_key(account_id) {
-            return Err(ChannelError::unknown_account(account_id));
-        }
-        tracing::debug!(account_id, to, "slack send_stream stub");
-        Ok(())
-    }
-}
-
-/// Slack channel plugin (skeleton).
+/// Slack channel plugin.
 pub struct SlackPlugin {
     accounts: AccountStateMap,
     outbound: SlackOutbound,
+    message_log: Option<Arc<dyn MessageLog>>,
+    event_sink: Option<Arc<dyn ChannelEventSink>>,
 }
 
 impl SlackPlugin {
@@ -87,7 +34,22 @@ impl SlackPlugin {
         let outbound = SlackOutbound {
             accounts: Arc::clone(&accounts),
         };
-        Self { accounts, outbound }
+        Self {
+            accounts,
+            outbound,
+            message_log: None,
+            event_sink: None,
+        }
+    }
+
+    pub fn with_message_log(mut self, log: Arc<dyn MessageLog>) -> Self {
+        self.message_log = Some(log);
+        self
+    }
+
+    pub fn with_event_sink(mut self, sink: Arc<dyn ChannelEventSink>) -> Self {
+        self.event_sink = Some(sink);
+        self
     }
 }
 
@@ -112,19 +74,39 @@ impl ChannelPlugin for SlackPlugin {
         account_id: &str,
         config: serde_json::Value,
     ) -> ChannelResult<()> {
-        let slack_config: SlackAccountConfig = serde_json::from_value(config)?;
-        info!(account_id, "starting Slack account (skeleton)");
-        let mut accounts = self.accounts.write().unwrap_or_else(|e| e.into_inner());
-        accounts.insert(account_id.to_string(), AccountState {
-            config: slack_config,
-        });
-        Ok(())
+        let cfg: SlackAccountConfig = serde_json::from_value(config)?;
+        if cfg.bot_token.expose_secret().is_empty() {
+            return Err(ChannelError::invalid_input("Slack bot_token is required"));
+        }
+        if cfg.app_token.expose_secret().is_empty() {
+            return Err(ChannelError::invalid_input(
+                "Slack app_token is required for Socket Mode",
+            ));
+        }
+
+        info!(account_id, "starting slack account");
+
+        crate::socket::start_socket_mode(
+            account_id,
+            cfg,
+            Arc::clone(&self.accounts),
+            self.message_log.clone(),
+            self.event_sink.clone(),
+        )
+        .await
     }
 
     async fn stop_account(&mut self, account_id: &str) -> ChannelResult<()> {
-        info!(account_id, "stopping Slack account");
-        let mut accounts = self.accounts.write().unwrap_or_else(|e| e.into_inner());
-        accounts.remove(account_id);
+        let cancel = {
+            let mut accounts = self.accounts.write().unwrap_or_else(|e| e.into_inner());
+            accounts.remove(account_id).map(|s| s.cancel)
+        };
+        if let Some(cancel) = cancel {
+            cancel.cancel();
+            info!(account_id, "stopped slack account");
+        } else {
+            warn!(account_id, "slack account not found");
+        }
         Ok(())
     }
 
@@ -132,8 +114,8 @@ impl ChannelPlugin for SlackPlugin {
         Some(&self.outbound)
     }
 
-    fn status(&self) -> Option<&dyn moltis_channels::ChannelStatus> {
-        None
+    fn status(&self) -> Option<&dyn ChannelStatus> {
+        Some(self)
     }
 
     fn has_account(&self, account_id: &str) -> bool {
@@ -153,15 +135,22 @@ impl ChannelPlugin for SlackPlugin {
             .map(|s| Box::new(s.config.clone()) as Box<dyn ChannelConfigView>)
     }
 
+    fn account_config_json(&self, account_id: &str) -> Option<serde_json::Value> {
+        let accounts = self.accounts.read().unwrap_or_else(|e| e.into_inner());
+        accounts
+            .get(account_id)
+            .and_then(|s| serde_json::to_value(&s.config).ok())
+    }
+
     fn update_account_config(
         &self,
         account_id: &str,
         config: serde_json::Value,
     ) -> ChannelResult<()> {
-        let slack_config: SlackAccountConfig = serde_json::from_value(config)?;
+        let parsed: SlackAccountConfig = serde_json::from_value(config)?;
         let mut accounts = self.accounts.write().unwrap_or_else(|e| e.into_inner());
         if let Some(state) = accounts.get_mut(account_id) {
-            state.config = slack_config;
+            state.config = parsed;
             Ok(())
         } else {
             Err(ChannelError::unknown_account(account_id))
@@ -179,12 +168,31 @@ impl ChannelPlugin for SlackPlugin {
             accounts: Arc::clone(&self.accounts),
         })
     }
+}
 
-    fn account_config_json(&self, account_id: &str) -> Option<serde_json::Value> {
+#[async_trait]
+impl ChannelStatus for SlackPlugin {
+    async fn probe(&self, account_id: &str) -> ChannelResult<ChannelHealthSnapshot> {
         let accounts = self.accounts.read().unwrap_or_else(|e| e.into_inner());
-        accounts
-            .get(account_id)
-            .and_then(|s| serde_json::to_value(&s.config).ok())
+        if let Some(state) = accounts.get(account_id) {
+            let connected = state.bot_user_id.is_some();
+            let details = if connected {
+                "socket mode connected".to_string()
+            } else {
+                "connecting to Slack...".to_string()
+            };
+            Ok(ChannelHealthSnapshot {
+                connected,
+                account_id: state.account_id.clone(),
+                details: Some(details),
+            })
+        } else {
+            Ok(ChannelHealthSnapshot {
+                connected: false,
+                account_id: account_id.to_string(),
+                details: Some("account not started".into()),
+            })
+        }
     }
 }
 
@@ -207,38 +215,45 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn start_and_stop_account() {
+    async fn start_rejects_empty_bot_token() {
         let mut plugin = SlackPlugin::new();
-        let config = serde_json::json!({ "token": "xoxb-test" });
-        plugin.start_account("test", config).await.unwrap();
-        assert!(plugin.has_account("test"));
-        assert_eq!(plugin.account_ids(), vec!["test"]);
-
-        plugin.stop_account("test").await.unwrap();
-        assert!(!plugin.has_account("test"));
+        let config = serde_json::json!({
+            "bot_token": "",
+            "app_token": "xapp-test",
+        });
+        let result = plugin.start_account("test", config).await;
+        assert!(result.is_err());
     }
 
     #[tokio::test]
-    async fn account_config_round_trip() {
+    async fn start_rejects_empty_app_token() {
         let mut plugin = SlackPlugin::new();
         let config = serde_json::json!({
-            "token": "xoxb-test",
-            "dm_policy": "open",
-            "allowlist": ["U123"]
+            "bot_token": "xoxb-test",
+            "app_token": "",
         });
-        plugin.start_account("bot1", config).await.unwrap();
-
-        let view = plugin.account_config("bot1").unwrap();
-        assert_eq!(view.allowlist(), &["U123"]);
-
-        let json = plugin.account_config_json("bot1").unwrap();
-        assert_eq!(json["token"], "xoxb-test");
+        let result = plugin.start_account("test", config).await;
+        assert!(result.is_err());
     }
 
     #[test]
     fn update_config_unknown_account_errors() {
         let plugin = SlackPlugin::new();
-        let result = plugin.update_account_config("nope", serde_json::json!({}));
+        let result = plugin.update_account_config(
+            "nope",
+            serde_json::json!({
+                "bot_token": "xoxb-test",
+                "app_token": "xapp-test",
+            }),
+        );
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn probe_no_account() {
+        let plugin = SlackPlugin::new();
+        let snap = plugin.probe("missing").await.unwrap();
+        assert!(!snap.connected);
+        assert_eq!(snap.details.as_deref(), Some("account not started"));
     }
 }
