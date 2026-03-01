@@ -113,9 +113,8 @@
 "Backend" = "Backend";
 "Default image" = "Default image";
 "Select this section to view the full network audit log" = "Select this section to view the full network audit log";
-"Enable monitoring" = "Enable monitoring";
-"Enable metrics" = "Enable metrics";
-"Enable tracing" = "Enable tracing";
+"Enable metrics collection" = "Enable metrics collection";
+"Enable Prometheus endpoint" = "Enable Prometheus endpoint";
 "Logs Unavailable" = "Logs Unavailable";
 "Log store not connected" = "Log store not connected";
 "Enable GraphQL" = "Enable GraphQL";

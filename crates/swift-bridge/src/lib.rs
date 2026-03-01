@@ -27,6 +27,7 @@ use {
         store::SessionStore,
     },
     moltis_tools::image_cache::ImageBuilder,
+    secrecy::{ExposeSecret, Secret},
     serde::{Deserialize, Serialize},
     tokio_stream::StreamExt,
 };
@@ -459,15 +460,26 @@ struct BridgeModelInfo {
     created_at: Option<i64>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 struct SaveProviderRequest {
     provider: String,
     #[serde(default)]
-    api_key: Option<String>,
+    api_key: Option<Secret<String>>,
     #[serde(default)]
     base_url: Option<String>,
     #[serde(default)]
     models: Option<Vec<String>>,
+}
+
+impl std::fmt::Debug for SaveProviderRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SaveProviderRequest")
+            .field("provider", &self.provider)
+            .field("api_key", &self.api_key.as_ref().map(|_| "[REDACTED]"))
+            .field("base_url", &self.base_url)
+            .field("models", &self.models)
+            .finish()
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -584,11 +596,20 @@ struct AuthStatusResponse {
     setup_complete: bool,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 struct AuthPasswordChangeRequest {
     #[serde(default)]
-    current_password: Option<String>,
-    new_password: String,
+    current_password: Option<Secret<String>>,
+    new_password: Secret<String>,
+}
+
+impl std::fmt::Debug for AuthPasswordChangeRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AuthPasswordChangeRequest")
+            .field("current_password", &self.current_password.as_ref().map(|_| "[REDACTED]"))
+            .field("new_password", &"[REDACTED]")
+            .finish()
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -803,6 +824,23 @@ where
             "unexpected panic occurred in Rust FFI boundary",
         )),
     }
+}
+
+/// Parses a C string JSON pointer into a typed request, recording errors
+/// against `function` for metrics. Returns `Err(encoded_error_json)` on
+/// failure so callers can early-return from `with_ffi_boundary`.
+fn parse_ffi_request<T: serde::de::DeserializeOwned>(
+    function: &'static str,
+    ptr: *const c_char,
+) -> Result<T, String> {
+    let raw = read_c_string(ptr).map_err(|message| {
+        record_error(function, "null_pointer_or_invalid_utf8");
+        encode_error("null_pointer_or_invalid_utf8", &message)
+    })?;
+    serde_json::from_str::<T>(&raw).map_err(|error| {
+        record_error(function, "invalid_json");
+        encode_error("invalid_json", &error.to_string())
+    })
 }
 
 fn read_c_string(ptr: *const c_char) -> Result<String, String> {
@@ -1322,20 +1360,9 @@ pub extern "C" fn moltis_chat_json(request_json: *const c_char) -> *mut c_char {
     trace_call("moltis_chat_json");
 
     with_ffi_boundary(|| {
-        let raw = match read_c_string(request_json) {
-            Ok(value) => value,
-            Err(message) => {
-                record_error("moltis_chat_json", "null_pointer_or_invalid_utf8");
-                return encode_error("null_pointer_or_invalid_utf8", &message);
-            },
-        };
-
-        let request = match serde_json::from_str::<ChatRequest>(&raw) {
+        let request = match parse_ffi_request::<ChatRequest>("moltis_chat_json", request_json) {
             Ok(request) => request,
-            Err(error) => {
-                record_error("moltis_chat_json", "invalid_json");
-                return encode_error("invalid_json", &error.to_string());
-            },
+            Err(e) => return e,
         };
 
         build_chat_response(request)
@@ -1406,23 +1433,9 @@ pub extern "C" fn moltis_save_provider_config(request_json: *const c_char) -> *m
     trace_call("moltis_save_provider_config");
 
     with_ffi_boundary(|| {
-        let raw = match read_c_string(request_json) {
-            Ok(value) => value,
-            Err(message) => {
-                record_error(
-                    "moltis_save_provider_config",
-                    "null_pointer_or_invalid_utf8",
-                );
-                return encode_error("null_pointer_or_invalid_utf8", &message);
-            },
-        };
-
-        let request = match serde_json::from_str::<SaveProviderRequest>(&raw) {
+        let request = match parse_ffi_request::<SaveProviderRequest>("moltis_save_provider_config", request_json) {
             Ok(request) => request,
-            Err(error) => {
-                record_error("moltis_save_provider_config", "invalid_json");
-                return encode_error("invalid_json", &error.to_string());
-            },
+            Err(e) => return e,
         };
 
         emit_log(
@@ -1432,9 +1445,10 @@ pub extern "C" fn moltis_save_provider_config(request_json: *const c_char) -> *m
         );
 
         let key_store = KeyStore::new();
+        let api_key = request.api_key.map(|s| s.expose_secret().clone());
         match key_store.save_config(
             &request.provider,
-            request.api_key,
+            api_key,
             request.base_url,
             request.models,
         ) {
@@ -1859,14 +1873,9 @@ pub extern "C" fn moltis_switch_session(request_json: *const c_char) -> *mut c_c
     trace_call("moltis_switch_session");
 
     with_ffi_boundary(|| {
-        let raw = match read_c_string(request_json) {
-            Ok(value) => value,
-            Err(message) => return encode_error("null_pointer_or_invalid_utf8", &message),
-        };
-
-        let request = match serde_json::from_str::<SwitchSessionRequest>(&raw) {
+        let request = match parse_ffi_request::<SwitchSessionRequest>("moltis_switch_session", request_json) {
             Ok(r) => r,
-            Err(e) => return encode_error("invalid_json", &e.to_string()),
+            Err(e) => return e,
         };
 
         // Ensure metadata entry exists.
@@ -2175,20 +2184,9 @@ pub extern "C" fn moltis_save_config(request_json: *const c_char) -> *mut c_char
     trace_call("moltis_save_config");
 
     with_ffi_boundary(|| {
-        let raw = match read_c_string(request_json) {
-            Ok(value) => value,
-            Err(message) => {
-                record_error("moltis_save_config", "null_pointer_or_invalid_utf8");
-                return encode_error("null_pointer_or_invalid_utf8", &message);
-            },
-        };
-
-        let config = match serde_json::from_str::<moltis_config::MoltisConfig>(&raw) {
+        let config = match parse_ffi_request::<moltis_config::MoltisConfig>("moltis_save_config", request_json) {
             Ok(c) => c,
-            Err(e) => {
-                record_error("moltis_save_config", "invalid_json");
-                return encode_error("invalid_json", &e.to_string());
-            },
+            Err(e) => return e,
         };
 
         emit_log("INFO", "bridge.config", "Saving full config from settings");
@@ -2360,23 +2358,9 @@ pub extern "C" fn moltis_memory_config_update(request_json: *const c_char) -> *m
     trace_call("moltis_memory_config_update");
 
     with_ffi_boundary(|| {
-        let raw = match read_c_string(request_json) {
-            Ok(value) => value,
-            Err(message) => {
-                record_error(
-                    "moltis_memory_config_update",
-                    "null_pointer_or_invalid_utf8",
-                );
-                return encode_error("null_pointer_or_invalid_utf8", &message);
-            },
-        };
-
-        let request = match serde_json::from_str::<MemoryConfigUpdateRequest>(&raw) {
+        let request = match parse_ffi_request::<MemoryConfigUpdateRequest>("moltis_memory_config_update", request_json) {
             Ok(request) => request,
-            Err(error) => {
-                record_error("moltis_memory_config_update", "invalid_json");
-                return encode_error("invalid_json", &error.to_string());
-            },
+            Err(e) => return e,
         };
 
         let current = moltis_config::discover_and_load().memory;
@@ -2507,20 +2491,9 @@ pub extern "C" fn moltis_save_soul(request_json: *const c_char) -> *mut c_char {
     trace_call("moltis_save_soul");
 
     with_ffi_boundary(|| {
-        let raw = match read_c_string(request_json) {
-            Ok(value) => value,
-            Err(message) => {
-                record_error("moltis_save_soul", "null_pointer_or_invalid_utf8");
-                return encode_error("null_pointer_or_invalid_utf8", &message);
-            },
-        };
-
-        let request = match serde_json::from_str::<SaveSoulRequest>(&raw) {
+        let request = match parse_ffi_request::<SaveSoulRequest>("moltis_save_soul", request_json) {
             Ok(r) => r,
-            Err(e) => {
-                record_error("moltis_save_soul", "invalid_json");
-                return encode_error("invalid_json", &e.to_string());
-            },
+            Err(e) => return e,
         };
 
         emit_log("INFO", "bridge.config", "Saving soul from settings");
@@ -2548,20 +2521,9 @@ pub extern "C" fn moltis_save_identity(request_json: *const c_char) -> *mut c_ch
     trace_call("moltis_save_identity");
 
     with_ffi_boundary(|| {
-        let raw = match read_c_string(request_json) {
-            Ok(value) => value,
-            Err(message) => {
-                record_error("moltis_save_identity", "null_pointer_or_invalid_utf8");
-                return encode_error("null_pointer_or_invalid_utf8", &message);
-            },
-        };
-
-        let request = match serde_json::from_str::<SaveIdentityRequest>(&raw) {
+        let request = match parse_ffi_request::<SaveIdentityRequest>("moltis_save_identity", request_json) {
             Ok(r) => r,
-            Err(e) => {
-                record_error("moltis_save_identity", "invalid_json");
-                return encode_error("invalid_json", &e.to_string());
-            },
+            Err(e) => return e,
         };
 
         let identity = moltis_config::AgentIdentity {
@@ -2599,20 +2561,9 @@ pub extern "C" fn moltis_save_user_profile(request_json: *const c_char) -> *mut 
     trace_call("moltis_save_user_profile");
 
     with_ffi_boundary(|| {
-        let raw = match read_c_string(request_json) {
-            Ok(value) => value,
-            Err(message) => {
-                record_error("moltis_save_user_profile", "null_pointer_or_invalid_utf8");
-                return encode_error("null_pointer_or_invalid_utf8", &message);
-            },
-        };
-
-        let request = match serde_json::from_str::<SaveUserProfileRequest>(&raw) {
+        let request = match parse_ffi_request::<SaveUserProfileRequest>("moltis_save_user_profile", request_json) {
             Ok(r) => r,
-            Err(e) => {
-                record_error("moltis_save_user_profile", "invalid_json");
-                return encode_error("invalid_json", &e.to_string());
-            },
+            Err(e) => return e,
         };
 
         let user = moltis_config::UserProfile {
@@ -2676,20 +2627,9 @@ pub extern "C" fn moltis_set_env_var(request_json: *const c_char) -> *mut c_char
     trace_call("moltis_set_env_var");
 
     with_ffi_boundary(|| {
-        let raw = match read_c_string(request_json) {
-            Ok(value) => value,
-            Err(message) => {
-                record_error("moltis_set_env_var", "null_pointer_or_invalid_utf8");
-                return encode_error("null_pointer_or_invalid_utf8", &message);
-            },
-        };
-
-        let request = match serde_json::from_str::<SetEnvVarRequest>(&raw) {
+        let request = match parse_ffi_request::<SetEnvVarRequest>("moltis_set_env_var", request_json) {
             Ok(r) => r,
-            Err(e) => {
-                record_error("moltis_set_env_var", "invalid_json");
-                return encode_error("invalid_json", &e.to_string());
-            },
+            Err(e) => return e,
         };
 
         let key = request.key.trim();
@@ -2725,20 +2665,9 @@ pub extern "C" fn moltis_delete_env_var(request_json: *const c_char) -> *mut c_c
     trace_call("moltis_delete_env_var");
 
     with_ffi_boundary(|| {
-        let raw = match read_c_string(request_json) {
-            Ok(value) => value,
-            Err(message) => {
-                record_error("moltis_delete_env_var", "null_pointer_or_invalid_utf8");
-                return encode_error("null_pointer_or_invalid_utf8", &message);
-            },
-        };
-
-        let request = match serde_json::from_str::<DeleteEnvVarRequest>(&raw) {
+        let request = match parse_ffi_request::<DeleteEnvVarRequest>("moltis_delete_env_var", request_json) {
             Ok(r) => r,
-            Err(e) => {
-                record_error("moltis_delete_env_var", "invalid_json");
-                return encode_error("invalid_json", &e.to_string());
-            },
+            Err(e) => return e,
         };
 
         match BRIDGE
@@ -2803,26 +2732,12 @@ pub extern "C" fn moltis_auth_password_change(request_json: *const c_char) -> *m
     trace_call("moltis_auth_password_change");
 
     with_ffi_boundary(|| {
-        let raw = match read_c_string(request_json) {
-            Ok(value) => value,
-            Err(message) => {
-                record_error(
-                    "moltis_auth_password_change",
-                    "null_pointer_or_invalid_utf8",
-                );
-                return encode_error("null_pointer_or_invalid_utf8", &message);
-            },
-        };
-
-        let request = match serde_json::from_str::<AuthPasswordChangeRequest>(&raw) {
+        let request = match parse_ffi_request::<AuthPasswordChangeRequest>("moltis_auth_password_change", request_json) {
             Ok(r) => r,
-            Err(error) => {
-                record_error("moltis_auth_password_change", "invalid_json");
-                return encode_error("invalid_json", &error.to_string());
-            },
+            Err(e) => return e,
         };
 
-        if request.new_password.len() < 8 {
+        if request.new_password.expose_secret().len() < 8 {
             record_error("moltis_auth_password_change", "AUTH_PASSWORD_TOO_SHORT");
             return encode_error(
                 "AUTH_PASSWORD_TOO_SHORT",
@@ -2843,12 +2758,18 @@ pub extern "C" fn moltis_auth_password_change(request_json: *const c_char) -> *m
 
         let mut recovery_key: Option<String> = None;
 
+        let new_password = request.new_password.expose_secret();
+
         if has_password {
-            let current_password = request.current_password.unwrap_or_default();
+            let current_password = request
+                .current_password
+                .as_ref()
+                .map(|s| s.expose_secret().as_str())
+                .unwrap_or("");
             if let Err(error) = BRIDGE.runtime.block_on(
                 BRIDGE
                     .credential_store
-                    .change_password(&current_password, &request.new_password),
+                    .change_password(current_password, new_password),
             ) {
                 let message = error.to_string();
                 if message.contains("incorrect") {
@@ -2865,7 +2786,7 @@ pub extern "C" fn moltis_auth_password_change(request_json: *const c_char) -> *m
             if let Some(vault) = BRIDGE.credential_store.vault()
                 && let Err(error) = BRIDGE
                     .runtime
-                    .block_on(vault.change_password(&current_password, &request.new_password))
+                    .block_on(vault.change_password(current_password, new_password))
             {
                 emit_log(
                     "WARN",
@@ -2875,20 +2796,20 @@ pub extern "C" fn moltis_auth_password_change(request_json: *const c_char) -> *m
             }
         } else if let Err(error) = BRIDGE
             .runtime
-            .block_on(BRIDGE.credential_store.add_password(&request.new_password))
+            .block_on(BRIDGE.credential_store.add_password(new_password))
         {
             record_error("moltis_auth_password_change", "AUTH_PASSWORD_SET_FAILED");
             return encode_error("AUTH_PASSWORD_SET_FAILED", &error.to_string());
         } else if let Some(vault) = BRIDGE.credential_store.vault() {
             match BRIDGE
                 .runtime
-                .block_on(vault.initialize(&request.new_password))
+                .block_on(vault.initialize(new_password))
             {
                 Ok(key) => {
                     recovery_key = Some(key.phrase().to_owned());
                 },
                 Err(moltis_gateway::auth::moltis_vault::VaultError::AlreadyInitialized) => {
-                    if let Err(error) = BRIDGE.runtime.block_on(vault.unseal(&request.new_password))
+                    if let Err(error) = BRIDGE.runtime.block_on(vault.unseal(new_password))
                     {
                         emit_log(
                             "WARN",
@@ -2909,7 +2830,7 @@ pub extern "C" fn moltis_auth_password_change(request_json: *const c_char) -> *m
 
         encode_json(&AuthPasswordChangeResponse {
             ok: true,
-            recovery_key: recovery_key.take(),
+            recovery_key,
         })
     })
 }
@@ -2960,20 +2881,9 @@ pub extern "C" fn moltis_auth_remove_passkey(request_json: *const c_char) -> *mu
     trace_call("moltis_auth_remove_passkey");
 
     with_ffi_boundary(|| {
-        let raw = match read_c_string(request_json) {
-            Ok(value) => value,
-            Err(message) => {
-                record_error("moltis_auth_remove_passkey", "null_pointer_or_invalid_utf8");
-                return encode_error("null_pointer_or_invalid_utf8", &message);
-            },
-        };
-
-        let request = match serde_json::from_str::<AuthPasskeyIdRequest>(&raw) {
+        let request = match parse_ffi_request::<AuthPasskeyIdRequest>("moltis_auth_remove_passkey", request_json) {
             Ok(r) => r,
-            Err(error) => {
-                record_error("moltis_auth_remove_passkey", "invalid_json");
-                return encode_error("invalid_json", &error.to_string());
-            },
+            Err(e) => return e,
         };
 
         match BRIDGE
@@ -2996,20 +2906,9 @@ pub extern "C" fn moltis_auth_rename_passkey(request_json: *const c_char) -> *mu
     trace_call("moltis_auth_rename_passkey");
 
     with_ffi_boundary(|| {
-        let raw = match read_c_string(request_json) {
-            Ok(value) => value,
-            Err(message) => {
-                record_error("moltis_auth_rename_passkey", "null_pointer_or_invalid_utf8");
-                return encode_error("null_pointer_or_invalid_utf8", &message);
-            },
-        };
-
-        let request = match serde_json::from_str::<AuthPasskeyRenameRequest>(&raw) {
+        let request = match parse_ffi_request::<AuthPasskeyRenameRequest>("moltis_auth_rename_passkey", request_json) {
             Ok(r) => r,
-            Err(error) => {
-                record_error("moltis_auth_rename_passkey", "invalid_json");
-                return encode_error("invalid_json", &error.to_string());
-            },
+            Err(e) => return e,
         };
 
         let name = request.name.trim();
@@ -3089,23 +2988,9 @@ pub extern "C" fn moltis_sandbox_delete_image(request_json: *const c_char) -> *m
     trace_call("moltis_sandbox_delete_image");
 
     with_ffi_boundary(|| {
-        let raw = match read_c_string(request_json) {
-            Ok(value) => value,
-            Err(message) => {
-                record_error(
-                    "moltis_sandbox_delete_image",
-                    "null_pointer_or_invalid_utf8",
-                );
-                return encode_error("null_pointer_or_invalid_utf8", &message);
-            },
-        };
-
-        let request = match serde_json::from_str::<SandboxDeleteImageRequest>(&raw) {
+        let request = match parse_ffi_request::<SandboxDeleteImageRequest>("moltis_sandbox_delete_image", request_json) {
             Ok(r) => r,
-            Err(error) => {
-                record_error("moltis_sandbox_delete_image", "invalid_json");
-                return encode_error("invalid_json", &error.to_string());
-            },
+            Err(e) => return e,
         };
 
         let tag = request.tag.trim();
@@ -3178,23 +3063,9 @@ pub extern "C" fn moltis_sandbox_check_packages(request_json: *const c_char) -> 
     trace_call("moltis_sandbox_check_packages");
 
     with_ffi_boundary(|| {
-        let raw = match read_c_string(request_json) {
-            Ok(value) => value,
-            Err(message) => {
-                record_error(
-                    "moltis_sandbox_check_packages",
-                    "null_pointer_or_invalid_utf8",
-                );
-                return encode_error("null_pointer_or_invalid_utf8", &message);
-            },
-        };
-
-        let request = match serde_json::from_str::<SandboxCheckPackagesRequest>(&raw) {
+        let request = match parse_ffi_request::<SandboxCheckPackagesRequest>("moltis_sandbox_check_packages", request_json) {
             Ok(r) => r,
-            Err(error) => {
-                record_error("moltis_sandbox_check_packages", "invalid_json");
-                return encode_error("invalid_json", &error.to_string());
-            },
+            Err(e) => return e,
         };
 
         let base = request
@@ -3282,20 +3153,9 @@ pub extern "C" fn moltis_sandbox_build_image(request_json: *const c_char) -> *mu
     trace_call("moltis_sandbox_build_image");
 
     with_ffi_boundary(|| {
-        let raw = match read_c_string(request_json) {
-            Ok(value) => value,
-            Err(message) => {
-                record_error("moltis_sandbox_build_image", "null_pointer_or_invalid_utf8");
-                return encode_error("null_pointer_or_invalid_utf8", &message);
-            },
-        };
-
-        let request = match serde_json::from_str::<SandboxBuildImageRequest>(&raw) {
+        let request = match parse_ffi_request::<SandboxBuildImageRequest>("moltis_sandbox_build_image", request_json) {
             Ok(r) => r,
-            Err(error) => {
-                record_error("moltis_sandbox_build_image", "invalid_json");
-                return encode_error("invalid_json", &error.to_string());
-            },
+            Err(e) => return e,
         };
 
         let name = request.name.trim();
@@ -3415,23 +3275,9 @@ pub extern "C" fn moltis_sandbox_set_default_image(request_json: *const c_char) 
     trace_call("moltis_sandbox_set_default_image");
 
     with_ffi_boundary(|| {
-        let raw = match read_c_string(request_json) {
-            Ok(value) => value,
-            Err(message) => {
-                record_error(
-                    "moltis_sandbox_set_default_image",
-                    "null_pointer_or_invalid_utf8",
-                );
-                return encode_error("null_pointer_or_invalid_utf8", &message);
-            },
-        };
-
-        let request = match serde_json::from_str::<SandboxSetDefaultImageRequest>(&raw) {
+        let request = match parse_ffi_request::<SandboxSetDefaultImageRequest>("moltis_sandbox_set_default_image", request_json) {
             Ok(r) => r,
-            Err(error) => {
-                record_error("moltis_sandbox_set_default_image", "invalid_json");
-                return encode_error("invalid_json", &error.to_string());
-            },
+            Err(e) => return e,
         };
 
         let config = moltis_config::discover_and_load();
@@ -3480,23 +3326,9 @@ pub extern "C" fn moltis_sandbox_set_shared_home(request_json: *const c_char) ->
     trace_call("moltis_sandbox_set_shared_home");
 
     with_ffi_boundary(|| {
-        let raw = match read_c_string(request_json) {
-            Ok(value) => value,
-            Err(message) => {
-                record_error(
-                    "moltis_sandbox_set_shared_home",
-                    "null_pointer_or_invalid_utf8",
-                );
-                return encode_error("null_pointer_or_invalid_utf8", &message);
-            },
-        };
-
-        let request = match serde_json::from_str::<SandboxSharedHomeUpdateRequest>(&raw) {
+        let request = match parse_ffi_request::<SandboxSharedHomeUpdateRequest>("moltis_sandbox_set_shared_home", request_json) {
             Ok(r) => r,
-            Err(error) => {
-                record_error("moltis_sandbox_set_shared_home", "invalid_json");
-                return encode_error("invalid_json", &error.to_string());
-            },
+            Err(e) => return e,
         };
 
         let path = request
@@ -3574,23 +3406,9 @@ pub extern "C" fn moltis_sandbox_stop_container(request_json: *const c_char) -> 
     trace_call("moltis_sandbox_stop_container");
 
     with_ffi_boundary(|| {
-        let raw = match read_c_string(request_json) {
-            Ok(value) => value,
-            Err(message) => {
-                record_error(
-                    "moltis_sandbox_stop_container",
-                    "null_pointer_or_invalid_utf8",
-                );
-                return encode_error("null_pointer_or_invalid_utf8", &message);
-            },
-        };
-
-        let request = match serde_json::from_str::<SandboxContainerNameRequest>(&raw) {
+        let request = match parse_ffi_request::<SandboxContainerNameRequest>("moltis_sandbox_stop_container", request_json) {
             Ok(r) => r,
-            Err(error) => {
-                record_error("moltis_sandbox_stop_container", "invalid_json");
-                return encode_error("invalid_json", &error.to_string());
-            },
+            Err(e) => return e,
         };
 
         let name = request.name.trim();
@@ -3638,23 +3456,9 @@ pub extern "C" fn moltis_sandbox_remove_container(request_json: *const c_char) -
     trace_call("moltis_sandbox_remove_container");
 
     with_ffi_boundary(|| {
-        let raw = match read_c_string(request_json) {
-            Ok(value) => value,
-            Err(message) => {
-                record_error(
-                    "moltis_sandbox_remove_container",
-                    "null_pointer_or_invalid_utf8",
-                );
-                return encode_error("null_pointer_or_invalid_utf8", &message);
-            },
-        };
-
-        let request = match serde_json::from_str::<SandboxContainerNameRequest>(&raw) {
+        let request = match parse_ffi_request::<SandboxContainerNameRequest>("moltis_sandbox_remove_container", request_json) {
             Ok(r) => r,
-            Err(error) => {
-                record_error("moltis_sandbox_remove_container", "invalid_json");
-                return encode_error("invalid_json", &error.to_string());
-            },
+            Err(e) => return e,
         };
 
         let name = request.name.trim();
@@ -3768,6 +3572,19 @@ pub extern "C" fn moltis_shutdown() {
     record_call("moltis_shutdown");
     trace_call("moltis_shutdown");
     emit_log("INFO", "bridge", "Shutdown requested");
+
+    // Stop the HTTP server if it is running.
+    let mut guard = HTTPD.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(handle) = guard.take() {
+        emit_log(
+            "INFO",
+            "bridge",
+            &format!("Stopping httpd on {} during shutdown", handle.addr),
+        );
+        let _ = handle.shutdown_tx.send(());
+    }
+
+    emit_log("INFO", "bridge", "Shutdown complete");
 }
 
 #[cfg(test)]

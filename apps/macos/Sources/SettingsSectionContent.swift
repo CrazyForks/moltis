@@ -61,7 +61,6 @@ private extension SettingsSectionContent {
                     .onSubmit { settings.saveUserProfile() }
             }
             editorRow("Soul", text: $settings.identitySoul)
-                .onChange(of: settings.identitySoul) { settings.saveSoul() }
         }
     }
 
@@ -189,7 +188,9 @@ private extension SettingsSectionContent {
     var notificationsPane: some View {
         Group {
             Toggle("Enable notifications", isOn: $settings.notificationsEnabled)
+                .onChange(of: settings.notificationsEnabled) { settings.saveNotifications() }
             Toggle("Play sounds", isOn: $settings.notificationsSoundEnabled)
+                .onChange(of: settings.notificationsSoundEnabled) { settings.saveNotifications() }
         }
     }
 
@@ -611,10 +612,10 @@ private extension SettingsSectionContent {
 
     var monitoringPane: some View {
         Group {
-            Toggle("Enable monitoring", isOn: $settings.monitoringEnabled)
-            Toggle("Enable metrics", isOn: $settings.metricsEnabled)
+            Toggle("Enable metrics collection", isOn: $settings.metricsEnabled)
                 .onChange(of: settings.metricsEnabled) { settings.saveMonitoring() }
-            Toggle("Enable tracing", isOn: $settings.tracingEnabled)
+            Toggle("Enable Prometheus endpoint", isOn: $settings.prometheusEndpointEnabled)
+                .onChange(of: settings.prometheusEndpointEnabled) { settings.saveMonitoring() }
         }
     }
 

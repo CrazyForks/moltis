@@ -113,9 +113,8 @@
 "Backend" = "Moteur";
 "Default image" = "Image par défaut";
 "Select this section to view the full network audit log" = "Sélectionnez cette section pour voir l'audit réseau complet";
-"Enable monitoring" = "Activer la surveillance";
-"Enable metrics" = "Activer les métriques";
-"Enable tracing" = "Activer la traçabilité";
+"Enable metrics collection" = "Activer la collecte de métriques";
+"Enable Prometheus endpoint" = "Activer le point d'accès Prometheus";
 "Logs Unavailable" = "Journaux indisponibles";
 "Log store not connected" = "Stockage des journaux non connecté";
 "Enable GraphQL" = "Activer GraphQL";

@@ -124,12 +124,10 @@ final class AppSettings: ObservableObject {
     @Published var sandboxSharedHomeError: String?
     @Published var sandboxSharedHomeMessage: String?
 
-    @Published var monitoringEnabled = true
     @Published var metricsEnabled = true
-    @Published var tracingEnabled = true
+    @Published var prometheusEndpointEnabled = true
 
     @Published var logLevel = "info"
-    @Published var persistLogs = true
 
     @Published var graphqlEnabled = false
     @Published var graphqlPath = "/graphql"
@@ -161,6 +159,17 @@ final class AppSettings: ObservableObject {
     /// Raw config dictionary for round-tripping. Modified in-place by section
     /// save methods and sent back to Rust as the full config JSON.
     var rawConfig: [String: Any] = [:]
+    private var cancellables = Set<AnyCancellable>()
+
+    init() {
+        // Debounce soul text saves so we don't hit FFI on every keystroke.
+        $identitySoul
+            .dropFirst()
+            .debounce(for: .seconds(0.8), scheduler: RunLoop.main)
+            .removeDuplicates()
+            .sink { [weak self] _ in self?.saveSoul() }
+            .store(in: &cancellables)
+    }
 
     // MARK: - Load
 
@@ -261,6 +270,12 @@ final class AppSettings: ObservableObject {
         }
 
         memoryLoading = false
+    }
+
+    func saveNotifications() {
+        setConfigValue(notificationsEnabled, at: ["notifications", "enabled"])
+        setConfigValue(notificationsSoundEnabled, at: ["notifications", "sound"])
+        persistConfig("notifications")
     }
 
     func saveHeartbeat() {
@@ -411,6 +426,7 @@ final class AppSettings: ObservableObject {
 
     func saveMonitoring() {
         setConfigValue(metricsEnabled, at: ["metrics", "enabled"])
+        setConfigValue(prometheusEndpointEnabled, at: ["metrics", "prometheus_endpoint"])
         persistConfig("monitoring")
     }
 
@@ -558,6 +574,10 @@ extension AppSettings {
     }
 
     private func populateToggles(from config: [String: Any]) {
+        if let notifications = config["notifications"] as? [String: Any] {
+            notificationsEnabled = notifications["enabled"] as? Bool ?? true
+            notificationsSoundEnabled = notifications["sound"] as? Bool ?? false
+        }
         if let heartbeat = config["heartbeat"] as? [String: Any] {
             heartbeatEnabled = heartbeat["enabled"] as? Bool ?? true
             if let every = heartbeat["every"] as? String {
@@ -578,7 +598,7 @@ extension AppSettings {
         }
         if let metrics = config["metrics"] as? [String: Any] {
             metricsEnabled = metrics["enabled"] as? Bool ?? true
-            monitoringEnabled = metricsEnabled
+            prometheusEndpointEnabled = metrics["prometheus_endpoint"] as? Bool ?? true
         }
         if let graphql = config["graphql"] as? [String: Any] {
             graphqlEnabled = graphql["enabled"] as? Bool ?? false
