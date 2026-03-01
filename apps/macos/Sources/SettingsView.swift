@@ -149,11 +149,21 @@ struct SettingsView: View {
     @State private var searchText = ""
     @FocusState private var focusedField: String?
 
+    private func isSectionVisible(_ section: SettingsSection) -> Bool {
+        switch section {
+        case .security, .tailscale:
+            return settings.httpdEnabled
+        default:
+            return true
+        }
+    }
+
     private var filteredGroups: [(group: SettingsGroup, sections: [SettingsSection])] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return SettingsGroup.allCases.compactMap { group in
             let sections = group.sections.filter { section in
-                query.isEmpty || section.title.lowercased().contains(query)
+                isSectionVisible(section)
+                    && (query.isEmpty || section.title.lowercased().contains(query))
             }
             return sections.isEmpty ? nil : (group, sections)
         }
@@ -249,6 +259,12 @@ struct SettingsView: View {
         .onAppear {
             if !settings.isLoaded {
                 settings.load()
+            }
+        }
+        .onChange(of: settings.httpdEnabled) { _, enabled in
+            guard let section = selectedSection else { return }
+            if !enabled && (section == .security || section == .tailscale) {
+                selectedSection = .identity
             }
         }
     }

@@ -45,6 +45,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `abortSession(key:)` and `peekSession(key:)` FFI bindings via `moltis_abort_session` and `moltis_peek_session`
 - Chat messages are persisted to `~/.moltis/data/sessions/<key>.jsonl`
 - "Open in Browser" button in HTTP Server pane when the gateway is running
+- Memory settings now match web UI flow with status/config sections:
+  backend selection (Built-in/QMD), citation mode, LLM reranking, session
+  export, QMD availability, and explicit save feedback
+- New memory bridge endpoints for macOS settings:
+  `moltis_memory_status`, `moltis_memory_config_get`,
+  `moltis_memory_config_update`, `moltis_memory_qmd_status`
 
 ### Changed
 
@@ -52,6 +58,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   so the macOS app and web UI share the same session list
 
 - HTTP Server description updated to reflect full gateway capability
+- Security and Tailscale sections are now shown only when HTTP Server is enabled
+- Security settings now use auth-backed controls (password set/change,
+  passkey listing/rename/remove, and full auth reset) with clear HTTP-only scope
 - Server start/stop controls disabled while startup is in progress
 - Chat is no longer tied to HTTP server — works with or without HTTPD enabled
 

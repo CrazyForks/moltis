@@ -1,6 +1,8 @@
+// swiftlint:disable file_length
 import Combine
 import Foundation
 
+// swiftlint:disable type_body_length
 final class AppSettings: ObservableObject {
     @Published var identityName = "Moltis"
     @Published var identityEmoji = ""
@@ -21,7 +23,25 @@ final class AppSettings: ObservableObject {
     @Published var environmentBusy = false
 
     @Published var memoryEnabled = true
-    @Published var memoryMode = "workspace"
+    @Published var memoryBackend = "builtin"
+    @Published var memoryCitations = "auto"
+    @Published var memoryLlmReranking = false
+    @Published var memorySessionExport = false
+    @Published var memoryQmdFeatureEnabled = true
+    @Published var memoryStatusAvailable = false
+    @Published var memoryTotalFiles = 0
+    @Published var memoryTotalChunks = 0
+    @Published var memoryEmbeddingModel = "none"
+    @Published var memoryDbSize: UInt64 = 0
+    @Published var memoryDbSizeDisplay = "0 B"
+    @Published var memoryHasEmbeddings = false
+    @Published var memoryQmdAvailable = false
+    @Published var memoryQmdVersion = ""
+    @Published var memoryQmdError: String?
+    @Published var memoryLoading = false
+    @Published var memorySaving = false
+    @Published var memorySaved = false
+    @Published var memoryError: String?
 
     @Published var notificationsEnabled = true
     @Published var notificationsSoundEnabled = false
@@ -30,8 +50,16 @@ final class AppSettings: ObservableObject {
     @Published var heartbeatEnabled = true
     @Published var heartbeatIntervalMinutes = 5
 
-    @Published var requirePassword = true
-    @Published var passkeysEnabled = true
+    @Published var authDisabled = false
+    @Published var authHasPassword = false
+    @Published var authHasPasskeys = false
+    @Published var authSetupComplete = false
+    @Published var securityPasskeys: [BridgeAuthPasskeyEntry] = []
+    @Published var securityLoading = false
+    @Published var securityBusy = false
+    @Published var securityMessage: String?
+    @Published var securityError: String?
+    @Published var securityRecoveryKey: String?
     @Published var tailscaleEnabled = false
     @Published var tailscaleMode = "off"
 
@@ -77,7 +105,8 @@ final class AppSettings: ObservableObject {
 
     @Published var configurationToml = ""
 
-    let memoryModes = ["workspace", "global", "off"]
+    let memoryBackends = ["builtin", "qmd"]
+    let memoryCitationModes = ["auto", "on", "off"]
     let sandboxBackends = ["auto", "docker", "apple-container"]
     let logLevels = ["trace", "debug", "info", "warn", "error"]
     let tailscaleModes = ["off", "serve", "funnel"]
@@ -102,6 +131,8 @@ final class AppSettings: ObservableObject {
             environmentConfigDir = result.configDir
             environmentDataDir = result.dataDir
             populateFromConfig(result.config)
+            loadMemorySettings()
+            loadSecuritySettings()
         } catch {
             logSettingsError("load config", error)
         }
@@ -158,6 +189,39 @@ final class AppSettings: ObservableObject {
         }
     }
 
+    func loadMemorySettings() {
+        memoryLoading = true
+        memoryError = nil
+        memoryQmdError = nil
+
+        do {
+            let config = try client.memoryConfigGet()
+            applyMemoryConfig(config)
+            syncMemoryConfigIntoRawConfig()
+        } catch {
+            memoryError = error.localizedDescription
+            logSettingsError("load memory config", error)
+        }
+
+        do {
+            let status = try client.memoryStatus()
+            applyMemoryStatus(status)
+        } catch {
+            memoryError = error.localizedDescription
+            logSettingsError("load memory status", error)
+        }
+
+        do {
+            let qmdStatus = try client.memoryQmdStatus()
+            applyMemoryQmdStatus(qmdStatus)
+        } catch {
+            memoryQmdError = error.localizedDescription
+            logSettingsError("load memory qmd status", error)
+        }
+
+        memoryLoading = false
+    }
+
     func saveHeartbeat() {
         setConfigValue(heartbeatEnabled, at: ["heartbeat", "enabled"])
         let durationStr = "\(heartbeatIntervalMinutes)m"
@@ -166,13 +230,138 @@ final class AppSettings: ObservableObject {
     }
 
     func saveMemory() {
-        setConfigValue(!memoryEnabled, at: ["memory", "disable_rag"])
-        persistConfig("memory")
+        memoryError = nil
+        memorySaving = true
+        memorySaved = false
+
+        do {
+            let updated = try client.memoryConfigUpdate(
+                backend: memoryBackend,
+                citations: memoryCitations,
+                llmReranking: memoryLlmReranking,
+                disableRag: !memoryEnabled,
+                sessionExport: memorySessionExport
+            )
+            applyMemoryConfig(updated)
+            syncMemoryConfigIntoRawConfig()
+            memorySaved = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                self.memorySaved = false
+            }
+        } catch {
+            memoryError = error.localizedDescription
+            logSettingsError("save memory", error)
+        }
+
+        memorySaving = false
     }
 
-    func saveSecurity() {
-        setConfigValue(!requirePassword, at: ["auth", "disabled"])
-        persistConfig("security")
+    func loadSecuritySettings() {
+        securityLoading = true
+        securityError = nil
+
+        do {
+            let status = try client.authStatus()
+            applyAuthStatus(status)
+        } catch {
+            securityError = error.localizedDescription
+            logSettingsError("load auth status", error)
+        }
+
+        do {
+            let passkeys = try client.authListPasskeys()
+            securityPasskeys = passkeys
+            authHasPasskeys = !passkeys.isEmpty
+        } catch {
+            if securityError == nil {
+                securityError = error.localizedDescription
+            }
+            logSettingsError("load passkeys", error)
+        }
+
+        securityLoading = false
+    }
+
+    func changeAuthenticationPassword(currentPassword: String?, newPassword: String) {
+        guard newPassword.count >= 8 else {
+            securityError = "New password must be at least 8 characters."
+            securityMessage = nil
+            return
+        }
+
+        securityBusy = true
+        securityError = nil
+        securityMessage = nil
+        securityRecoveryKey = nil
+        let hadPassword = authHasPassword
+
+        do {
+            let result = try client.authPasswordChange(
+                currentPassword: currentPassword,
+                newPassword: newPassword
+            )
+            _ = result.ok
+            securityMessage = hadPassword ? "Password changed." : "Password set."
+            securityRecoveryKey = result.recoveryKey
+            loadSecuritySettings()
+        } catch {
+            securityError = error.localizedDescription
+            logSettingsError("change password", error)
+        }
+
+        securityBusy = false
+    }
+
+    func resetAuthentication() {
+        securityBusy = true
+        securityError = nil
+        securityMessage = nil
+        securityRecoveryKey = nil
+
+        do {
+            try client.authReset()
+            securityMessage = "Authentication disabled."
+            loadSecuritySettings()
+        } catch {
+            securityError = error.localizedDescription
+            logSettingsError("reset auth", error)
+        }
+
+        securityBusy = false
+    }
+
+    func removePasskey(id: Int64) {
+        securityBusy = true
+        securityError = nil
+        securityMessage = nil
+
+        do {
+            try client.authRemovePasskey(id: id)
+            securityMessage = "Passkey removed."
+            loadSecuritySettings()
+        } catch {
+            securityError = error.localizedDescription
+            logSettingsError("remove passkey", error)
+        }
+
+        securityBusy = false
+    }
+
+    func renamePasskey(id: Int64, name: String) {
+        securityBusy = true
+        securityError = nil
+        securityMessage = nil
+
+        do {
+            try client.authRenamePasskey(id: id, name: name)
+            securityMessage = "Passkey renamed."
+            loadSecuritySettings()
+        } catch {
+            securityError = error.localizedDescription
+            logSettingsError("rename passkey", error)
+        }
+
+        securityBusy = false
     }
 
     func saveTailscale() {
@@ -279,6 +468,7 @@ final class AppSettings: ObservableObject {
         persistConfig("voice")
     }
 }
+// swiftlint:enable type_body_length
 
 // MARK: - Config population and persistence
 
@@ -286,6 +476,51 @@ extension AppSettings {
     func populateFromConfig(_ config: [String: Any]) {
         populateToggles(from: config)
         populateCollections(from: config)
+    }
+
+    private func applyMemoryConfig(_ config: BridgeMemoryConfigPayload) {
+        memoryBackend = config.backend
+        memoryCitations = config.citations
+        memoryEnabled = !config.disableRag
+        memoryLlmReranking = config.llmReranking
+        memorySessionExport = config.sessionExport
+        memoryQmdFeatureEnabled = config.qmdFeatureEnabled
+        memoryHasEmbeddings = !config.disableRag
+    }
+
+    private func applyMemoryStatus(_ status: BridgeMemoryStatusPayload) {
+        memoryStatusAvailable = status.available
+        memoryTotalFiles = status.totalFiles
+        memoryTotalChunks = status.totalChunks
+        memoryEmbeddingModel = status.embeddingModel
+        memoryDbSize = status.dbSize
+        memoryDbSizeDisplay = status.dbSizeDisplay
+        memoryHasEmbeddings = status.hasEmbeddings
+        if let statusError = status.error, !statusError.isEmpty {
+            memoryError = statusError
+        }
+    }
+
+    private func applyMemoryQmdStatus(_ status: BridgeMemoryQmdStatusPayload) {
+        memoryQmdFeatureEnabled = status.featureEnabled
+        memoryQmdAvailable = status.available
+        memoryQmdVersion = status.version ?? ""
+        memoryQmdError = status.error
+    }
+
+    private func applyAuthStatus(_ status: BridgeAuthStatusPayload) {
+        authDisabled = status.authDisabled
+        authHasPassword = status.hasPassword
+        authHasPasskeys = status.hasPasskeys
+        authSetupComplete = status.setupComplete
+    }
+
+    private func syncMemoryConfigIntoRawConfig() {
+        setConfigValue(memoryBackend, at: ["memory", "backend"])
+        setConfigValue(memoryCitations, at: ["memory", "citations"])
+        setConfigValue(!memoryEnabled, at: ["memory", "disable_rag"])
+        setConfigValue(memoryLlmReranking, at: ["memory", "llm_reranking"])
+        setConfigValue(memorySessionExport, at: ["memory", "session_export"])
     }
 
     private func populateToggles(from config: [String: Any]) {
@@ -297,9 +532,11 @@ extension AppSettings {
         }
         if let memory = config["memory"] as? [String: Any] {
             memoryEnabled = !(memory["disable_rag"] as? Bool ?? false)
-        }
-        if let auth = config["auth"] as? [String: Any] {
-            requirePassword = !(auth["disabled"] as? Bool ?? false)
+            memoryBackend = memory["backend"] as? String ?? "builtin"
+            memoryCitations = memory["citations"] as? String ?? "auto"
+            memoryLlmReranking = memory["llm_reranking"] as? Bool ?? false
+            memorySessionExport = memory["session_export"] as? Bool ?? false
+            memoryHasEmbeddings = memory["disable_rag"] as? Bool == true ? false : true
         }
         if let tailscale = config["tailscale"] as? [String: Any] {
             tailscaleMode = tailscale["mode"] as? String ?? "off"

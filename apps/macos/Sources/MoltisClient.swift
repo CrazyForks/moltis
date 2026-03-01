@@ -372,6 +372,59 @@ struct BridgeGetSoulPayload: Decodable {
     let soul: String?
 }
 
+// MARK: - Memory
+
+struct BridgeMemoryStatusPayload: Decodable {
+    let available: Bool
+    let totalFiles: Int
+    let totalChunks: Int
+    let dbSize: UInt64
+    let dbSizeDisplay: String
+    let embeddingModel: String
+    let hasEmbeddings: Bool
+    let error: String?
+}
+
+struct BridgeMemoryConfigPayload: Decodable {
+    let backend: String
+    let citations: String
+    let disableRag: Bool
+    let llmReranking: Bool
+    let sessionExport: Bool
+    let qmdFeatureEnabled: Bool
+}
+
+struct BridgeMemoryQmdStatusPayload: Decodable {
+    let featureEnabled: Bool
+    let available: Bool
+    let version: String?
+    let error: String?
+}
+
+// MARK: - Auth
+
+struct BridgeAuthStatusPayload: Decodable {
+    let authDisabled: Bool
+    let hasPassword: Bool
+    let hasPasskeys: Bool
+    let setupComplete: Bool
+}
+
+struct BridgeAuthPasswordChangePayload: Decodable {
+    let ok: Bool
+    let recoveryKey: String?
+}
+
+struct BridgeAuthPasskeyEntry: Decodable, Identifiable {
+    let id: Int64
+    let name: String
+    let createdAt: String
+}
+
+private struct BridgeAuthPasskeysPayload: Decodable {
+    let passkeys: [BridgeAuthPasskeyEntry]
+}
+
 // MARK: - Environment variables
 
 struct BridgeEnvVarEntry: Decodable, Identifiable {
@@ -785,6 +838,75 @@ extension MoltisClient {
         _ = try decode(payload, as: BridgeOkPayload.self)
     }
 
+    func memoryStatus() throws -> BridgeMemoryStatusPayload {
+        let payload = try consumeCStringPointer(moltis_memory_status())
+        return try decode(payload, as: BridgeMemoryStatusPayload.self)
+    }
+
+    func memoryConfigGet() throws -> BridgeMemoryConfigPayload {
+        let payload = try consumeCStringPointer(moltis_memory_config_get())
+        return try decode(payload, as: BridgeMemoryConfigPayload.self)
+    }
+
+    func memoryConfigUpdate(
+        backend: String,
+        citations: String,
+        llmReranking: Bool,
+        disableRag: Bool,
+        sessionExport: Bool
+    ) throws -> BridgeMemoryConfigPayload {
+        let request = MemoryConfigUpdateRequest(
+            backend: backend,
+            citations: citations,
+            llmReranking: llmReranking,
+            disableRag: disableRag,
+            sessionExport: sessionExport
+        )
+        return try callBridge(request, via: moltis_memory_config_update)
+    }
+
+    func memoryQmdStatus() throws -> BridgeMemoryQmdStatusPayload {
+        let payload = try consumeCStringPointer(moltis_memory_qmd_status())
+        return try decode(payload, as: BridgeMemoryQmdStatusPayload.self)
+    }
+
+    func authStatus() throws -> BridgeAuthStatusPayload {
+        let payload = try consumeCStringPointer(moltis_auth_status())
+        return try decode(payload, as: BridgeAuthStatusPayload.self)
+    }
+
+    func authPasswordChange(
+        currentPassword: String?,
+        newPassword: String
+    ) throws -> BridgeAuthPasswordChangePayload {
+        let request = AuthPasswordChangeRequest(
+            currentPassword: currentPassword,
+            newPassword: newPassword
+        )
+        return try callBridge(request, via: moltis_auth_password_change)
+    }
+
+    func authReset() throws {
+        let payload = try consumeCStringPointer(moltis_auth_reset())
+        _ = try decode(payload, as: BridgeOkPayload.self)
+    }
+
+    func authListPasskeys() throws -> [BridgeAuthPasskeyEntry] {
+        let payload = try consumeCStringPointer(moltis_auth_list_passkeys())
+        let parsed = try decode(payload, as: BridgeAuthPasskeysPayload.self)
+        return parsed.passkeys
+    }
+
+    func authRemovePasskey(id: Int64) throws {
+        let request = AuthPasskeyIdRequest(id: id)
+        let _: BridgeOkPayload = try callBridge(request, via: moltis_auth_remove_passkey)
+    }
+
+    func authRenamePasskey(id: Int64, name: String) throws {
+        let request = AuthPasskeyRenameRequest(id: id, name: name)
+        let _: BridgeOkPayload = try callBridge(request, via: moltis_auth_rename_passkey)
+    }
+
     /// Returns the soul text from SOUL.md, or nil if empty/missing.
     func getSoul() throws -> String? {
         let payload = try consumeCStringPointer(moltis_get_soul())
@@ -899,6 +1021,28 @@ private struct SetEnvVarRequest: Encodable {
     let value: String
 }
 
+private struct MemoryConfigUpdateRequest: Encodable {
+    let backend: String
+    let citations: String
+    let llmReranking: Bool
+    let disableRag: Bool
+    let sessionExport: Bool
+}
+
 private struct DeleteEnvVarRequest: Encodable {
     let id: Int64
+}
+
+private struct AuthPasswordChangeRequest: Encodable {
+    let currentPassword: String?
+    let newPassword: String
+}
+
+private struct AuthPasskeyIdRequest: Encodable {
+    let id: Int64
+}
+
+private struct AuthPasskeyRenameRequest: Encodable {
+    let id: Int64
+    let name: String
 }

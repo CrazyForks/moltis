@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 extension SettingsSectionContent {
@@ -113,14 +114,24 @@ extension SettingsSectionContent {
 
             Section("Paths") {
                 LabeledContent("Config directory") {
-                    Text(settings.environmentConfigDir)
-                        .textSelection(.enabled)
-                        .foregroundStyle(.secondary)
+                    HStack(spacing: 8) {
+                        Text(settings.environmentConfigDir)
+                            .textSelection(.enabled)
+                            .foregroundStyle(.secondary)
+                        Button("Reveal in Finder") {
+                            revealPathInFinder(settings.environmentConfigDir)
+                        }
+                    }
                 }
                 LabeledContent("Data directory") {
-                    Text(settings.environmentDataDir)
-                        .textSelection(.enabled)
-                        .foregroundStyle(.secondary)
+                    HStack(spacing: 8) {
+                        Text(settings.environmentDataDir)
+                            .textSelection(.enabled)
+                            .foregroundStyle(.secondary)
+                        Button("Reveal in Finder") {
+                            revealPathInFinder(settings.environmentDataDir)
+                        }
+                    }
                 }
             }
         }
@@ -185,5 +196,17 @@ extension SettingsSectionContent {
             .padding(.vertical, 2)
             .background(.quaternary)
             .clipShape(Capsule())
+    }
+
+    func revealPathInFinder(_ path: String) {
+        let trimmedPath = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedPath.isEmpty else { return }
+
+        let url = URL(fileURLWithPath: trimmedPath)
+        if FileManager.default.fileExists(atPath: trimmedPath) {
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+        } else {
+            NSWorkspace.shared.open(url.deletingLastPathComponent())
+        }
     }
 }

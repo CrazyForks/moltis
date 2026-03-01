@@ -526,6 +526,91 @@ struct ListEnvVarsResponse {
     vault_status: String,
 }
 
+#[derive(Debug, Serialize)]
+struct MemoryStatusResponse {
+    available: bool,
+    total_files: usize,
+    total_chunks: usize,
+    db_size: u64,
+    db_size_display: String,
+    embedding_model: String,
+    has_embeddings: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct MemoryConfigResponse {
+    backend: String,
+    citations: String,
+    disable_rag: bool,
+    llm_reranking: bool,
+    session_export: bool,
+    qmd_feature_enabled: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct MemoryConfigUpdateRequest {
+    #[serde(default)]
+    backend: Option<String>,
+    #[serde(default)]
+    citations: Option<String>,
+    #[serde(default)]
+    llm_reranking: Option<bool>,
+    #[serde(default)]
+    disable_rag: Option<bool>,
+    #[serde(default)]
+    session_export: Option<bool>,
+}
+
+#[derive(Debug, Serialize)]
+struct MemoryQmdStatusResponse {
+    feature_enabled: bool,
+    available: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct AuthStatusResponse {
+    auth_disabled: bool,
+    has_password: bool,
+    has_passkeys: bool,
+    setup_complete: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct AuthPasswordChangeRequest {
+    #[serde(default)]
+    current_password: Option<String>,
+    new_password: String,
+}
+
+#[derive(Debug, Serialize)]
+struct AuthPasswordChangeResponse {
+    ok: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    recovery_key: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct AuthPasskeysResponse {
+    passkeys: Vec<moltis_gateway::auth::PasskeyEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AuthPasskeyIdRequest {
+    id: i64,
+}
+
+#[derive(Debug, Deserialize)]
+struct AuthPasskeyRenameRequest {
+    id: i64,
+    name: String,
+}
+
 // ── Encoding helpers ───────────────────────────────────────────────────────
 
 fn encode_json<T: Serialize>(value: &T) -> String {
@@ -575,6 +660,18 @@ fn read_c_string(ptr: *const c_char) -> Result<String, String> {
     match c_str.to_str() {
         Ok(text) => Ok(text.to_owned()),
         Err(_) => Err("request_json was not valid UTF-8".to_owned()),
+    }
+}
+
+fn format_bytes(bytes: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = 1024 * KB;
+    const GB: u64 = 1024 * MB;
+    match bytes {
+        b if b >= GB => format!("{:.1} GB", b as f64 / GB as f64),
+        b if b >= MB => format!("{:.1} MB", b as f64 / MB as f64),
+        b if b >= KB => format!("{:.1} KB", b as f64 / KB as f64),
+        b => format!("{b} B"),
     }
 }
 
@@ -1894,6 +1991,284 @@ pub extern "C" fn moltis_save_config(request_json: *const c_char) -> *mut c_char
     })
 }
 
+/// Returns memory status (counts + db size) for the settings panel.
+#[unsafe(no_mangle)]
+pub extern "C" fn moltis_memory_status() -> *mut c_char {
+    record_call("moltis_memory_status");
+    trace_call("moltis_memory_status");
+
+    with_ffi_boundary(|| {
+        use {sqlx::sqlite::SqliteConnectOptions, std::str::FromStr};
+
+        let config = moltis_config::discover_and_load();
+        let embedding_model = config
+            .memory
+            .model
+            .clone()
+            .unwrap_or_else(|| "none".to_owned());
+        let has_embeddings = !config.memory.disable_rag;
+
+        let db_path = moltis_config::data_dir().join("memory.db");
+        let db_size = std::fs::metadata(&db_path).map(|m| m.len()).unwrap_or(0);
+
+        if !db_path.exists() {
+            let response = MemoryStatusResponse {
+                available: false,
+                total_files: 0,
+                total_chunks: 0,
+                db_size,
+                db_size_display: format_bytes(db_size),
+                embedding_model,
+                has_embeddings,
+                error: Some("memory.db not found".to_owned()),
+            };
+            return encode_json(&response);
+        }
+
+        let options = match SqliteConnectOptions::from_str(&format!("sqlite:{}", db_path.display()))
+        {
+            Ok(opts) => opts.create_if_missing(false).read_only(true),
+            Err(error) => {
+                let response = MemoryStatusResponse {
+                    available: false,
+                    total_files: 0,
+                    total_chunks: 0,
+                    db_size,
+                    db_size_display: format_bytes(db_size),
+                    embedding_model,
+                    has_embeddings,
+                    error: Some(format!("invalid sqlite path: {error}")),
+                };
+                return encode_json(&response);
+            },
+        };
+
+        let pool = match BRIDGE
+            .runtime
+            .block_on(sqlx::SqlitePool::connect_with(options))
+        {
+            Ok(pool) => pool,
+            Err(error) => {
+                let response = MemoryStatusResponse {
+                    available: false,
+                    total_files: 0,
+                    total_chunks: 0,
+                    db_size,
+                    db_size_display: format_bytes(db_size),
+                    embedding_model,
+                    has_embeddings,
+                    error: Some(format!("failed to open memory.db: {error}")),
+                };
+                return encode_json(&response);
+            },
+        };
+
+        let (total_files, total_chunks) = BRIDGE.runtime.block_on(async {
+            let has_files_table: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'files'",
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap_or(0);
+            let has_chunks_table: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'chunks'",
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap_or(0);
+
+            let files: i64 = if has_files_table > 0 {
+                sqlx::query_scalar("SELECT COUNT(*) FROM files")
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap_or(0)
+            } else {
+                0
+            };
+            let chunks: i64 = if has_chunks_table > 0 {
+                sqlx::query_scalar("SELECT COUNT(*) FROM chunks")
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap_or(0)
+            } else {
+                0
+            };
+
+            let files_count: usize = files.max(0).try_into().unwrap_or(0);
+            let chunk_count: usize = chunks.max(0).try_into().unwrap_or(0);
+            (files_count, chunk_count)
+        });
+        BRIDGE.runtime.block_on(pool.close());
+
+        let response = MemoryStatusResponse {
+            available: true,
+            total_files,
+            total_chunks,
+            db_size,
+            db_size_display: format_bytes(db_size),
+            embedding_model,
+            has_embeddings,
+            error: None,
+        };
+        encode_json(&response)
+    })
+}
+
+/// Returns memory configuration fields used by the settings panel.
+#[unsafe(no_mangle)]
+pub extern "C" fn moltis_memory_config_get() -> *mut c_char {
+    record_call("moltis_memory_config_get");
+    trace_call("moltis_memory_config_get");
+
+    with_ffi_boundary(|| {
+        let config = moltis_config::discover_and_load();
+        let memory = config.memory;
+        let response = MemoryConfigResponse {
+            backend: memory.backend.unwrap_or_else(|| "builtin".to_owned()),
+            citations: memory.citations.unwrap_or_else(|| "auto".to_owned()),
+            disable_rag: memory.disable_rag,
+            llm_reranking: memory.llm_reranking,
+            session_export: memory.session_export,
+            qmd_feature_enabled: cfg!(feature = "qmd"),
+        };
+        encode_json(&response)
+    })
+}
+
+/// Updates memory configuration fields used by the settings panel.
+#[unsafe(no_mangle)]
+pub extern "C" fn moltis_memory_config_update(request_json: *const c_char) -> *mut c_char {
+    record_call("moltis_memory_config_update");
+    trace_call("moltis_memory_config_update");
+
+    with_ffi_boundary(|| {
+        let raw = match read_c_string(request_json) {
+            Ok(value) => value,
+            Err(message) => {
+                record_error(
+                    "moltis_memory_config_update",
+                    "null_pointer_or_invalid_utf8",
+                );
+                return encode_error("null_pointer_or_invalid_utf8", &message);
+            },
+        };
+
+        let request = match serde_json::from_str::<MemoryConfigUpdateRequest>(&raw) {
+            Ok(request) => request,
+            Err(error) => {
+                record_error("moltis_memory_config_update", "invalid_json");
+                return encode_error("invalid_json", &error.to_string());
+            },
+        };
+
+        let current = moltis_config::discover_and_load().memory;
+        let backend = request
+            .backend
+            .unwrap_or_else(|| current.backend.unwrap_or_else(|| "builtin".to_owned()));
+        let citations = request
+            .citations
+            .unwrap_or_else(|| current.citations.unwrap_or_else(|| "auto".to_owned()));
+        let llm_reranking = request.llm_reranking.unwrap_or(current.llm_reranking);
+        let session_export = request.session_export.unwrap_or(current.session_export);
+        let mut disable_rag = current.disable_rag;
+
+        let backend_value = backend.clone();
+        let citations_value = citations.clone();
+
+        if let Err(error) = moltis_config::update_config(|cfg| {
+            cfg.memory.backend = Some(backend_value.clone());
+            cfg.memory.citations = Some(citations_value.clone());
+            cfg.memory.llm_reranking = llm_reranking;
+            if let Some(value) = request.disable_rag {
+                cfg.memory.disable_rag = value;
+            }
+            cfg.memory.session_export = session_export;
+            disable_rag = cfg.memory.disable_rag;
+        }) {
+            record_error("moltis_memory_config_update", "save_failed");
+            return encode_error("save_failed", &error.to_string());
+        }
+
+        let response = MemoryConfigResponse {
+            backend,
+            citations,
+            disable_rag,
+            llm_reranking,
+            session_export,
+            qmd_feature_enabled: cfg!(feature = "qmd"),
+        };
+        encode_json(&response)
+    })
+}
+
+/// Returns QMD availability (binary detection + optional version).
+#[unsafe(no_mangle)]
+pub extern "C" fn moltis_memory_qmd_status() -> *mut c_char {
+    record_call("moltis_memory_qmd_status");
+    trace_call("moltis_memory_qmd_status");
+
+    with_ffi_boundary(|| {
+        if !cfg!(feature = "qmd") {
+            let response = MemoryQmdStatusResponse {
+                feature_enabled: false,
+                available: false,
+                version: None,
+                error: Some("QMD feature is disabled in this build".to_owned()),
+            };
+            return encode_json(&response);
+        }
+
+        let command = moltis_config::discover_and_load()
+            .memory
+            .qmd
+            .command
+            .unwrap_or_else(|| "qmd".to_owned());
+
+        let output = std::process::Command::new(&command)
+            .arg("--version")
+            .output();
+
+        let response = match output {
+            Ok(out) if out.status.success() => {
+                let version = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+                let resolved_version = if version.is_empty() {
+                    None
+                } else {
+                    Some(version)
+                };
+                MemoryQmdStatusResponse {
+                    feature_enabled: true,
+                    available: true,
+                    version: resolved_version,
+                    error: None,
+                }
+            },
+            Ok(out) => {
+                let stderr = String::from_utf8_lossy(&out.stderr).trim().to_owned();
+                let detail = if stderr.is_empty() {
+                    format!("{command} --version exited with status {}", out.status)
+                } else {
+                    stderr
+                };
+                MemoryQmdStatusResponse {
+                    feature_enabled: true,
+                    available: false,
+                    version: None,
+                    error: Some(detail),
+                }
+            },
+            Err(error) => MemoryQmdStatusResponse {
+                feature_enabled: true,
+                available: false,
+                version: None,
+                error: Some(error.to_string()),
+            },
+        };
+
+        encode_json(&response)
+    })
+}
+
 /// Returns the soul text from `SOUL.md`.
 #[unsafe(no_mangle)]
 pub extern "C" fn moltis_get_soul() -> *mut c_char {
@@ -2156,6 +2531,283 @@ pub extern "C" fn moltis_delete_env_var(request_json: *const c_char) -> *mut c_c
             Err(e) => {
                 record_error("moltis_delete_env_var", "ENV_DELETE_FAILED");
                 encode_error("ENV_DELETE_FAILED", &e.to_string())
+            },
+        }
+    })
+}
+
+/// Returns authentication status for the HTTP server.
+#[unsafe(no_mangle)]
+pub extern "C" fn moltis_auth_status() -> *mut c_char {
+    record_call("moltis_auth_status");
+    trace_call("moltis_auth_status");
+
+    with_ffi_boundary(|| {
+        let has_password = match BRIDGE
+            .runtime
+            .block_on(BRIDGE.credential_store.has_password())
+        {
+            Ok(value) => value,
+            Err(error) => {
+                record_error("moltis_auth_status", "AUTH_STATUS_FAILED");
+                return encode_error("AUTH_STATUS_FAILED", &error.to_string());
+            },
+        };
+
+        let has_passkeys = match BRIDGE
+            .runtime
+            .block_on(BRIDGE.credential_store.has_passkeys())
+        {
+            Ok(value) => value,
+            Err(error) => {
+                record_error("moltis_auth_status", "AUTH_STATUS_FAILED");
+                return encode_error("AUTH_STATUS_FAILED", &error.to_string());
+            },
+        };
+
+        encode_json(&AuthStatusResponse {
+            auth_disabled: BRIDGE.credential_store.is_auth_disabled(),
+            has_password,
+            has_passkeys,
+            setup_complete: BRIDGE.credential_store.is_setup_complete(),
+        })
+    })
+}
+
+/// Adds or changes the authentication password.
+///
+/// Accepts JSON:
+/// - `{"new_password":"..."}` to set the first password.
+/// - `{"current_password":"...","new_password":"..."}` to rotate.
+#[unsafe(no_mangle)]
+pub extern "C" fn moltis_auth_password_change(request_json: *const c_char) -> *mut c_char {
+    record_call("moltis_auth_password_change");
+    trace_call("moltis_auth_password_change");
+
+    with_ffi_boundary(|| {
+        let raw = match read_c_string(request_json) {
+            Ok(value) => value,
+            Err(message) => {
+                record_error(
+                    "moltis_auth_password_change",
+                    "null_pointer_or_invalid_utf8",
+                );
+                return encode_error("null_pointer_or_invalid_utf8", &message);
+            },
+        };
+
+        let request = match serde_json::from_str::<AuthPasswordChangeRequest>(&raw) {
+            Ok(r) => r,
+            Err(error) => {
+                record_error("moltis_auth_password_change", "invalid_json");
+                return encode_error("invalid_json", &error.to_string());
+            },
+        };
+
+        if request.new_password.len() < 8 {
+            record_error("moltis_auth_password_change", "AUTH_PASSWORD_TOO_SHORT");
+            return encode_error(
+                "AUTH_PASSWORD_TOO_SHORT",
+                "new password must be at least 8 characters",
+            );
+        }
+
+        let has_password = match BRIDGE
+            .runtime
+            .block_on(BRIDGE.credential_store.has_password())
+        {
+            Ok(value) => value,
+            Err(error) => {
+                record_error("moltis_auth_password_change", "AUTH_STATUS_FAILED");
+                return encode_error("AUTH_STATUS_FAILED", &error.to_string());
+            },
+        };
+
+        let mut recovery_key: Option<String> = None;
+
+        if has_password {
+            let current_password = request.current_password.unwrap_or_default();
+            if let Err(error) = BRIDGE.runtime.block_on(
+                BRIDGE
+                    .credential_store
+                    .change_password(&current_password, &request.new_password),
+            ) {
+                let message = error.to_string();
+                if message.contains("incorrect") {
+                    record_error(
+                        "moltis_auth_password_change",
+                        "AUTH_INVALID_CURRENT_PASSWORD",
+                    );
+                    return encode_error("AUTH_INVALID_CURRENT_PASSWORD", &message);
+                }
+                record_error("moltis_auth_password_change", "AUTH_PASSWORD_CHANGE_FAILED");
+                return encode_error("AUTH_PASSWORD_CHANGE_FAILED", &message);
+            }
+
+            if let Some(vault) = BRIDGE.credential_store.vault()
+                && let Err(error) = BRIDGE
+                    .runtime
+                    .block_on(vault.change_password(&current_password, &request.new_password))
+            {
+                emit_log(
+                    "WARN",
+                    "bridge.auth",
+                    &format!("Vault password rotation failed: {error}"),
+                );
+            }
+        } else if let Err(error) = BRIDGE
+            .runtime
+            .block_on(BRIDGE.credential_store.add_password(&request.new_password))
+        {
+            record_error("moltis_auth_password_change", "AUTH_PASSWORD_SET_FAILED");
+            return encode_error("AUTH_PASSWORD_SET_FAILED", &error.to_string());
+        } else if let Some(vault) = BRIDGE.credential_store.vault() {
+            match BRIDGE
+                .runtime
+                .block_on(vault.initialize(&request.new_password))
+            {
+                Ok(key) => {
+                    recovery_key = Some(key.phrase().to_owned());
+                },
+                Err(moltis_gateway::auth::moltis_vault::VaultError::AlreadyInitialized) => {
+                    if let Err(error) = BRIDGE.runtime.block_on(vault.unseal(&request.new_password))
+                    {
+                        emit_log(
+                            "WARN",
+                            "bridge.auth",
+                            &format!("Vault unseal failed after password set: {error}"),
+                        );
+                    }
+                },
+                Err(error) => {
+                    emit_log(
+                        "WARN",
+                        "bridge.auth",
+                        &format!("Vault initialization failed after password set: {error}"),
+                    );
+                },
+            }
+        }
+
+        encode_json(&AuthPasswordChangeResponse {
+            ok: true,
+            recovery_key: recovery_key.take(),
+        })
+    })
+}
+
+/// Removes all authentication credentials (passwords, passkeys, sessions, API keys).
+#[unsafe(no_mangle)]
+pub extern "C" fn moltis_auth_reset() -> *mut c_char {
+    record_call("moltis_auth_reset");
+    trace_call("moltis_auth_reset");
+
+    with_ffi_boundary(
+        || match BRIDGE.runtime.block_on(BRIDGE.credential_store.reset_all()) {
+            Ok(()) => encode_json(&OkResponse { ok: true }),
+            Err(error) => {
+                record_error("moltis_auth_reset", "AUTH_RESET_FAILED");
+                encode_error("AUTH_RESET_FAILED", &error.to_string())
+            },
+        },
+    )
+}
+
+/// Lists all registered passkeys.
+#[unsafe(no_mangle)]
+pub extern "C" fn moltis_auth_list_passkeys() -> *mut c_char {
+    record_call("moltis_auth_list_passkeys");
+    trace_call("moltis_auth_list_passkeys");
+
+    with_ffi_boundary(|| {
+        let passkeys = match BRIDGE
+            .runtime
+            .block_on(BRIDGE.credential_store.list_passkeys())
+        {
+            Ok(entries) => entries,
+            Err(error) => {
+                record_error("moltis_auth_list_passkeys", "AUTH_PASSKEY_LIST_FAILED");
+                return encode_error("AUTH_PASSKEY_LIST_FAILED", &error.to_string());
+            },
+        };
+
+        encode_json(&AuthPasskeysResponse { passkeys })
+    })
+}
+
+/// Removes a passkey by database ID.
+#[unsafe(no_mangle)]
+pub extern "C" fn moltis_auth_remove_passkey(request_json: *const c_char) -> *mut c_char {
+    record_call("moltis_auth_remove_passkey");
+    trace_call("moltis_auth_remove_passkey");
+
+    with_ffi_boundary(|| {
+        let raw = match read_c_string(request_json) {
+            Ok(value) => value,
+            Err(message) => {
+                record_error("moltis_auth_remove_passkey", "null_pointer_or_invalid_utf8");
+                return encode_error("null_pointer_or_invalid_utf8", &message);
+            },
+        };
+
+        let request = match serde_json::from_str::<AuthPasskeyIdRequest>(&raw) {
+            Ok(r) => r,
+            Err(error) => {
+                record_error("moltis_auth_remove_passkey", "invalid_json");
+                return encode_error("invalid_json", &error.to_string());
+            },
+        };
+
+        match BRIDGE
+            .runtime
+            .block_on(BRIDGE.credential_store.remove_passkey(request.id))
+        {
+            Ok(()) => encode_json(&OkResponse { ok: true }),
+            Err(error) => {
+                record_error("moltis_auth_remove_passkey", "AUTH_PASSKEY_REMOVE_FAILED");
+                encode_error("AUTH_PASSKEY_REMOVE_FAILED", &error.to_string())
+            },
+        }
+    })
+}
+
+/// Renames a passkey.
+#[unsafe(no_mangle)]
+pub extern "C" fn moltis_auth_rename_passkey(request_json: *const c_char) -> *mut c_char {
+    record_call("moltis_auth_rename_passkey");
+    trace_call("moltis_auth_rename_passkey");
+
+    with_ffi_boundary(|| {
+        let raw = match read_c_string(request_json) {
+            Ok(value) => value,
+            Err(message) => {
+                record_error("moltis_auth_rename_passkey", "null_pointer_or_invalid_utf8");
+                return encode_error("null_pointer_or_invalid_utf8", &message);
+            },
+        };
+
+        let request = match serde_json::from_str::<AuthPasskeyRenameRequest>(&raw) {
+            Ok(r) => r,
+            Err(error) => {
+                record_error("moltis_auth_rename_passkey", "invalid_json");
+                return encode_error("invalid_json", &error.to_string());
+            },
+        };
+
+        let name = request.name.trim();
+        if name.is_empty() {
+            record_error("moltis_auth_rename_passkey", "AUTH_PASSKEY_NAME_REQUIRED");
+            return encode_error("AUTH_PASSKEY_NAME_REQUIRED", "name cannot be empty");
+        }
+
+        match BRIDGE
+            .runtime
+            .block_on(BRIDGE.credential_store.rename_passkey(request.id, name))
+        {
+            Ok(()) => encode_json(&OkResponse { ok: true }),
+            Err(error) => {
+                record_error("moltis_auth_rename_passkey", "AUTH_PASSKEY_RENAME_FAILED");
+                encode_error("AUTH_PASSKEY_RENAME_FAILED", &error.to_string())
             },
         }
     })
@@ -2545,6 +3197,113 @@ mod tests {
     }
 
     #[test]
+    fn memory_status_returns_expected_fields() {
+        let payload = json_from_ptr(moltis_memory_status());
+
+        assert!(
+            payload.get("available").and_then(Value::as_bool).is_some(),
+            "memory_status should return available"
+        );
+        assert!(
+            payload.get("total_files").and_then(Value::as_u64).is_some(),
+            "memory_status should return total_files"
+        );
+        assert!(
+            payload
+                .get("total_chunks")
+                .and_then(Value::as_u64)
+                .is_some(),
+            "memory_status should return total_chunks"
+        );
+        assert!(
+            payload
+                .get("db_size_display")
+                .and_then(Value::as_str)
+                .is_some(),
+            "memory_status should return db_size_display"
+        );
+    }
+
+    #[test]
+    fn memory_config_get_returns_expected_fields() {
+        let payload = json_from_ptr(moltis_memory_config_get());
+
+        assert!(
+            payload.get("backend").and_then(Value::as_str).is_some(),
+            "memory_config_get should return backend"
+        );
+        assert!(
+            payload.get("citations").and_then(Value::as_str).is_some(),
+            "memory_config_get should return citations"
+        );
+        assert!(
+            payload
+                .get("disable_rag")
+                .and_then(Value::as_bool)
+                .is_some(),
+            "memory_config_get should return disable_rag"
+        );
+        assert!(
+            payload
+                .get("llm_reranking")
+                .and_then(Value::as_bool)
+                .is_some(),
+            "memory_config_get should return llm_reranking"
+        );
+    }
+
+    #[test]
+    fn memory_config_update_returns_error_for_null() {
+        let payload = json_from_ptr(moltis_memory_config_update(std::ptr::null()));
+
+        let code = payload
+            .get("error")
+            .and_then(|v| v.get("code"))
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        assert_eq!(code, "null_pointer_or_invalid_utf8");
+    }
+
+    #[test]
+    fn memory_config_update_round_trip() {
+        let request = serde_json::json!({
+            "backend": "builtin",
+            "citations": "auto",
+            "llm_reranking": false,
+            "session_export": false
+        })
+        .to_string();
+        let c_request = CString::new(request).unwrap_or_else(|e| panic!("{e}"));
+        let payload = json_from_ptr(moltis_memory_config_update(c_request.as_ptr()));
+
+        assert_eq!(
+            payload.get("backend").and_then(Value::as_str),
+            Some("builtin"),
+        );
+        assert_eq!(
+            payload.get("citations").and_then(Value::as_str),
+            Some("auto")
+        );
+    }
+
+    #[test]
+    fn memory_qmd_status_returns_expected_fields() {
+        let payload = json_from_ptr(moltis_memory_qmd_status());
+
+        assert!(
+            payload
+                .get("feature_enabled")
+                .and_then(Value::as_bool)
+                .is_some(),
+            "memory_qmd_status should return feature_enabled"
+        );
+        assert!(
+            payload.get("available").and_then(Value::as_bool).is_some(),
+            "memory_qmd_status should return available"
+        );
+    }
+
+    #[test]
     fn get_soul_returns_soul_field() {
         let payload = json_from_ptr(moltis_get_soul());
 
@@ -2679,5 +3438,74 @@ mod tests {
             delete_payload.get("ok").and_then(Value::as_bool),
             Some(true)
         );
+    }
+
+    #[test]
+    fn auth_status_returns_expected_fields() {
+        let payload = json_from_ptr(moltis_auth_status());
+
+        assert!(
+            payload
+                .get("auth_disabled")
+                .and_then(Value::as_bool)
+                .is_some(),
+            "auth_status should return auth_disabled"
+        );
+        assert!(
+            payload
+                .get("has_password")
+                .and_then(Value::as_bool)
+                .is_some(),
+            "auth_status should return has_password"
+        );
+        assert!(
+            payload
+                .get("has_passkeys")
+                .and_then(Value::as_bool)
+                .is_some(),
+            "auth_status should return has_passkeys"
+        );
+        assert!(
+            payload
+                .get("setup_complete")
+                .and_then(Value::as_bool)
+                .is_some(),
+            "auth_status should return setup_complete"
+        );
+    }
+
+    #[test]
+    fn auth_list_passkeys_returns_array() {
+        let payload = json_from_ptr(moltis_auth_list_passkeys());
+        assert!(
+            payload.get("passkeys").and_then(Value::as_array).is_some(),
+            "auth_list_passkeys should return passkeys"
+        );
+    }
+
+    #[test]
+    fn auth_password_change_rejects_short_password() {
+        let request = r#"{"new_password":"short"}"#;
+        let c_request = CString::new(request).unwrap_or_else(|e| panic!("{e}"));
+        let payload = json_from_ptr(moltis_auth_password_change(c_request.as_ptr()));
+
+        let code = payload
+            .get("error")
+            .and_then(|v| v.get("code"))
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        assert_eq!(code, "AUTH_PASSWORD_TOO_SHORT");
+    }
+
+    #[test]
+    fn auth_remove_passkey_returns_error_for_null() {
+        let payload = json_from_ptr(moltis_auth_remove_passkey(std::ptr::null()));
+
+        let code = payload
+            .get("error")
+            .and_then(|v| v.get("code"))
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        assert_eq!(code, "null_pointer_or_invalid_utf8");
     }
 }

@@ -179,6 +179,56 @@ final class MoltisTests: XCTestCase {
         _ = payload.envVars
     }
 
+    func testMemoryStatusReturnsPayload() throws {
+        let client = MoltisClient()
+        let payload = try client.memoryStatus()
+        _ = payload.available
+        _ = payload.totalFiles
+        _ = payload.totalChunks
+    }
+
+    func testMemoryConfigGetReturnsPayload() throws {
+        let client = MoltisClient()
+        let payload = try client.memoryConfigGet()
+        XCTAssertFalse(payload.backend.isEmpty)
+        XCTAssertFalse(payload.citations.isEmpty)
+    }
+
+    func testMemoryQmdStatusReturnsPayload() throws {
+        let client = MoltisClient()
+        let payload = try client.memoryQmdStatus()
+        _ = payload.featureEnabled
+        _ = payload.available
+    }
+
+    func testAuthStatusReturnsPayload() throws {
+        let client = MoltisClient()
+        let status = try client.authStatus()
+        _ = status.authDisabled
+        _ = status.hasPassword
+        _ = status.hasPasskeys
+        _ = status.setupComplete
+    }
+
+    func testAuthPasskeyListReturnsPayload() throws {
+        let client = MoltisClient()
+        let passkeys = try client.authListPasskeys()
+        _ = passkeys
+    }
+
+    func testAuthPasswordChangeRejectsShortPassword() {
+        let client = MoltisClient()
+        XCTAssertThrowsError(
+            try client.authPasswordChange(currentPassword: nil, newPassword: "short")
+        ) { error in
+            guard case let MoltisClientError.bridgeError(code, _) = error else {
+                XCTFail("Expected bridgeError for short password")
+                return
+            }
+            XCTAssertEqual(code, "AUTH_PASSWORD_TOO_SHORT")
+        }
+    }
+
     func testProviderStoreLoadsKnownProviders() throws {
         let store = ProviderStore()
         store.loadKnownProviders()

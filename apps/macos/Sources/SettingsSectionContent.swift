@@ -1,3 +1,5 @@
+// swiftlint:disable file_length
+import AppKit
 import SwiftUI
 
 /// Returns raw form controls for a given settings section.
@@ -7,6 +9,12 @@ struct SettingsSectionContent: View {
     @ObservedObject var settings: AppSettings
     @ObservedObject var providerStore: ProviderStore
     var logStore: LogStore?
+    @State private var securityCurrentPassword = ""
+    @State private var securityNewPassword = ""
+    @State private var securityConfirmPassword = ""
+    @State private var securityResetConfirm = false
+    @State private var editingPasskeyId: Int64?
+    @State private var editingPasskeyName = ""
 
     var body: some View {
         switch section {
@@ -59,11 +67,120 @@ private extension SettingsSectionContent {
 
     var memoryPane: some View {
         Group {
-            Toggle("Enable memory", isOn: $settings.memoryEnabled)
-                .onChange(of: settings.memoryEnabled) { settings.saveMemory() }
-            Picker("Memory mode", selection: $settings.memoryMode) {
-                ForEach(settings.memoryModes, id: \.self) { mode in
-                    Text(mode.capitalized).tag(mode)
+            Section {
+                if settings.memoryLoading {
+                    ProgressView("Loading memory status…")
+                } else {
+                    LabeledContent("Files") {
+                        Text("\(settings.memoryTotalFiles)")
+                    }
+                    LabeledContent("Chunks") {
+                        Text("\(settings.memoryTotalChunks)")
+                    }
+                    LabeledContent("Embedding model") {
+                        Text(settings.memoryEmbeddingModel)
+                            .font(.system(.caption, design: .monospaced))
+                    }
+                    LabeledContent("Embeddings") {
+                        Text(settings.memoryHasEmbeddings ? "Enabled" : "Disabled")
+                    }
+                    LabeledContent("Database size") {
+                        Text(settings.memoryDbSizeDisplay)
+                    }
+                    if let error = settings.memoryError {
+                        Text(error)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
+                    Button("Refresh status") {
+                        settings.loadMemorySettings()
+                    }
+                }
+            } header: {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Overview")
+                        .textCase(nil)
+                    Text(
+                        "Configure long-term memory retrieval, citations, reranking, and session export."
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .textCase(nil)
+                }
+            }
+
+            Section("Configuration") {
+                Toggle("Enable memory retrieval (RAG)", isOn: $settings.memoryEnabled)
+                Picker("Backend", selection: $settings.memoryBackend) {
+                    ForEach(settings.memoryBackends, id: \.self) { backend in
+                        if backend == "builtin" {
+                            Text("Built-in (Recommended)").tag(backend)
+                        } else {
+                            Text("QMD").tag(backend)
+                        }
+                    }
+                }
+                Picker("Citations", selection: $settings.memoryCitations) {
+                    ForEach(settings.memoryCitationModes, id: \.self) { mode in
+                        switch mode {
+                        case "auto":
+                            Text("Auto (multi-file only)").tag(mode)
+                        case "on":
+                            Text("Always").tag(mode)
+                        default:
+                            Text("Never").tag(mode)
+                        }
+                    }
+                }
+                Toggle("Enable LLM reranking", isOn: $settings.memoryLlmReranking)
+                Toggle("Export session transcripts to memory", isOn: $settings.memorySessionExport)
+
+                HStack(spacing: 8) {
+                    Button(settings.memorySaving ? "Saving…" : "Save") {
+                        settings.saveMemory()
+                    }
+                    .disabled(settings.memorySaving)
+                    if settings.memorySaved {
+                        Text("Saved")
+                            .font(.caption)
+                            .foregroundStyle(.green)
+                    }
+                }
+            }
+
+            Section {
+                if settings.memoryQmdAvailable {
+                    Text(
+                        settings.memoryQmdVersion.isEmpty
+                            ? "QMD detected."
+                            : "QMD detected (\(settings.memoryQmdVersion))."
+                    )
+                    .foregroundStyle(.secondary)
+                } else {
+                    Text(
+                        "QMD was not detected in PATH. Install with `npm install -g @tobilu/qmd` and run `qmd daemon`."
+                    )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                if let error = settings.memoryQmdError {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+                if !settings.memoryQmdFeatureEnabled {
+                    Text("QMD feature is disabled in this build.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } header: {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("QMD")
+                        .textCase(nil)
+                    Text("QMD backend availability and installation status.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .textCase(nil)
                 }
             }
         }
@@ -126,10 +243,221 @@ private extension SettingsSectionContent {
 private extension SettingsSectionContent {
     var securityPane: some View {
         Group {
-            Toggle("Require password login", isOn: $settings.requirePassword)
-                .onChange(of: settings.requirePassword) { settings.saveSecurity() }
-            Toggle("Enable passkeys", isOn: $settings.passkeysEnabled)
+            Section {
+                Text(
+                    "Authentication here applies to the HTTP server only "
+                        + "(web UI, API, and WebSocket). It does not affect "
+                        + "local app-only usage when HTTP Server is off."
+                )
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            Section("Status") {
+                if settings.securityLoading {
+                    ProgressView("Loading authentication status…")
+                } else {
+                    LabeledContent("Authentication") {
+                        Text(settings.authDisabled ? "Disabled" : "Enabled")
+                            .foregroundStyle(settings.authDisabled ? .red : .primary)
+                    }
+                    LabeledContent("Password") {
+                        Text(settings.authHasPassword ? "Configured" : "Not configured")
+                    }
+                    LabeledContent("Passkeys") {
+                        Text("\(settings.securityPasskeys.count)")
+                    }
+                    Button("Refresh status") {
+                        settings.loadSecuritySettings()
+                    }
+                    .disabled(settings.securityBusy)
+                }
+            }
+
+            Section(settings.authHasPassword ? "Change Password" : "Set Password") {
+                if settings.authHasPassword {
+                    SecureField("Current password", text: $securityCurrentPassword)
+                }
+                SecureField(
+                    settings.authHasPassword ? "New password" : "Password",
+                    text: $securityNewPassword
+                )
+                SecureField(
+                    settings.authHasPassword ? "Confirm new password" : "Confirm password",
+                    text: $securityConfirmPassword
+                )
+
+                Button(
+                    settings.securityBusy
+                        ? (settings.authHasPassword ? "Changing…" : "Setting…")
+                        : (settings.authHasPassword ? "Change password" : "Set password")
+                ) {
+                    settings.securityError = nil
+                    settings.securityMessage = nil
+
+                    guard securityNewPassword == securityConfirmPassword else {
+                        settings.securityError = "Passwords do not match."
+                        return
+                    }
+
+                    let current = settings.authHasPassword ? securityCurrentPassword : nil
+                    settings.changeAuthenticationPassword(
+                        currentPassword: current,
+                        newPassword: securityNewPassword
+                    )
+                    if settings.securityError == nil {
+                        securityCurrentPassword = ""
+                        securityNewPassword = ""
+                        securityConfirmPassword = ""
+                    }
+                }
+                .disabled(
+                    settings.securityBusy
+                        || securityNewPassword.isEmpty
+                        || securityConfirmPassword.isEmpty
+                        || (settings.authHasPassword && securityCurrentPassword.isEmpty)
+                )
+
+                if let message = settings.securityMessage {
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(.green)
+                }
+                if let error = settings.securityError {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+                if let recoveryKey = settings.securityRecoveryKey {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Save this recovery key")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text(recoveryKey)
+                            .font(.system(.caption, design: .monospaced))
+                            .textSelection(.enabled)
+                        Button("Copy Recovery Key") {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(recoveryKey, forType: .string)
+                        }
+                        .controlSize(.small)
+                    }
+                }
+            }
+
+            Section("Passkeys") {
+                if settings.securityLoading {
+                    ProgressView("Loading passkeys…")
+                } else if settings.securityPasskeys.isEmpty {
+                    Text("No passkeys registered.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(settings.securityPasskeys) { passkey in
+                        if editingPasskeyId == passkey.id {
+                            HStack(spacing: 8) {
+                                TextField("Passkey name", text: $editingPasskeyName)
+                                Button("Save") {
+                                    let name = editingPasskeyName.trimmingCharacters(in: .whitespacesAndNewlines)
+                                    guard !name.isEmpty else {
+                                        settings.securityError = "Passkey name cannot be empty."
+                                        return
+                                    }
+                                    settings.renamePasskey(id: passkey.id, name: name)
+                                    if settings.securityError == nil {
+                                        editingPasskeyId = nil
+                                        editingPasskeyName = ""
+                                    }
+                                }
+                                .controlSize(.small)
+                                .disabled(settings.securityBusy)
+                                Button("Cancel") {
+                                    editingPasskeyId = nil
+                                    editingPasskeyName = ""
+                                }
+                                .controlSize(.small)
+                            }
+                        } else {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(passkey.name)
+                                    Text(passkey.createdAt)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Button("Rename") {
+                                    editingPasskeyId = passkey.id
+                                    editingPasskeyName = passkey.name
+                                }
+                                .controlSize(.small)
+                                .disabled(settings.securityBusy)
+                                Button("Remove", role: .destructive) {
+                                    settings.removePasskey(id: passkey.id)
+                                    if editingPasskeyId == passkey.id {
+                                        editingPasskeyId = nil
+                                        editingPasskeyName = ""
+                                    }
+                                }
+                                .controlSize(.small)
+                                .disabled(settings.securityBusy)
+                            }
+                        }
+                    }
+                }
+
+                Text("Passkey registration uses WebAuthn in the web interface.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Button("Open Web Security to Add Passkey") {
+                    openWebSecurityInBrowser()
+                }
+                .disabled(settings.securityBusy)
+            }
+
+            Section("Danger Zone") {
+                if settings.authSetupComplete {
+                    if securityResetConfirm {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Are you sure? This removes password, passkeys, API keys, and sessions.")
+                                .font(.caption)
+                                .foregroundStyle(.red)
+                            HStack(spacing: 8) {
+                                Button("Yes, Remove All Authentication", role: .destructive) {
+                                    settings.resetAuthentication()
+                                    securityResetConfirm = false
+                                }
+                                .disabled(settings.securityBusy)
+                                Button("Cancel") {
+                                    securityResetConfirm = false
+                                }
+                                .disabled(settings.securityBusy)
+                            }
+                        }
+                    } else {
+                        Button("Remove All Authentication", role: .destructive) {
+                            securityResetConfirm = true
+                        }
+                        .disabled(settings.securityBusy)
+                    }
+                } else {
+                    Text("Authentication is not fully configured yet.")
+                        .foregroundStyle(.secondary)
+                }
+            }
         }
+        .onAppear {
+            settings.loadSecuritySettings()
+        }
+    }
+
+    func openWebSecurityInBrowser() {
+        let port = UInt16(settings.httpdPort) ?? 8080
+        let address = "127.0.0.1:\(port)"
+        guard let url = URL(string: "http://\(address)/settings/security") else {
+            return
+        }
+        NSWorkspace.shared.open(url)
     }
 
     var tailscalePane: some View {

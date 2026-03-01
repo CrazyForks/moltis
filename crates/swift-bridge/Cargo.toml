@@ -10,8 +10,9 @@ version.workspace      = true
 crate-type = ["staticlib"]
 
 [features]
-default = ["metrics", "tracing"]
+default = ["metrics", "tracing", "qmd"]
 metrics = ["dep:metrics"]
+qmd = ["moltis-gateway/qmd"]
 tracing = ["dep:tracing"]
 
 [dependencies]
