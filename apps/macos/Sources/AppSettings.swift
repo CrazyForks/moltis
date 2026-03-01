@@ -500,6 +500,13 @@ final class AppSettings: ObservableObject {
         var entry = existingEntry
         entry["enabled"] = channel.enabled
 
+        let name = channel.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if name.isEmpty {
+            entry.removeValue(forKey: "name")
+        } else {
+            entry["name"] = name
+        }
+
         switch channel.channelType {
         case "msteams":
             applyTeamsChannelFields(channel, accountId: accountId, to: &entry)
@@ -741,6 +748,7 @@ extension AppSettings {
                 }
 
                 channels.append(ChannelItem(
+                    name: entry["name"] as? String ?? "",
                     accountId: accountId,
                     channelType: channelType,
                     credential: credential,

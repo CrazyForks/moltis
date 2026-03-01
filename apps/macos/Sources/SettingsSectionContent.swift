@@ -480,7 +480,7 @@ private extension SettingsSectionContent {
 
 private extension SettingsSectionContent {
     var channelsPane: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 16) {
             if settings.channels.isEmpty {
                 SettingsEmptyState(
                     icon: "point.3.connected.trianglepath.dotted",
@@ -491,8 +491,12 @@ private extension SettingsSectionContent {
                 ForEach($settings.channels) { $item in
                     DisclosureGroup {
                         channelFields(item: $item)
+                            .padding(.top, 4)
                     } label: {
                         channelLabel(item: $item)
+                    }
+                    if item.id != settings.channels.last?.id {
+                        Divider()
                     }
                 }
             }

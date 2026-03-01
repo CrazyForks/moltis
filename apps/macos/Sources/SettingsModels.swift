@@ -13,6 +13,7 @@ struct EnvVarItem: Identifiable, Equatable {
 
 struct ChannelItem: Identifiable, Equatable {
     let id: UUID
+    var name: String
     var accountId: String
     var channelType: String
     var credential: String
@@ -22,6 +23,7 @@ struct ChannelItem: Identifiable, Equatable {
 
     init(
         id: UUID = UUID(),
+        name: String = "",
         accountId: String = "",
         channelType: String = "telegram",
         credential: String = "",
@@ -30,6 +32,7 @@ struct ChannelItem: Identifiable, Equatable {
         enabled: Bool = true
     ) {
         self.id = id
+        self.name = name
         self.accountId = accountId
         self.channelType = channelType
         self.credential = credential
