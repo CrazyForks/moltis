@@ -4,9 +4,13 @@ import SwiftUI
 
 extension SettingsSectionContent {
     func channelLabel(item: Binding<ChannelItem>) -> some View {
-        HStack {
-            Text(item.wrappedValue.name.isEmpty ? "Untitled Channel" : item.wrappedValue.name)
-            Text(item.wrappedValue.channelType)
+        let channelType = item.wrappedValue.channelType
+        let title = item.wrappedValue.accountId.trimmingCharacters(in: .whitespacesAndNewlines)
+        let displayName = ChannelItem.displayName(for: channelType)
+
+        return HStack {
+            Text(title.isEmpty ? "New \(displayName) Channel" : title)
+            Text(displayName)
                 .font(.caption)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 2)
@@ -23,13 +27,32 @@ extension SettingsSectionContent {
 
     func channelFields(item: Binding<ChannelItem>) -> some View {
         Group {
-            TextField("Name", text: item.name)
-            Picker("Type", selection: item.channelType) {
-                ForEach(ChannelItem.channelTypes, id: \.self) { type in
-                    Text(type.capitalized).tag(type)
-                }
+            LabeledContent("Channel Type") {
+                Text(ChannelItem.displayName(for: item.wrappedValue.channelType))
+                    .foregroundStyle(.secondary)
             }
-            SecureField("Bot Token", text: item.botToken)
+
+            switch item.wrappedValue.channelType {
+            case "msteams":
+                TextField("App ID / Account ID", text: item.accountId)
+                TextField("App ID (optional override)", text: item.appId)
+                SecureField("App Password", text: item.credential)
+                TextField("Webhook Secret (optional)", text: item.webhookSecret)
+
+            case "discord":
+                TextField("Account ID", text: item.accountId)
+                SecureField("Bot Token", text: item.credential)
+
+            case "whatsapp":
+                TextField("Account ID", text: item.accountId)
+                Text("WhatsApp does not use a bot token. Pairing is done from the web UI or CLI.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+            default:
+                TextField("Bot Username / Account ID", text: item.accountId)
+                SecureField("Bot Token", text: item.credential)
+            }
         }
     }
 }

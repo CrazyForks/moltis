@@ -485,7 +485,7 @@ private extension SettingsSectionContent {
                 SettingsEmptyState(
                     icon: "point.3.connected.trianglepath.dotted",
                     title: "No Channels",
-                    subtitle: "Connect messaging platforms like Telegram or Slack"
+                    subtitle: "Connect messaging platforms like Telegram, Teams, Discord, and WhatsApp"
                 )
             } else {
                 ForEach($settings.channels) { $item in
@@ -496,13 +496,17 @@ private extension SettingsSectionContent {
                     }
                 }
             }
-            Button {
-                settings.channels.append(ChannelItem())
-                settings.saveChannels()
+            Menu {
+                ForEach(ChannelItem.channelTypes, id: \.self) { channelType in
+                    Button("Add \(ChannelItem.displayName(for: channelType))") {
+                        settings.channels.append(ChannelItem(channelType: channelType))
+                    }
+                }
             } label: {
                 Label("Add Channel", systemImage: "plus")
             }
         }
+        .onChange(of: settings.channels) { settings.saveChannels() }
     }
 
     var hooksPane: some View {

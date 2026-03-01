@@ -444,27 +444,125 @@ final class AppSettings: ObservableObject {
 
     func saveChannels() {
         // Convert ChannelItem array back to config shape.
-        // Each channel type is a HashMap<String, Value> keyed by channel name.
-        var channelsByType: [String: [String: Any]] = [:]
-        for channelType in ChannelItem.channelTypes {
-            channelsByType[channelType] = [:]
-        }
+        // Each channel type is a HashMap<String, Value> keyed by account ID.
+        let existingChannelsConfig = rawConfig["channels"] as? [String: Any] ?? [:]
+        var channelsByType = emptyChannelConfigMap()
 
         for channel in channels {
-            var entry: [String: Any] = [
-                "enabled": channel.enabled
-            ]
-            if !channel.botToken.isEmpty {
-                entry["bot_token"] = channel.botToken
-            }
-            let key = channel.name.isEmpty ? "default" : channel.name
-            channelsByType[channel.channelType, default: [:]][key] = entry
+            guard let accountId = normalizedChannelAccountId(channel.accountId) else { continue }
+            let existingEntry = existingChannelEntry(
+                from: existingChannelsConfig,
+                channelType: channel.channelType,
+                accountId: accountId
+            )
+            let entry = mergedChannelEntry(
+                for: channel,
+                accountId: accountId,
+                existingEntry: existingEntry
+            )
+
+            channelsByType[channel.channelType, default: [:]][accountId] = entry
         }
 
         for (channelType, entries) in channelsByType {
             setConfigValue(entries, at: ["channels", channelType])
         }
         persistConfig("channels")
+    }
+
+    private func emptyChannelConfigMap() -> [String: [String: Any]] {
+        var channelsByType: [String: [String: Any]] = [:]
+        for channelType in ChannelItem.channelTypes {
+            channelsByType[channelType] = [:]
+        }
+        return channelsByType
+    }
+
+    private func normalizedChannelAccountId(_ accountId: String) -> String? {
+        let trimmed = accountId.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func existingChannelEntry(
+        from channelsConfig: [String: Any],
+        channelType: String,
+        accountId: String
+    ) -> [String: Any] {
+        let existingTypeMap = channelsConfig[channelType] as? [String: Any]
+        return existingTypeMap?[accountId] as? [String: Any] ?? [:]
+    }
+
+    private func mergedChannelEntry(
+        for channel: ChannelItem,
+        accountId: String,
+        existingEntry: [String: Any]
+    ) -> [String: Any] {
+        var entry = existingEntry
+        entry["enabled"] = channel.enabled
+
+        switch channel.channelType {
+        case "msteams":
+            applyTeamsChannelFields(channel, accountId: accountId, to: &entry)
+        case "telegram", "discord":
+            applyTokenChannelFields(channel, to: &entry)
+        case "whatsapp":
+            clearChannelCredentials(&entry)
+        default:
+            break
+        }
+        return entry
+    }
+
+    private func applyTeamsChannelFields(
+        _ channel: ChannelItem,
+        accountId: String,
+        to entry: inout [String: Any]
+    ) {
+        let appId = channel.appId.trimmingCharacters(in: .whitespacesAndNewlines)
+        entry["app_id"] = appId.isEmpty ? accountId : appId
+
+        let appPassword = channel.credential.trimmingCharacters(in: .whitespacesAndNewlines)
+        if appPassword.isEmpty {
+            entry.removeValue(forKey: "app_password")
+        } else {
+            entry["app_password"] = appPassword
+        }
+
+        let webhookSecret = channel.webhookSecret.trimmingCharacters(in: .whitespacesAndNewlines)
+        if webhookSecret.isEmpty {
+            entry.removeValue(forKey: "webhook_secret")
+        } else {
+            entry["webhook_secret"] = webhookSecret
+        }
+
+        entry.removeValue(forKey: "token")
+        entry.removeValue(forKey: "bot_token")
+    }
+
+    private func applyTokenChannelFields(
+        _ channel: ChannelItem,
+        to entry: inout [String: Any]
+    ) {
+        let token = channel.credential.trimmingCharacters(in: .whitespacesAndNewlines)
+        if token.isEmpty {
+            entry.removeValue(forKey: "token")
+            entry.removeValue(forKey: "bot_token")
+        } else {
+            entry["token"] = token
+            entry.removeValue(forKey: "bot_token")
+        }
+
+        entry.removeValue(forKey: "app_password")
+        entry.removeValue(forKey: "app_id")
+        entry.removeValue(forKey: "webhook_secret")
+    }
+
+    private func clearChannelCredentials(_ entry: inout [String: Any]) {
+        entry.removeValue(forKey: "token")
+        entry.removeValue(forKey: "bot_token")
+        entry.removeValue(forKey: "app_password")
+        entry.removeValue(forKey: "app_id")
+        entry.removeValue(forKey: "webhook_secret")
     }
 
     func saveHooks() {
@@ -628,12 +726,26 @@ extension AppSettings {
         guard let channelsConfig = config["channels"] as? [String: Any] else { return }
         for channelType in ChannelItem.channelTypes {
             guard let typeMap = channelsConfig[channelType] as? [String: Any] else { continue }
-            for (name, value) in typeMap {
+            for (accountId, value) in typeMap {
                 guard let entry = value as? [String: Any] else { continue }
+                let credential: String
+                switch channelType {
+                case "msteams":
+                    credential = entry["app_password"] as? String ?? ""
+                case "telegram", "discord":
+                    credential = (entry["token"] as? String) ?? (entry["bot_token"] as? String) ?? ""
+                case "whatsapp":
+                    credential = ""
+                default:
+                    credential = ""
+                }
+
                 channels.append(ChannelItem(
-                    name: name,
+                    accountId: accountId,
                     channelType: channelType,
-                    botToken: entry["bot_token"] as? String ?? "",
+                    credential: credential,
+                    appId: entry["app_id"] as? String ?? accountId,
+                    webhookSecret: entry["webhook_secret"] as? String ?? "",
                     enabled: entry["enabled"] as? Bool ?? true
                 ))
             }
