@@ -986,6 +986,7 @@ fn gguf_acceleration_name(sys: &local_gguf::system_info::SystemInfo) -> Option<S
 fn gguf_backend_description(sys: &local_gguf::system_info::SystemInfo) -> String {
     match gguf_acceleration_name(sys) {
         Some(acceleration) => format!("Cross-platform, {acceleration} GPU acceleration"),
+        None if sys.has_gpu() => "Cross-platform, GPU acceleration".to_string(),
         None => "Cross-platform, CPU inference".to_string(),
     }
 }
@@ -997,6 +998,7 @@ fn gguf_backend_note(sys: &local_gguf::system_info::SystemInfo, mlx_available: b
 
     let gguf_note = match gguf_acceleration_name(sys) {
         Some(acceleration) => format!("GGUF with {acceleration} acceleration"),
+        None if sys.has_gpu() => "GGUF with GPU acceleration".to_string(),
         None => "GGUF (CPU inference)".to_string(),
     };
 
@@ -1919,6 +1921,37 @@ mod tests {
             gguf_backend_note(&sys, false),
             "GGUF with Metal acceleration (install mlx-lm for native MLX)"
         );
+    }
+
+    #[test]
+    fn test_gguf_backend_description_unknown_gpu_uses_generic_label() {
+        let mut sys = sample_system_info();
+        sys.gguf_devices = vec![local_gguf::runtime_devices::GgufRuntimeDevice {
+            index: 0,
+            name: "ROCm0".into(),
+            description: "AMD".into(),
+            backend: "ROCm".into(),
+            memory_total_bytes: 1,
+            memory_free_bytes: 1,
+        }];
+        assert_eq!(
+            gguf_backend_description(&sys),
+            "Cross-platform, GPU acceleration"
+        );
+    }
+
+    #[test]
+    fn test_gguf_backend_note_unknown_gpu_uses_generic_label() {
+        let mut sys = sample_system_info();
+        sys.gguf_devices = vec![local_gguf::runtime_devices::GgufRuntimeDevice {
+            index: 0,
+            name: "ROCm0".into(),
+            description: "AMD".into(),
+            backend: "ROCm".into(),
+            memory_total_bytes: 1,
+            memory_free_bytes: 1,
+        }];
+        assert_eq!(gguf_backend_note(&sys, false), "GGUF with GPU acceleration");
     }
 
     #[test]

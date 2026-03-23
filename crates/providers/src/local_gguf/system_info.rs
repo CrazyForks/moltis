@@ -3,7 +3,7 @@
 //! Detects available RAM and GPU capabilities to suggest appropriate models.
 
 use {
-    crate::local_gguf::runtime_devices::{self, GgufRuntimeDevice},
+    crate::local_gguf::runtime_devices::{self, GgufRuntimeDevice, read_proc_meminfo},
     sysinfo::System,
 };
 
@@ -116,41 +116,10 @@ impl std::fmt::Display for MemoryTier {
     }
 }
 
-/// Parse `/proc/meminfo` as a fallback when `sysinfo` returns 0 (common in
-/// Docker containers with restrictive cgroup settings).
-///
-/// Returns `(total_bytes, available_bytes)` or `None` if the file is absent or
-/// unparseable.
-fn read_proc_meminfo() -> Option<(u64, u64)> {
-    let content = std::fs::read_to_string("/proc/meminfo").ok()?;
-    let mut total_kb: Option<u64> = None;
-    let mut available_kb: Option<u64> = None;
-
-    for line in content.lines() {
-        if let Some(rest) = line.strip_prefix("MemTotal:") {
-            total_kb = parse_meminfo_kb(rest);
-        } else if let Some(rest) = line.strip_prefix("MemAvailable:") {
-            available_kb = parse_meminfo_kb(rest);
-        }
-        if total_kb.is_some() && available_kb.is_some() {
-            break;
-        }
-    }
-
-    let total = total_kb? * 1024;
-    let available = available_kb.unwrap_or(0) * 1024;
-    Some((total, available))
-}
-
-/// Parse a `/proc/meminfo` value line like `"   16384 kB"` into kilobytes.
-fn parse_meminfo_kb(value: &str) -> Option<u64> {
-    value.split_whitespace().next()?.parse::<u64>().ok()
-}
-
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use {super::*, crate::local_gguf::runtime_devices::parse_meminfo_kb};
 
     fn sample_device(backend: &str) -> GgufRuntimeDevice {
         GgufRuntimeDevice {

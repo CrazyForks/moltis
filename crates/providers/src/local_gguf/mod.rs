@@ -7,7 +7,7 @@
 
 pub mod chat_templates;
 pub mod models;
-pub(crate) mod runtime_devices;
+pub mod runtime_devices;
 pub mod system_info;
 pub mod tool_grammar;
 
