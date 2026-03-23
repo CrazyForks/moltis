@@ -1089,7 +1089,7 @@ pub struct PreparedGatewayCore {
     /// proxy task is not cancelled when `prepare_gateway` returns (dropping
     /// the sender closes the watch channel and triggers immediate shutdown).
     #[cfg(feature = "trusted-network")]
-    _proxy_shutdown_tx: Option<tokio::sync::watch::Sender<bool>>,
+    pub _proxy_shutdown_tx: Option<tokio::sync::watch::Sender<bool>>,
 }
 
 fn restore_saved_local_llm_models(

@@ -269,7 +269,8 @@ pub fn build_gateway_base(
 ) -> (Router<AppState>, AppState) {
     let mut router = Router::new()
         .route("/health", get(health_handler))
-        .route("/ws/chat", get(ws_upgrade_handler));
+        .route("/ws/chat", get(ws_upgrade_handler))
+        .route("/ws", get(ws_upgrade_handler));
 
     // Nest auth routes if credential store is available.
     if let Some(ref cred_store) = state.credential_store {
@@ -325,7 +326,8 @@ pub fn build_gateway_base(
 ) -> (Router<AppState>, AppState) {
     let mut router = Router::new()
         .route("/health", get(health_handler))
-        .route("/ws/chat", get(ws_upgrade_handler));
+        .route("/ws/chat", get(ws_upgrade_handler))
+        .route("/ws", get(ws_upgrade_handler));
 
     // Add Prometheus metrics endpoint (unauthenticated for scraping).
     #[cfg(feature = "prometheus")]
@@ -453,6 +455,11 @@ pub struct PreparedGateway {
     /// the `trusted-network` feature is enabled and the proxy is active).
     #[cfg(feature = "trusted-network")]
     pub audit_buffer: Option<moltis_gateway::network_audit::NetworkAuditBuffer>,
+    /// Keeps the trusted-network proxy alive for the server's full lifetime.
+    /// Dropping this sender closes the watch channel, which is the proxy's
+    /// shutdown signal.
+    #[cfg(feature = "trusted-network")]
+    _proxy_shutdown_tx: Option<tokio::sync::watch::Sender<bool>>,
 }
 
 /// Internal metadata for the startup banner printed by [`start_gateway`].
@@ -535,6 +542,8 @@ pub async fn prepare_gateway(
         push_service,
         #[cfg(feature = "trusted-network")]
             audit_buffer: audit_buffer_for_broadcast,
+        #[cfg(feature = "trusted-network")]
+        _proxy_shutdown_tx,
         sandbox_router,
         browser_for_lifecycle,
         browser_tool_for_warmup,
@@ -951,7 +960,8 @@ pub async fn prepare_gateway(
 
     // Spawn session event → WebSocket forwarder.
     // Events published by the swift-bridge (or any other bus producer) are
-    // relayed to all connected WebSocket clients as `"session"` events.
+    // relayed to all connected WebSocket clients as `"session"` events,
+    // enriched with full entry metadata so clients can update in-place.
     {
         let ws_state = Arc::clone(&state);
         let mut rx = state.session_event_bus.subscribe();
@@ -970,18 +980,75 @@ pub async fn prepare_gateway(
                                 ("patched", session_key.as_str())
                             },
                         };
-                        broadcast(
-                            &ws_state,
-                            "session",
-                            serde_json::json!({
-                                "kind": kind,
-                                "sessionKey": session_key,
-                            }),
-                            BroadcastOpts {
-                                drop_if_slow: true,
-                                ..Default::default()
-                            },
-                        )
+                        let mut payload = serde_json::json!({
+                            "kind": kind,
+                            "sessionKey": session_key,
+                        });
+                        if kind != "deleted"
+                            && let Some(ref metadata) = ws_state.services.session_metadata
+                            && let Some(entry) = metadata.get(session_key).await
+                        {
+                            let active_channel = if let Some(ref binding_json) =
+                                entry.channel_binding
+                            {
+                                if let Ok(target) = serde_json::from_str::<
+                                    moltis_channels::ChannelReplyTarget,
+                                >(binding_json)
+                                {
+                                    metadata
+                                        .get_active_session(
+                                            target.channel_type.as_str(),
+                                            &target.account_id,
+                                            &target.chat_id,
+                                        )
+                                        .await
+                                        .map(|key| key == entry.key)
+                                        .unwrap_or(false)
+                                } else {
+                                    false
+                                }
+                            } else {
+                                false
+                            };
+                            let preview = entry.preview.as_deref().map(|text| {
+                                let truncated = text.chars().take(200).collect::<String>();
+                                if text.chars().count() > 200 {
+                                    format!("{truncated}…")
+                                } else {
+                                    truncated
+                                }
+                            });
+                            let agent_id = entry.agent_id.clone();
+                            payload["entry"] = serde_json::json!({
+                                "id": entry.id,
+                                "key": entry.key,
+                                "label": entry.label,
+                                "model": entry.model,
+                                "createdAt": entry.created_at,
+                                "updatedAt": entry.updated_at,
+                                "messageCount": entry.message_count,
+                                "lastSeenMessageCount": entry.last_seen_message_count,
+                                "projectId": entry.project_id,
+                                "sandbox_enabled": entry.sandbox_enabled,
+                                "sandbox_image": entry.sandbox_image,
+                                "worktree_branch": entry.worktree_branch,
+                                "channelBinding": entry.channel_binding,
+                                "activeChannel": active_channel,
+                                "parentSessionKey": entry.parent_session_key,
+                                "forkPoint": entry.fork_point,
+                                "mcpDisabled": entry.mcp_disabled,
+                                "preview": preview,
+                                "archived": entry.archived,
+                                "agent_id": agent_id.clone(),
+                                "agentId": agent_id,
+                                "node_id": entry.node_id,
+                                "version": entry.version,
+                            });
+                        }
+                        broadcast(&ws_state, "session", payload, BroadcastOpts {
+                            drop_if_slow: true,
+                            ..Default::default()
+                        })
                         .await;
                     },
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
@@ -1505,6 +1572,8 @@ pub async fn prepare_gateway(
         },
         #[cfg(feature = "trusted-network")]
         audit_buffer: audit_buffer_for_broadcast,
+        #[cfg(feature = "trusted-network")]
+        _proxy_shutdown_tx,
     })
 }
 
