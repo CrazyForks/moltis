@@ -2869,6 +2869,17 @@ pub(super) fn register(reg: &mut MethodRegistry) {
                     .into());
                 }
 
+                // Update in-memory first (infallible atomic store), then persist
+                // to disk.  This ordering means a crash between the two steps
+                // leaves the runtime correct and only the file stale — the next
+                // restart reads the file anyway.
+                ctx.state
+                    .services
+                    .mcp
+                    .update_request_timeout(request_timeout_secs)
+                    .await
+                    .map_err(ErrorShape::from)?;
+
                 if let Err(e) = moltis_config::update_config(|cfg| {
                     cfg.mcp.request_timeout_secs = request_timeout_secs;
                 }) {
@@ -2878,13 +2889,6 @@ pub(super) fn register(reg: &mut MethodRegistry) {
                     ))
                     .into());
                 }
-
-                ctx.state
-                    .services
-                    .mcp
-                    .update_request_timeout(request_timeout_secs)
-                    .await
-                    .map_err(ErrorShape::from)?;
 
                 Ok(serde_json::json!({
                     "request_timeout_secs": request_timeout_secs,
