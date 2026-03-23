@@ -82,14 +82,16 @@ fn shared_home_config_payload(config: &moltis_config::MoltisConfig) -> serde_jso
 // ── Session media ────────────────────────────────────────────────────────────
 
 /// Build a `Content-Disposition` header value for a media file.
-/// Uses `inline` for types browsers can render natively (PDF, text, HTML,
-/// images) and `attachment` for everything else so they trigger a download.
+/// Uses `inline` for types browsers can render natively (PDF, text, images)
+/// and `attachment` for everything else so they trigger a download.
+/// NOTE: `text/html` is deliberately excluded — serving LLM-generated HTML
+/// inline on our origin would enable stored XSS.
 fn media_content_disposition(filename: &str, content_type: &str) -> String {
     let inline = content_type.starts_with("image/")
         || content_type.starts_with("audio/")
         || matches!(
             content_type,
-            "application/pdf" | "text/plain" | "text/html" | "text/csv" | "text/markdown"
+            "application/pdf" | "text/plain" | "text/csv" | "text/markdown"
         );
     let disposition = if inline {
         "inline"
@@ -1132,9 +1134,10 @@ mod tests {
     }
 
     #[test]
-    fn content_disposition_inline_for_html() {
+    fn content_disposition_attachment_for_html() {
+        // HTML is forced to attachment to prevent stored XSS.
         let result = media_content_disposition("page.html", "text/html");
-        assert!(result.starts_with("inline;"));
+        assert!(result.starts_with("attachment;"));
     }
 
     #[test]

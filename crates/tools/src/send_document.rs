@@ -37,6 +37,7 @@ const BLOCKED_EXTENSIONS: &[&str] = &[
     "ps1", "psm1", "psd1", // PowerShell
     "vbs", "vbe", "js", "jse", "wsf", "wsh", // Script engines
     "reg", "inf", // Windows registry / setup
+    "py", "pyw", "php", "rb", "pl", "lua", "tcl", // Interpreted scripts
 ];
 
 /// Document-sending tool.
