@@ -14,15 +14,18 @@ use axum::{
 #[cfg(feature = "web-ui")]
 use tracing::{debug, warn};
 
-use crate::{
+use moltis_gateway::{
     auth::{AuthIdentity, AuthMethod, CredentialStore},
-    server::is_local_connection,
     state::GatewayState,
 };
 
+use crate::server::is_local_connection;
+
 /// Session cookie name.
 pub const SESSION_COOKIE: &str = "moltis_session";
+#[cfg(feature = "web-ui")]
 const AUTH_SETUP_REQUIRED: &str = "AUTH_SETUP_REQUIRED";
+#[cfg(feature = "web-ui")]
 const AUTH_NOT_AUTHENTICATED: &str = "AUTH_NOT_AUTHENTICATED";
 
 // ── AuthResult — single source of truth for auth decisions ──────────────────

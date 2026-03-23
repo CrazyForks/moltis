@@ -13,15 +13,14 @@ use {
     axum_extra::extract::Host,
 };
 
-use crate::{
-    auth::CredentialStore,
-    auth_middleware::{AuthResult, AuthSession, SESSION_COOKIE, check_auth},
-    auth_webauthn::WebAuthnRegistry,
-    server::is_local_connection,
-    state::GatewayState,
+use moltis_gateway::{
+    auth::CredentialStore, auth_webauthn::SharedWebAuthnRegistry, state::GatewayState,
 };
 
-pub type SharedWebAuthnRegistry = Arc<tokio::sync::RwLock<WebAuthnRegistry>>;
+use crate::{
+    auth_middleware::{AuthResult, AuthSession, SESSION_COOKIE, check_auth},
+    server::is_local_connection,
+};
 
 /// Auth-related application state.
 #[derive(Clone)]
@@ -342,7 +341,7 @@ async fn reset_auth_handler(
                 .gateway_state
                 .disconnect_all_clients("auth_reset")
                 .await;
-            let code = generate_setup_code();
+            let code = moltis_gateway::auth::generate_setup_code();
             tracing::info!("setup code: {code} (enter this in the browser to set your password)");
             state.gateway_state.inner.write().await.setup_code = Some(secrecy::Secret::new(code));
             clear_session_response(&headers, state.gateway_state.behind_proxy)
@@ -485,7 +484,7 @@ async fn create_api_key_handler(
     // Validate scopes if provided
     if let Some(ref scopes) = body.scopes {
         for scope in scopes {
-            if !crate::auth::VALID_SCOPES.contains(&scope.as_str()) {
+            if !moltis_gateway::auth::VALID_SCOPES.contains(&scope.as_str()) {
                 return (StatusCode::BAD_REQUEST, format!("invalid scope: {scope}"))
                     .into_response();
             }
@@ -569,12 +568,6 @@ async fn rename_passkey_handler(
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-
-/// Generate a random 6-digit numeric setup code.
-pub fn generate_setup_code() -> String {
-    use rand::Rng;
-    rand::rng().random_range(100_000..1_000_000).to_string()
-}
 
 /// Build a session cookie string, adding `Domain=localhost` when the request
 /// arrived on a `.localhost` subdomain (e.g. `moltis.localhost`) so the cookie
@@ -673,7 +666,7 @@ async fn passkey_register_begin_handler(
             .into_response();
     };
 
-    let existing = crate::auth_webauthn::load_passkeys(&state.credential_store)
+    let existing = moltis_gateway::auth_webauthn::load_passkeys(&state.credential_store)
         .await
         .unwrap_or_default();
 
@@ -761,7 +754,8 @@ async fn passkey_auth_begin_handler(
             .into_response();
     };
 
-    let passkeys = match crate::auth_webauthn::load_passkeys(&state.credential_store).await {
+    let passkeys = match moltis_gateway::auth_webauthn::load_passkeys(&state.credential_store).await
+    {
         Ok(pks) => pks,
         Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     };
@@ -845,7 +839,7 @@ async fn setup_passkey_register_begin_handler(
             .into_response();
     };
 
-    let existing = crate::auth_webauthn::load_passkeys(&state.credential_store)
+    let existing = moltis_gateway::auth_webauthn::load_passkeys(&state.credential_store)
         .await
         .unwrap_or_default();
 
@@ -957,7 +951,7 @@ async fn setup_passkey_register_finish_handler(
 async fn host_to_webauthn(
     host: &str,
     registry: &SharedWebAuthnRegistry,
-) -> Option<Arc<crate::auth_webauthn::WebAuthnState>> {
+) -> Option<Arc<moltis_gateway::auth_webauthn::WebAuthnState>> {
     registry.read().await.get_for_host(host)
 }
 

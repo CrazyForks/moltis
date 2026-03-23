@@ -14,12 +14,14 @@ use {
     tokio::net::TcpListener,
 };
 
-use moltis_gateway::{
-    auth,
-    methods::MethodRegistry,
-    server::{build_gateway_base, finalize_gateway_app},
-    services::{CronService, GatewayServices, ServiceResult},
-    state::GatewayState,
+use {
+    moltis_gateway::{
+        auth,
+        methods::MethodRegistry,
+        services::{CronService, GatewayServices, ServiceResult},
+        state::GatewayState,
+    },
+    moltis_httpd::server::{build_gateway_base, finalize_gateway_app},
 };
 
 use moltis_cron::types::{CronJob, CronJobCreate, CronJobPatch};
