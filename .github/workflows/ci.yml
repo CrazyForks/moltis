@@ -146,7 +146,7 @@ jobs:
       - name: Install build dependencies
         run: |
           apt-get update
-          apt-get install -y curl git cmake build-essential clang libclang-dev pkg-config ca-certificates libvulkan-dev glslc
+          apt-get install -y curl git cmake build-essential clang libclang-dev pkg-config ca-certificates libvulkan-dev glslang-tools
           nvcc --version
       - uses: dtolnay/rust-toolchain@f7ccc83f9ed1e5b9c81d8a67d7ad1a747e22a561 # master
         with:
@@ -414,7 +414,7 @@ jobs:
       - name: Install build dependencies
         run: |
           apt-get update
-          apt-get install -y curl git cmake build-essential clang libclang-dev pkg-config ca-certificates libvulkan-dev glslc
+          apt-get install -y curl git cmake build-essential clang libclang-dev pkg-config ca-certificates libvulkan-dev glslang-tools
           nvcc --version
       - uses: dtolnay/rust-toolchain@f7ccc83f9ed1e5b9c81d8a67d7ad1a747e22a561 # master
         with:
