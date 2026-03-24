@@ -117,6 +117,7 @@ fn build_schema_map() -> KnownKeys {
             ("models", Leaf),
             ("fetch_models", Leaf),
             ("stream_transport", Leaf),
+            ("wire_api", Leaf),
             ("alias", Leaf),
             ("tool_mode", Leaf),
         ]))

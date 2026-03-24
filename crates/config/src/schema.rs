@@ -2188,6 +2188,17 @@ const fn is_default_tool_mode(v: &ToolMode) -> bool {
     matches!(v, ToolMode::Auto)
 }
 
+/// Wire format for provider HTTP API.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum WireApi {
+    /// Standard OpenAI Chat Completions format (`/chat/completions`).
+    #[default]
+    ChatCompletions,
+    /// OpenAI Responses API format (`/responses`).
+    Responses,
+}
+
 /// Streaming transport for provider response streams.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -2236,6 +2247,13 @@ pub struct ProviderEntry {
     #[serde(default, skip_serializing_if = "is_default_provider_stream_transport")]
     pub stream_transport: ProviderStreamTransport,
 
+    /// Wire format for this provider (`chat-completions`, `responses`).
+    ///
+    /// - `chat-completions` (default): standard `/chat/completions` endpoint.
+    /// - `responses`: OpenAI Responses API (`/responses`) format.
+    #[serde(default, skip_serializing_if = "is_default_wire_api")]
+    pub wire_api: WireApi,
+
     /// Optional alias for this provider instance.
     ///
     /// When set, this alias is used in metrics labels instead of the provider name.
@@ -2264,6 +2282,7 @@ impl std::fmt::Debug for ProviderEntry {
             .field("models", &self.models)
             .field("fetch_models", &self.fetch_models)
             .field("stream_transport", &self.stream_transport)
+            .field("wire_api", &self.wire_api)
             .field("alias", &self.alias)
             .field("tool_mode", &self.tool_mode)
             .finish()
@@ -2279,6 +2298,7 @@ impl Default for ProviderEntry {
             models: Vec::new(),
             fetch_models: true,
             stream_transport: ProviderStreamTransport::Sse,
+            wire_api: WireApi::ChatCompletions,
             alias: None,
             tool_mode: ToolMode::Auto,
         }
@@ -2311,6 +2331,10 @@ const fn is_true(value: &bool) -> bool {
 
 const fn is_default_provider_stream_transport(value: &ProviderStreamTransport) -> bool {
     matches!(value, ProviderStreamTransport::Sse)
+}
+
+const fn is_default_wire_api(value: &WireApi) -> bool {
+    matches!(value, WireApi::ChatCompletions)
 }
 
 impl ProvidersConfig {
@@ -2857,6 +2881,79 @@ tool_mode = "native"
         assert_eq!(
             config.providers.get("anthropic").unwrap().tool_mode,
             ToolMode::Native
+        );
+    }
+
+    #[test]
+    fn wire_api_serde_roundtrip() {
+        assert_eq!(
+            serde_json::to_string(&WireApi::ChatCompletions).unwrap(),
+            "\"chat-completions\""
+        );
+        assert_eq!(
+            serde_json::to_string(&WireApi::Responses).unwrap(),
+            "\"responses\""
+        );
+        assert_eq!(
+            serde_json::from_str::<WireApi>("\"chat-completions\"").unwrap(),
+            WireApi::ChatCompletions
+        );
+        assert_eq!(
+            serde_json::from_str::<WireApi>("\"responses\"").unwrap(),
+            WireApi::Responses
+        );
+    }
+
+    #[test]
+    fn wire_api_default_is_chat_completions() {
+        assert_eq!(WireApi::default(), WireApi::ChatCompletions);
+    }
+
+    #[test]
+    fn provider_entry_wire_api_from_toml() {
+        let toml_str = r#"
+[providers.custom-mn]
+enabled = true
+base_url = "https://gmn.example.com/v1"
+wire_api = "responses"
+models = ["gpt-5.3-codex"]
+"#;
+        let config: MoltisConfig = toml::from_str(toml_str).unwrap();
+        let entry = config.providers.get("custom-mn").unwrap();
+        assert_eq!(entry.wire_api, WireApi::Responses);
+    }
+
+    #[test]
+    fn provider_entry_wire_api_defaults_to_chat_completions() {
+        let toml_str = r#"
+[providers.openai]
+enabled = true
+"#;
+        let config: MoltisConfig = toml::from_str(toml_str).unwrap();
+        let entry = config.providers.get("openai").unwrap();
+        assert_eq!(entry.wire_api, WireApi::ChatCompletions);
+    }
+
+    #[test]
+    fn provider_entry_wire_api_skip_serializing_default() {
+        let entry = ProviderEntry::default();
+        let serialized = toml::to_string(&entry).unwrap();
+        assert!(
+            !serialized.contains("wire_api"),
+            "default wire_api should be skipped in serialization"
+        );
+    }
+
+    #[test]
+    fn provider_entry_wire_api_serializes_responses() {
+        let entry = ProviderEntry {
+            wire_api: WireApi::Responses,
+            ..Default::default()
+        };
+        let serialized = toml::to_string(&entry).unwrap();
+        assert!(
+            serialized.contains("wire_api = \"responses\""),
+            "non-default wire_api should be serialized"
         );
     }
 }

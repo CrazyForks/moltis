@@ -2283,6 +2283,9 @@ impl ProviderRegistry {
                     name.clone(),
                 )
                 .with_stream_transport(entry.stream_transport);
+                if !matches!(entry.wire_api, moltis_config::WireApi::ChatCompletions) {
+                    oai = oai.with_wire_api(entry.wire_api);
+                }
                 if !matches!(custom_tool_mode, moltis_config::ToolMode::Auto) {
                     oai = oai.with_tool_mode(custom_tool_mode);
                 }
