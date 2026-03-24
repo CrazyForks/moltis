@@ -268,7 +268,7 @@ fn init_telemetry(cli: &Cli, log_buffer: Option<LogBuffer>) {
 
 #[cfg(feature = "tls")]
 async fn trust_ca() -> anyhow::Result<()> {
-    let cert_dir = moltis_gateway::tls::cert_dir()?;
+    let cert_dir = moltis_httpd::tls::cert_dir()?;
     let ca_path = cert_dir.join("ca.pem");
 
     if !ca_path.exists() {
@@ -405,22 +405,19 @@ async fn main() -> anyhow::Result<()> {
             let no_tls = false;
 
             #[cfg(feature = "tailscale")]
-            let tailscale_opts = cli
-                .tailscale
-                .map(|mode| moltis_gateway::server::TailscaleOpts {
-                    mode,
-                    reset_on_exit: cli.tailscale_reset_on_exit,
-                });
+            let tailscale_opts = cli.tailscale.map(|mode| moltis_httpd::TailscaleOpts {
+                mode,
+                reset_on_exit: cli.tailscale_reset_on_exit,
+            });
             #[cfg(not(feature = "tailscale"))]
             let tailscale_opts: Option<()> = None;
             let _ = &tailscale_opts; // suppress unused warning when feature disabled
             #[cfg(feature = "web-ui")]
-            let extra_routes: Option<moltis_gateway::server::RouteEnhancer> =
-                Some(moltis_web::web_routes);
+            let extra_routes: Option<moltis_httpd::RouteEnhancer> = Some(moltis_web::web_routes);
             #[cfg(not(feature = "web-ui"))]
-            let extra_routes: Option<moltis_gateway::server::RouteEnhancer> = None;
+            let extra_routes: Option<moltis_httpd::RouteEnhancer> = None;
 
-            moltis_gateway::server::start_gateway(
+            moltis_httpd::start_gateway(
                 &bind,
                 port,
                 no_tls,
