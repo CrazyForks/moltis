@@ -301,10 +301,14 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/data"]
 ```
 
 > **Tip:** Mount `/home/moltis/.npm` as a named volume so packages are only
-> downloaded once:
+> downloaded once, and bind-mount any directories the MCP server needs to
+> access:
 >
 > ```sh
-> docker run -v moltis-npm-cache:/home/moltis/.npm ...
+> docker run \
+>   -v moltis-npm-cache:/home/moltis/.npm \
+>   -v /host/path/to/data:/data \
+>   ...
 > ```
 
 ### Using Docker containers
