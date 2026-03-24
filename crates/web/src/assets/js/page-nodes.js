@@ -5,6 +5,7 @@ import { html } from "htm/preact";
 import { render } from "preact";
 import { useEffect } from "preact/hooks";
 import { onEvent } from "./events.js";
+import * as gon from "./gon.js";
 import { sendRpc } from "./helpers.js";
 import { ConfirmDialog, requestConfirm } from "./ui.js";
 
@@ -24,7 +25,9 @@ var deviceName = signal("");
 
 function gatewayWsUrl() {
 	var proto = location.protocol === "https:" ? "wss:" : "ws:";
-	return `${proto}//${location.host}/ws`;
+	var port = gon.get("port") || location.port;
+	var host = location.hostname;
+	return `${proto}//${host}${port ? `:${port}` : ""}/ws`;
 }
 
 async function generateToken() {

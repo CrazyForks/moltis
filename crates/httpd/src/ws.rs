@@ -13,7 +13,7 @@ use moltis_protocol::{
     Policy, ResponseFrame, ServerInfo, error_codes, roles, scopes,
 };
 
-use crate::{
+use moltis_gateway::{
     auth,
     broadcast::{BroadcastOpts, broadcast},
     methods::{MethodContext, MethodRegistry},
@@ -469,7 +469,9 @@ pub async fn handle_connection(
             let prov_state = Arc::clone(&state);
             let prov_node_id = params.client.id.clone();
             tokio::spawn(async move {
-                match crate::node_exec::query_node_providers(&prov_state, &prov_node_id).await {
+                match moltis_gateway::node_exec::query_node_providers(&prov_state, &prov_node_id)
+                    .await
+                {
                     Ok(providers) => {
                         let mut inner = prov_state.inner.write().await;
                         if let Some(n) = inner.nodes.get_mut(&prov_node_id) {

@@ -17,12 +17,14 @@ use tokio_tungstenite::{connect_async, tungstenite::client::IntoClientRequest};
 
 use async_trait::async_trait;
 
-use moltis_gateway::{
-    auth::{self, CredentialStore},
-    methods::MethodRegistry,
-    server::{build_gateway_base, finalize_gateway_app},
-    services::{GatewayServices, OnboardingService, ServiceResult},
-    state::GatewayState,
+use {
+    moltis_gateway::{
+        auth::{self, CredentialStore},
+        methods::MethodRegistry,
+        services::{GatewayServices, OnboardingService, ServiceResult},
+        state::GatewayState,
+    },
+    moltis_httpd::server::{build_gateway_base, finalize_gateway_app},
 };
 
 /// Start a test server with a credential store (auth enabled).

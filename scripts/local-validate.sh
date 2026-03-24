@@ -465,6 +465,13 @@ else
   fi
 fi
 
+# Skip validation if this exact commit already passed.
+VALIDATE_MARKER=".local-validate-ok"
+if [[ -f "$VALIDATE_MARKER" ]] && [[ "$(cat "$VALIDATE_MARKER" 2>/dev/null)" == "$SHA" ]]; then
+  echo "Commit ${SHA:0:7} already validated — skipping."
+  exit 0
+fi
+
 # macOS local builds can leave stale cmake output dirs where configure was skipped
 # but no generator files remain. Clean those up before lint/test.
 repair_stale_llama_build_dirs
@@ -577,6 +584,9 @@ if [[ "$zizmor_failed" -ne 0 ]]; then
   echo "local/zizmor failed." >&2
   exit 1
 fi
+
+# Record successful validation for this commit.
+printf '%s' "$SHA" > "$VALIDATE_MARKER"
 
 if [[ "$LOCAL_ONLY" -eq 1 ]]; then
   echo "All local checks passed."
