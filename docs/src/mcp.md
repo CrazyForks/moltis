@@ -302,7 +302,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/data"]
 
 ### Using Docker containers
 
-Since the Docker CLI is available in the image (via the mounted socket), you can also run MCP servers as isolated containers. This is useful when you need a specific Node version, want stronger isolation, or prefer official MCP Docker images:
+Since the Moltis image ships the Docker CLI (`docker-ce-cli`), and given a Docker daemon is reachable via the mounted socket, you can also run MCP servers as isolated containers. This is useful when you need a specific Node version, want stronger isolation, or prefer official MCP Docker images:
 
 ```toml
 # Run an npm-based MCP server in a container

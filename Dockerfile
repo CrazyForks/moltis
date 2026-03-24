@@ -52,16 +52,7 @@ tailscale,tls,trusted-network,vault,voice,wasm,web-ui,whatsapp"
 # Runtime stage
 FROM debian:bookworm-slim
 
-# Install runtime dependencies:
-# - ca-certificates: for HTTPS connections to LLM providers
-# - chromium: headless browser for the browser tool (web search/fetch)
-# - curl: makes it possible to run healthchecks from docker
-# - nodejs (Node 22 LTS via NodeSource): run stdio-based MCP servers (most are npm packages)
-# - sudo: allows moltis user to install packages at runtime (passwordless)
-# - docker-ce-cli + docker-buildx-plugin: Docker CLI for sandbox execution
-#   (talks to mounted socket, no daemon in-container)
-# - tmux: terminal multiplexer available in deployed container
-# - vim-tiny: lightweight terminal text editor
+# Install base runtime dependencies
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update -qq && \
     apt-get install -yqq --no-install-recommends \
@@ -73,9 +64,15 @@ RUN apt-get update -qq && \
         sudo \
         tmux \
         vim-tiny && \
-    curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install Node.js 22 LTS via NodeSource (npm/npx bundled) for stdio-based MCP servers
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
     apt-get install -yqq --no-install-recommends nodejs && \
-    install -m 0755 -d /etc/apt/keyrings && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install Docker CLI for sandbox execution (talks to mounted socket, no daemon in-container)
+RUN install -m 0755 -d /etc/apt/keyrings && \
     curl -fsSL https://download.docker.com/linux/debian/gpg \
         | gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
     chmod a+r /etc/apt/keyrings/docker.gpg && \
