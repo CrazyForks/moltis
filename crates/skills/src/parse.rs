@@ -51,11 +51,16 @@ fn resolve_name_or_slug(meta: &mut SkillMetadata, skill_dir: &Path) -> anyhow::R
             Ok(())
         },
         Some(ref s) => {
+            let source = if meta.slug.is_some() {
+                "frontmatter"
+            } else {
+                "_meta.json"
+            };
             bail!(
-                "skill name '{}' is invalid and slug '{}' is also invalid: \
+                "skill name '{}' is invalid and slug '{}' (from {}) is also invalid: \
                  must be 1-64 lowercase alphanumeric, hyphen, or colon chars \
                  (e.g. 'my-skill' or 'ns:skill')",
-                meta.name, s
+                meta.name, s, source
             );
         },
         None => {
@@ -358,6 +363,7 @@ When asked to commit, run `git add` then `git commit`.
 
     #[test]
     fn test_invalid_name_with_valid_slug_uses_slug() {
+        let tmp = tempfile::tempdir().unwrap();
         let content = r#"---
 name: "SEO (Site Audit + Content Writer + Competitor Analysis)"
 slug: seo
@@ -366,7 +372,7 @@ description: SEO tools
 
 Body.
 "#;
-        let meta = parse_metadata(content, Path::new("/tmp/seo")).unwrap();
+        let meta = parse_metadata(content, tmp.path()).unwrap();
         assert_eq!(meta.name, "seo");
         assert_eq!(
             meta.display_name.as_deref(),
@@ -397,6 +403,7 @@ Body.
 
     #[test]
     fn test_parse_skill_slug_fallback() {
+        let tmp = tempfile::tempdir().unwrap();
         let content = r#"---
 name: "My Fancy Skill (v2)"
 slug: fancy-skill
@@ -405,7 +412,7 @@ description: A fancy skill
 
 Do fancy things.
 "#;
-        let skill = parse_skill(content, Path::new("/tmp/fancy")).unwrap();
+        let skill = parse_skill(content, tmp.path()).unwrap();
         assert_eq!(skill.metadata.name, "fancy-skill");
         assert_eq!(
             skill.metadata.display_name.as_deref(),
