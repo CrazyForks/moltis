@@ -1507,9 +1507,10 @@ jobs:
           RELEASES_BLOB=$(gh api "repos/${REPO}/git/blobs" \
             -f content="$(base64 -w0 website/releases.json)" \
             -f encoding=base64 --jq '.sha')
-          CHANGELOG_BLOB=$(gh api "repos/${REPO}/git/blobs" \
-            -f content="$(base64 -w0 website/changelog/index.html)" \
-            -f encoding=base64 --jq '.sha')
+          CHANGELOG_BLOB=$(jq -n \
+            --arg content "$(base64 -w0 website/changelog/index.html)" \
+            '{content: $content, encoding: "base64"}' \
+            | gh api "repos/${REPO}/git/blobs" --input - --jq '.sha')
 
           # Create a new tree with the updated files (JSON input for proper array structure)
           TREE_SHA=$(jq -n \
