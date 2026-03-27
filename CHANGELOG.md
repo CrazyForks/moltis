@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [20260327.04] - 2026-03-27
+### Fixed
+- [ci] Use file input for changelog blob to avoid argument list too long
+
 ## [20260327.03] - 2026-03-27
 ### Added
 - [website] Add changelog HTML page and fix RPM version override
