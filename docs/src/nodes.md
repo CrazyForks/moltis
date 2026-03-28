@@ -154,6 +154,16 @@ Managed SSH targets now support:
 - connectivity tests from the web UI
 - either **System OpenSSH** auth or a **managed deploy key**
 
+The Nodes page also includes a **Remote Exec Status** panel that acts like a
+lightweight doctor:
+
+- shows whether Moltis is currently configured for `local`, `node`, or `ssh`
+- reports paired-node inventory and managed SSH inventory
+- flags obvious misconfigurations, such as `tools.exec.host = "ssh"` with no
+  active target or a managed key that cannot be decrypted because the vault is
+  locked
+- lets you test the active SSH route without leaving the page
+
 ## CLI Reference
 
 | Command | Description |

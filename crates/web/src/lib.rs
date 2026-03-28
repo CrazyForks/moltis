@@ -129,6 +129,11 @@ fn build_api_routes() -> Router<AppState> {
             axum::routing::delete(moltis_httpd::env_routes::env_delete),
         )
         .route("/api/ssh", get(moltis_httpd::ssh_routes::ssh_status))
+        .route("/api/ssh/doctor", get(moltis_httpd::ssh_routes::ssh_doctor))
+        .route(
+            "/api/ssh/doctor/test-active",
+            axum::routing::post(moltis_httpd::ssh_routes::ssh_doctor_test_active),
+        )
         .route(
             "/api/ssh/keys/generate",
             axum::routing::post(moltis_httpd::ssh_routes::ssh_generate_key),

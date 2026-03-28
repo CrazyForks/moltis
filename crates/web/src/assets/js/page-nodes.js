@@ -7,6 +7,8 @@ import { useEffect } from "preact/hooks";
 import { onEvent } from "./events.js";
 import * as gon from "./gon.js";
 import { sendRpc } from "./helpers.js";
+import { navigate } from "./router.js";
+import { settingsPath } from "./routes.js";
 import { ConfirmDialog, requestConfirm } from "./ui.js";
 
 // ── Signals ─────────────────────────────────────────────────
@@ -20,6 +22,11 @@ var toastId = 0;
 var generatedToken = signal(null); // { token, deviceId, command }
 var generatingToken = signal(false);
 var deviceName = signal("");
+var doctor = signal(null);
+var doctorLoading = signal(false);
+var doctorError = signal("");
+var doctorTest = signal(null);
+var doctorTestLoading = signal(false);
 
 // ── Helpers ─────────────────────────────────────────────────
 
@@ -117,8 +124,46 @@ async function refreshPairedDevices() {
 	}
 }
 
+async function refreshDoctor() {
+	doctorLoading.value = true;
+	doctorError.value = "";
+	try {
+		var response = await fetch("/api/ssh/doctor");
+		if (!response.ok) {
+			throw new Error("Failed to load remote exec status");
+		}
+		doctor.value = await response.json();
+	} catch (error) {
+		doctorError.value = error.message || "Failed to load remote exec status";
+	} finally {
+		doctorLoading.value = false;
+	}
+}
+
+async function testActiveSshRoute() {
+	doctorTestLoading.value = true;
+	doctorError.value = "";
+	try {
+		var response = await fetch("/api/ssh/doctor/test-active", { method: "POST" });
+		var data = await response.json();
+		if (!response.ok) {
+			throw new Error(data?.error || "Failed to test SSH route");
+		}
+		doctorTest.value = data;
+		showToast(
+			data.reachable ? "Active SSH route is reachable" : "Active SSH route check failed",
+			data.reachable ? "success" : "error",
+		);
+	} catch (error) {
+		doctorError.value = error.message || "Failed to test SSH route";
+		showToast(doctorError.value, "error");
+	} finally {
+		doctorTestLoading.value = false;
+	}
+}
+
 async function refreshAll() {
-	await Promise.all([refreshNodes(), refreshPendingPairs(), refreshPairedDevices()]);
+	await Promise.all([refreshNodes(), refreshPendingPairs(), refreshPairedDevices(), refreshDoctor()]);
 }
 
 async function approvePair(id) {
@@ -313,6 +358,117 @@ function NodeTelemetry({ telemetry }) {
 				: null
 		}
 		${parts.length > 0 ? html`<div class="text-xs text-[var(--text-muted)] flex gap-2 flex-wrap">${parts}</div>` : null}
+	</div>`;
+}
+
+function DoctorBadge({ level }) {
+	var tone =
+		level === "error"
+			? "bg-red-500/15 text-red-500"
+			: level === "warn"
+				? "bg-yellow-500/15 text-yellow-500"
+				: "bg-green-500/15 text-green-500";
+	return html`<span class="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded ${tone}">${level}</span>`;
+}
+
+function RemoteExecStatusCard() {
+	var snapshot = doctor.value;
+	var execHost = snapshot?.exec_host || "local";
+	var activeRoute = snapshot?.active_route || null;
+	var checkList = snapshot?.checks || [];
+
+	return html`<div class="rounded-lg border border-[var(--border)] bg-[var(--surface-alt)] p-4 flex flex-col gap-3">
+		<div class="flex items-start justify-between gap-3 flex-wrap">
+			<div>
+				<h3 class="text-sm font-medium text-[var(--text-strong)] mb-1">Remote Exec Status</h3>
+				<p class="text-xs text-[var(--text-muted)] m-0">
+					Moltis is currently configured to run commands through
+					<strong class="text-[var(--text-strong)]"> ${execHost}</strong>
+					${activeRoute ? html` using <code>${activeRoute.label}</code>` : null}.
+				</p>
+			</div>
+			<div class="flex gap-2 flex-wrap">
+				<button
+					class="provider-btn provider-btn-secondary provider-btn-sm"
+					onClick=${refreshDoctor}
+					disabled=${doctorLoading.value}
+				>
+					${doctorLoading.value ? "Refreshing..." : "Refresh Doctor"}
+				</button>
+				${
+					execHost === "ssh" && activeRoute
+						? html`<button
+							class="provider-btn provider-btn-secondary provider-btn-sm"
+							onClick=${testActiveSshRoute}
+							disabled=${doctorTestLoading.value}
+						>
+							${doctorTestLoading.value ? "Testing..." : "Test Active SSH Route"}
+						</button>`
+						: null
+				}
+				<button
+					class="provider-btn provider-btn-secondary provider-btn-sm"
+					onClick=${() => navigate(settingsPath("ssh"))}
+				>
+					SSH Settings
+				</button>
+			</div>
+		</div>
+
+		<div class="grid gap-2 md:grid-cols-4">
+			<div class="rounded border border-[var(--border)] bg-[var(--bg)] px-3 py-2">
+				<div class="text-[10px] uppercase tracking-wide text-[var(--text-muted)]">Backend</div>
+				<div class="text-sm text-[var(--text-strong)] mt-1">${execHost}</div>
+			</div>
+			<div class="rounded border border-[var(--border)] bg-[var(--bg)] px-3 py-2">
+				<div class="text-[10px] uppercase tracking-wide text-[var(--text-muted)]">Paired Nodes</div>
+				<div class="text-sm text-[var(--text-strong)] mt-1">${snapshot?.paired_node_count ?? 0}</div>
+			</div>
+			<div class="rounded border border-[var(--border)] bg-[var(--bg)] px-3 py-2">
+				<div class="text-[10px] uppercase tracking-wide text-[var(--text-muted)]">Managed Targets</div>
+				<div class="text-sm text-[var(--text-strong)] mt-1">${snapshot?.managed_target_count ?? 0}</div>
+			</div>
+			<div class="rounded border border-[var(--border)] bg-[var(--bg)] px-3 py-2">
+				<div class="text-[10px] uppercase tracking-wide text-[var(--text-muted)]">Managed Keys</div>
+				<div class="text-sm text-[var(--text-strong)] mt-1">
+					${snapshot?.managed_key_count ?? 0}
+					${snapshot?.encrypted_key_count ? html` <span class="text-xs text-[var(--text-muted)]">(${snapshot.encrypted_key_count} encrypted)</span>` : null}
+				</div>
+			</div>
+		</div>
+
+		${doctorError.value ? html`<div class="text-xs text-red-500">${doctorError.value}</div>` : null}
+
+		${
+			doctorTest.value
+				? html`<div class="rounded border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-xs">
+					<div class="font-medium text-[var(--text-strong)]">
+						${doctorTest.value.route_label || "Active SSH route"}
+					</div>
+					<div class="${doctorTest.value.reachable ? "text-green-500" : "text-red-500"} mt-1">
+						${doctorTest.value.reachable ? "Reachable" : "Unreachable"}${doctorTest.value.exit_code != null ? ` (exit ${doctorTest.value.exit_code})` : ""}
+					</div>
+					${
+						doctorTest.value.stderr
+							? html`<pre class="mt-2 whitespace-pre-wrap break-all text-[11px] text-[var(--text-muted)]">${doctorTest.value.stderr}</pre>`
+							: null
+					}
+				</div>`
+				: null
+		}
+
+		<div class="flex flex-col gap-2">
+			${checkList.map(
+				(check) => html`<div class="rounded border border-[var(--border)] bg-[var(--bg)] px-3 py-2">
+					<div class="flex items-center gap-2 flex-wrap">
+						<div class="text-sm text-[var(--text-strong)]">${check.title}</div>
+						<${DoctorBadge} level=${check.level} />
+					</div>
+					<div class="text-xs text-[var(--text-muted)] mt-1">${check.message}</div>
+					${check.hint ? html`<div class="text-xs text-[var(--text-muted)] mt-1">Hint: ${check.hint}</div>` : null}
+				</div>`,
+			)}
+		</div>
 	</div>`;
 }
 
@@ -557,6 +713,8 @@ function NodesPage() {
 					run commands based on what is available.
 				</p>
 			</div>
+
+			<${RemoteExecStatusCard} />
 
 			<${TabBar} />
 

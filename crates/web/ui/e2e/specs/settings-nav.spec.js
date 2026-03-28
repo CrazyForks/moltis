@@ -144,6 +144,17 @@ test.describe("Settings navigation", () => {
 		await expect(content).not.toBeEmpty();
 	});
 
+	test("nodes page shows remote exec status doctor", async ({ page }) => {
+		const pageErrors = watchPageErrors(page);
+		await navigateAndWait(page, "/settings/nodes");
+
+		await expect(page.getByRole("heading", { name: "Remote Exec Status", exact: true })).toBeVisible();
+		await expect(page.getByRole("button", { name: "SSH Settings", exact: true })).toBeVisible();
+		await expect(page.getByText("Backend", { exact: true })).toBeVisible();
+
+		expect(pageErrors).toEqual([]);
+	});
+
 	test("identity name fields autosave on blur", async ({ page }) => {
 		const pageErrors = watchPageErrors(page);
 		await navigateAndWait(page, "/settings/identity");

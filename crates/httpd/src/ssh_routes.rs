@@ -12,7 +12,7 @@ use {
 };
 
 use moltis_gateway::{
-    auth::{SshAuthMode, SshKeyEntry, SshTargetEntry},
+    auth::{SshAuthMode, SshKeyEntry, SshResolvedTarget, SshTargetEntry},
     node_exec::exec_resolved_ssh_target,
 };
 
@@ -67,9 +67,50 @@ pub struct SshTestResponse {
     stdout: String,
     stderr: String,
     exit_code: i32,
+    route_label: Option<String>,
 }
 
 impl IntoResponse for SshTestResponse {
+    fn into_response(self) -> Response {
+        Json(self).into_response()
+    }
+}
+
+#[derive(Clone, Serialize)]
+pub struct SshDoctorCheck {
+    id: &'static str,
+    level: &'static str,
+    title: &'static str,
+    message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    hint: Option<String>,
+}
+
+#[derive(Clone, Serialize)]
+pub struct SshDoctorRoute {
+    label: String,
+    target: String,
+    auth_mode: &'static str,
+    source: &'static str,
+}
+
+#[derive(Serialize)]
+pub struct SshDoctorResponse {
+    ok: bool,
+    exec_host: String,
+    ssh_binary_available: bool,
+    ssh_binary_version: Option<String>,
+    paired_node_count: usize,
+    managed_key_count: usize,
+    encrypted_key_count: usize,
+    managed_target_count: usize,
+    configured_node: Option<String>,
+    legacy_target: Option<String>,
+    active_route: Option<SshDoctorRoute>,
+    checks: Vec<SshDoctorCheck>,
+}
+
+impl IntoResponse for SshDoctorResponse {
     fn into_response(self) -> Response {
         Json(self).into_response()
     }
@@ -343,6 +384,172 @@ pub async fn ssh_test_target(
         stdout: result.stdout,
         stderr: result.stderr,
         exit_code: result.exit_code,
+        route_label: Some(target.label),
+    })
+}
+
+pub async fn ssh_doctor(
+    State(state): State<crate::server::AppState>,
+) -> Result<SshDoctorResponse, ApiError> {
+    let store = state.gateway.credential_store.as_ref().ok_or_else(|| {
+        ApiError::service_unavailable(SSH_STORE_UNAVAILABLE, "no credential store")
+    })?;
+
+    let keys = store
+        .list_ssh_keys()
+        .await
+        .map_err(|err| ApiError::internal(SSH_LIST_FAILED, err))?;
+    let targets = store
+        .list_ssh_targets()
+        .await
+        .map_err(|err| ApiError::internal(SSH_LIST_FAILED, err))?;
+
+    let config = moltis_config::discover_and_load();
+    let exec_host = config.tools.exec.host.trim().to_string();
+    let configured_node = config
+        .tools
+        .exec
+        .node
+        .clone()
+        .filter(|value: &String| !value.trim().is_empty());
+    let legacy_target = config
+        .tools
+        .exec
+        .ssh_target
+        .clone()
+        .filter(|value: &String| !value.trim().is_empty());
+    let default_target = targets.iter().find(|target| target.is_default).cloned();
+    let (ssh_binary_available, ssh_binary_version) = detect_ssh_binary().await;
+    let paired_node_count = {
+        let inner = state.gateway.inner.read().await;
+        inner.nodes.list().len()
+    };
+    let encrypted_key_count = keys.iter().filter(|entry| entry.encrypted).count();
+    let vault_is_unsealed = match state.gateway.vault.as_ref() {
+        Some(vault) => vault.is_unsealed().await,
+        None => false,
+    };
+
+    let active_route = if exec_host == "ssh" {
+        default_target
+            .as_ref()
+            .map(|target| SshDoctorRoute {
+                label: format!("SSH: {}", target.label),
+                target: target.target.clone(),
+                auth_mode: match target.auth_mode {
+                    SshAuthMode::Managed => "managed",
+                    SshAuthMode::System => "system",
+                },
+                source: "managed",
+            })
+            .or_else(|| {
+                legacy_target
+                    .as_ref()
+                    .map(|target: &String| SshDoctorRoute {
+                        label: format!("SSH: {target}"),
+                        target: target.clone(),
+                        auth_mode: "system",
+                        source: "legacy_config",
+                    })
+            })
+    } else {
+        None
+    };
+
+    let checks = build_doctor_checks(DoctorInputs {
+        exec_host: &exec_host,
+        ssh_binary_available,
+        paired_node_count,
+        managed_target_count: targets.len(),
+        managed_key_count: keys.len(),
+        encrypted_key_count,
+        configured_node: configured_node.as_deref(),
+        legacy_target: legacy_target.as_deref(),
+        default_target: default_target.as_ref(),
+        vault_is_unsealed,
+    });
+
+    Ok(SshDoctorResponse {
+        ok: true,
+        exec_host,
+        ssh_binary_available,
+        ssh_binary_version,
+        paired_node_count,
+        managed_key_count: keys.len(),
+        encrypted_key_count,
+        managed_target_count: targets.len(),
+        configured_node,
+        legacy_target,
+        active_route,
+        checks,
+    })
+}
+
+pub async fn ssh_doctor_test_active(
+    State(state): State<crate::server::AppState>,
+) -> Result<SshTestResponse, ApiError> {
+    let store = state.gateway.credential_store.as_ref().ok_or_else(|| {
+        ApiError::service_unavailable(SSH_STORE_UNAVAILABLE, "no credential store")
+    })?;
+
+    let config = moltis_config::discover_and_load();
+    if config.tools.exec.host.trim() != "ssh" {
+        return Err(ApiError::bad_request(
+            SSH_TARGET_TEST_FAILED,
+            "remote exec is not configured to use ssh",
+        ));
+    }
+
+    let route = if let Some(target) = store
+        .get_default_ssh_target()
+        .await
+        .map_err(|err| ApiError::internal(SSH_TARGET_TEST_FAILED, err))?
+    {
+        target
+    } else if let Some(target) = config
+        .tools
+        .exec
+        .ssh_target
+        .clone()
+        .filter(|value: &String| !value.trim().is_empty())
+    {
+        SshResolvedTarget {
+            id: 0,
+            node_id: format!("ssh:{target}"),
+            label: target.clone(),
+            target,
+            port: None,
+            auth_mode: SshAuthMode::System,
+            key_id: None,
+            key_name: None,
+        }
+    } else {
+        return Err(ApiError::bad_request(
+            SSH_TARGET_TEST_FAILED,
+            "no active ssh route is configured",
+        ));
+    };
+
+    let probe = "__moltis_ssh_probe__";
+    let result = exec_resolved_ssh_target(
+        store,
+        &route,
+        &format!("printf {probe}"),
+        10,
+        None,
+        None,
+        8 * 1024,
+    )
+    .await
+    .map_err(|err| ApiError::bad_request(SSH_TARGET_TEST_FAILED, err.to_string()))?;
+
+    Ok(SshTestResponse {
+        ok: true,
+        reachable: result.exit_code == 0 && result.stdout.contains(probe),
+        stdout: result.stdout,
+        stderr: result.stderr,
+        exit_code: result.exit_code,
+        route_label: Some(route.label),
     })
 }
 
@@ -433,6 +640,178 @@ async fn ssh_keygen_fingerprint(path: &std::path::Path) -> anyhow::Result<String
     Ok(String::from_utf8(output.stdout)?.trim().to_string())
 }
 
+struct DoctorInputs<'a> {
+    exec_host: &'a str,
+    ssh_binary_available: bool,
+    paired_node_count: usize,
+    managed_target_count: usize,
+    managed_key_count: usize,
+    encrypted_key_count: usize,
+    configured_node: Option<&'a str>,
+    legacy_target: Option<&'a str>,
+    default_target: Option<&'a SshTargetEntry>,
+    vault_is_unsealed: bool,
+}
+
+fn build_doctor_checks(input: DoctorInputs<'_>) -> Vec<SshDoctorCheck> {
+    let mut checks = Vec::new();
+
+    checks.push(SshDoctorCheck {
+        id: "exec-host",
+        level: "ok",
+        title: "Execution backend",
+        message: match input.exec_host {
+            "ssh" => "Remote exec is currently routed through SSH.".to_string(),
+            "node" => "Remote exec is currently routed through paired nodes.".to_string(),
+            _ => "Remote exec is currently running locally.".to_string(),
+        },
+        hint: Some("Change this in tools.exec.host or from the chat node picker.".to_string()),
+    });
+
+    if input.ssh_binary_available {
+        checks.push(SshDoctorCheck {
+            id: "ssh-binary",
+            level: "ok",
+            title: "SSH client",
+            message: "System ssh client is available.".to_string(),
+            hint: None,
+        });
+    } else {
+        checks.push(SshDoctorCheck {
+            id: "ssh-binary",
+            level: "error",
+            title: "SSH client",
+            message: "System ssh client is not available in PATH.".to_string(),
+            hint: Some(
+                "Install OpenSSH or fix PATH before using SSH execution targets.".to_string(),
+            ),
+        });
+    }
+
+    match input.exec_host {
+        "ssh" => {
+            if let Some(target) = input.default_target {
+                checks.push(SshDoctorCheck {
+                    id: "ssh-route",
+                    level: "ok",
+                    title: "Active SSH route",
+                    message: format!(
+                        "Using managed target '{}' ({})",
+                        target.label, target.target
+                    ),
+                    hint: None,
+                });
+                if target.auth_mode == SshAuthMode::Managed
+                    && input.encrypted_key_count > 0
+                    && !input.vault_is_unsealed
+                {
+                    checks.push(SshDoctorCheck {
+                        id: "managed-key-vault",
+                        level: "error",
+                        title: "Managed key access",
+                        message: "The active SSH route uses a managed key, but the vault is locked.".to_string(),
+                        hint: Some("Unlock the vault in Settings → Encryption before testing or using this target.".to_string()),
+                    });
+                }
+            } else if let Some(target) = input.legacy_target {
+                checks.push(SshDoctorCheck {
+                    id: "ssh-route",
+                    level: "warn",
+                    title: "Active SSH route",
+                    message: format!("Using legacy config target '{target}'."),
+                    hint: Some("Move this into Settings → SSH if you want named targets, testing, and managed deploy keys.".to_string()),
+                });
+            } else {
+                checks.push(SshDoctorCheck {
+                    id: "ssh-route",
+                    level: "error",
+                    title: "Active SSH route",
+                    message: "SSH execution is enabled, but no target is configured.".to_string(),
+                    hint: Some(
+                        "Add a target in Settings → SSH or set tools.exec.ssh_target.".to_string(),
+                    ),
+                });
+            }
+        },
+        "node" => {
+            if input.paired_node_count == 0 {
+                checks.push(SshDoctorCheck {
+                    id: "paired-node-route",
+                    level: "error",
+                    title: "Paired node route",
+                    message: "Remote exec is set to use paired nodes, but none are connected.".to_string(),
+                    hint: Some("Generate a connection token from the Nodes page or switch tools.exec.host back to local.".to_string()),
+                });
+            } else if let Some(node) = input.configured_node {
+                checks.push(SshDoctorCheck {
+                    id: "paired-node-route",
+                    level: "ok",
+                    title: "Paired node route",
+                    message: format!("Default node preference is '{node}'."),
+                    hint: None,
+                });
+            } else {
+                checks.push(SshDoctorCheck {
+                    id: "paired-node-route",
+                    level: "warn",
+                    title: "Paired node route",
+                    message: "Paired nodes are available, but no default node is configured.".to_string(),
+                    hint: Some("Select a node from chat or set tools.exec.node if you want a fixed default.".to_string()),
+                });
+            }
+        },
+        _ => {
+            checks.push(SshDoctorCheck {
+                id: "local-route",
+                level: "warn",
+                title: "Remote exec route",
+                message: "The current backend is local, so SSH and node targets are only available when selected explicitly.".to_string(),
+                hint: Some("Switch tools.exec.host if you want remote execution by default.".to_string()),
+            });
+        },
+    }
+
+    if input.managed_key_count == 0
+        && input.managed_target_count == 0
+        && input.legacy_target.is_none()
+    {
+        checks.push(SshDoctorCheck {
+            id: "ssh-onboarding",
+            level: "warn",
+            title: "SSH onboarding",
+            message: "No SSH targets are configured yet.".to_string(),
+            hint: Some("Generate a deploy key in Settings → SSH, copy the public key to the remote host, then add a named target.".to_string()),
+        });
+    } else if input.managed_target_count > 0 {
+        checks.push(SshDoctorCheck {
+            id: "ssh-inventory",
+            level: "ok",
+            title: "Managed SSH inventory",
+            message: format!(
+                "{} key(s), {} target(s), {} encrypted key(s).",
+                input.managed_key_count, input.managed_target_count, input.encrypted_key_count
+            ),
+            hint: None,
+        });
+    }
+
+    checks
+}
+
+async fn detect_ssh_binary() -> (bool, Option<String>) {
+    match Command::new("ssh").arg("-V").output().await {
+        Ok(output) => {
+            let text = if output.stdout.is_empty() {
+                String::from_utf8_lossy(&output.stderr).trim().to_string()
+            } else {
+                String::from_utf8_lossy(&output.stdout).trim().to_string()
+            };
+            (output.status.success(), (!text.is_empty()).then_some(text))
+        },
+        Err(_) => (false, None),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
@@ -454,5 +833,61 @@ mod tests {
         let (public_key, fingerprint) = inspect_imported_private_key(&private_key).await.unwrap();
         assert!(public_key.starts_with("ssh-ed25519 "));
         assert!(fingerprint.contains("SHA256:"));
+    }
+
+    #[test]
+    fn doctor_checks_flag_missing_ssh_target() {
+        let checks = build_doctor_checks(DoctorInputs {
+            exec_host: "ssh",
+            ssh_binary_available: true,
+            paired_node_count: 0,
+            managed_target_count: 0,
+            managed_key_count: 0,
+            encrypted_key_count: 0,
+            configured_node: None,
+            legacy_target: None,
+            default_target: None,
+            vault_is_unsealed: false,
+        });
+
+        assert!(
+            checks
+                .iter()
+                .any(|check| check.id == "ssh-route" && check.level == "error")
+        );
+    }
+
+    #[test]
+    fn doctor_checks_flag_locked_vault_for_managed_route() {
+        let default_target = SshTargetEntry {
+            id: 1,
+            label: "prod".to_string(),
+            target: "deploy@example.com".to_string(),
+            port: None,
+            auth_mode: SshAuthMode::Managed,
+            key_id: Some(1),
+            key_name: Some("prod-key".to_string()),
+            is_default: true,
+            created_at: "2026-03-28T00:00:00Z".to_string(),
+            updated_at: "2026-03-28T00:00:00Z".to_string(),
+        };
+        let checks = build_doctor_checks(DoctorInputs {
+            exec_host: "ssh",
+            ssh_binary_available: true,
+            paired_node_count: 0,
+            managed_target_count: 1,
+            managed_key_count: 1,
+            encrypted_key_count: 1,
+            configured_node: None,
+            legacy_target: None,
+            default_target: Some(&default_target),
+            vault_is_unsealed: false,
+        });
+
+        assert!(
+            checks
+                .iter()
+                .any(|check| check.id == "managed-key-vault" && check.level == "error")
+        );
     }
 }
