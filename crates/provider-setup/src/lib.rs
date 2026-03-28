@@ -2382,7 +2382,6 @@ impl ProviderSetupService for LiveProviderSetupService {
                 Ok(discovered) => {
                     let model_list: Vec<Value> = discovered
                         .iter()
-                        .filter(|m| moltis_providers::is_chat_capable_model(&m.id))
                         .map(|m| {
                             serde_json::json!({
                                 "id": format!("{provider_name}::{}", m.id),
@@ -4811,7 +4810,7 @@ mod tests {
         assert!(models.iter().any(
             |m| m.get("id").and_then(|v| v.as_str()) == Some("custom-test-server::gpt-4o-mini")
         ));
-        // Non-chat models (dall-e-3) should be filtered out.
+        // Non-chat models (dall-e-3) are filtered by fetch_models_from_api.
         assert!(
             !models
                 .iter()
