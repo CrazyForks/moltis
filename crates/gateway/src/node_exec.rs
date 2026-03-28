@@ -20,7 +20,7 @@ use {
     async_trait::async_trait,
     secrecy::ExposeSecret,
     serde::{Deserialize, Serialize},
-    tokio::process::Command,
+    tokio::{io::AsyncReadExt, process::Command},
     tracing::warn,
 };
 
@@ -272,27 +272,53 @@ async fn exec_over_ssh(
     ssh.stderr(std::process::Stdio::piped());
     ssh.stdin(std::process::Stdio::null());
 
-    let child = ssh.spawn()?;
-    let output = match tokio::time::timeout(
-        Duration::from_secs(timeout_secs.max(5)),
-        child.wait_with_output(),
-    )
-    .await
-    {
-        Ok(result) => result?,
-        Err(_) => anyhow::bail!("ssh execution timed out after {timeout_secs}s"),
-    };
+    let mut child = ssh.spawn()?;
+    let stdout_task = child.stdout.take().map(spawn_pipe_reader);
+    let stderr_task = child.stderr.take().map(spawn_pipe_reader);
+    let status =
+        match tokio::time::timeout(Duration::from_secs(timeout_secs.max(5)), child.wait()).await {
+            Ok(result) => result?,
+            Err(_) => {
+                let _ = child.start_kill();
+                let _ = child.wait().await;
+                let _ = read_pipe_task(stdout_task).await;
+                let _ = read_pipe_task(stderr_task).await;
+                anyhow::bail!("ssh execution timed out after {timeout_secs}s");
+            },
+        };
 
-    let mut stdout = String::from_utf8_lossy(&output.stdout).into_owned();
-    let mut stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let stdout = read_pipe_task(stdout_task).await?;
+    let stderr = read_pipe_task(stderr_task).await?;
+    let mut stdout = String::from_utf8_lossy(&stdout).into_owned();
+    let mut stderr = String::from_utf8_lossy(&stderr).into_owned();
     truncate_output_for_display(&mut stdout, max_output_bytes);
     truncate_output_for_display(&mut stderr, max_output_bytes);
 
     Ok(NodeExecResult {
         stdout,
         stderr,
-        exit_code: output.status.code().unwrap_or(-1),
+        exit_code: status.code().unwrap_or(-1),
     })
+}
+
+fn spawn_pipe_reader<R>(mut reader: R) -> tokio::task::JoinHandle<std::io::Result<Vec<u8>>>
+where
+    R: tokio::io::AsyncRead + Unpin + Send + 'static,
+{
+    tokio::spawn(async move {
+        let mut bytes = Vec::new();
+        reader.read_to_end(&mut bytes).await?;
+        Ok(bytes)
+    })
+}
+
+async fn read_pipe_task(
+    task: Option<tokio::task::JoinHandle<std::io::Result<Vec<u8>>>>,
+) -> anyhow::Result<Vec<u8>> {
+    match task {
+        Some(task) => Ok(task.await??),
+        None => Ok(Vec::new()),
+    }
 }
 
 fn write_temp_ssh_private_key(
