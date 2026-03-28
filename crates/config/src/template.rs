@@ -95,8 +95,8 @@ auto_generate = true              # Auto-generate local CA and server certificat
 offered = ["local-llm", "github-copilot", "openai-codex", "openai", "anthropic", "openrouter", "ollama", "moonshot", "minimax", "zai"] # Enabled providers and those shown in onboarding/picker UI ([] = enable/show all)
 # All available providers:
 #   "anthropic", "openai", "gemini", "groq", "xai", "deepseek",
-#   "mistral", "openrouter", "cerebras", "minimax", "moonshot",
-#   "zai", "venice", "ollama", "local-llm", "openai-codex",
+#   "fireworks", "mistral", "openrouter", "cerebras", "minimax",
+#   "moonshot", "zai", "venice", "ollama", "local-llm", "openai-codex",
 #   "github-copilot", "kimi-code"
 
 # ── Anthropic (Claude) ────────────────────────────────────────
@@ -142,6 +142,14 @@ models = ["gpt-5.3", "gpt-5.2"]              # Preferred models shown first
 # models = ["deepseek-chat"]
 # base_url = "https://api.deepseek.com"
 # alias = "deepseek"
+
+# ── Fireworks ────────────────────────────────────────────────
+# [providers.fireworks]
+# enabled = true
+# api_key = "..."                             # Or set FIREWORKS_API_KEY env var
+# models = ["accounts/fireworks/routers/kimi-k2p5-turbo"]
+# base_url = "https://api.fireworks.ai/inference/v1"
+# alias = "fireworks"
 
 # ── xAI (Grok) ────────────────────────────────────────────────
 # [providers.xai]

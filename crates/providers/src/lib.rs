@@ -880,6 +880,35 @@ const ZAI_MODELS: &[(&str, &str)] = &[
     ("glm-4-32b-0414-128k", "GLM-4 32B 128K"),
 ];
 
+/// Known Fireworks models.
+const FIREWORKS_MODELS: &[(&str, &str)] = &[
+    (
+        "accounts/fireworks/routers/kimi-k2p5-turbo",
+        "Kimi K2.5 Turbo",
+    ),
+    ("accounts/fireworks/models/deepseek-v3p2", "DeepSeek V3p2"),
+    (
+        "accounts/fireworks/models/qwen3-235b-a22b-instruct-2507",
+        "Qwen3 235B A22B Instruct",
+    ),
+    (
+        "accounts/fireworks/models/llama-v3p1-405b-instruct",
+        "Llama 3.1 405B Instruct",
+    ),
+    (
+        "accounts/fireworks/models/llama-v3p1-70b-instruct",
+        "Llama 3.1 70B Instruct",
+    ),
+    (
+        "accounts/fireworks/models/qwen3-coder-480b-a35b-instruct",
+        "Qwen3 Coder 480B A35B",
+    ),
+    (
+        "accounts/fireworks/models/kimi-k2-instruct-0905",
+        "Kimi K2 Instruct",
+    ),
+];
+
 /// Known DeepSeek models.
 const DEEPSEEK_MODELS: &[(&str, &str)] = &[
     ("deepseek-chat", "DeepSeek Chat"),
@@ -989,6 +1018,16 @@ const OPENAI_COMPAT_PROVIDERS: &[OpenAiCompatDef] = &[
         env_base_url_key: "VENICE_BASE_URL",
         default_base_url: "https://api.venice.ai/api/v1",
         models: &[],
+        supports_model_discovery: true,
+        requires_api_key: true,
+        local_only: false,
+    },
+    OpenAiCompatDef {
+        config_name: "fireworks",
+        env_key: "FIREWORKS_API_KEY",
+        env_base_url_key: "FIREWORKS_BASE_URL",
+        default_base_url: "https://api.fireworks.ai/inference/v1",
+        models: FIREWORKS_MODELS,
         supports_model_discovery: true,
         requires_api_key: true,
         local_only: false,
@@ -3093,6 +3132,38 @@ mod tests {
         assert!(
             provider.supports_tools(),
             "deepseek models must support tool calling"
+        );
+    }
+
+    #[test]
+    fn fireworks_registers_with_api_key() {
+        let mut config = ProvidersConfig::default();
+        config
+            .providers
+            .insert("fireworks".into(), moltis_config::schema::ProviderEntry {
+                api_key: Some(secrecy::Secret::new("sk-test-fireworks".into())),
+                ..Default::default()
+            });
+
+        let reg = ProviderRegistry::from_env_with_config(&config);
+        let fw_models: Vec<_> = reg
+            .list_models()
+            .iter()
+            .filter(|m| m.provider == "fireworks")
+            .collect();
+        assert!(
+            !fw_models.is_empty(),
+            "expected Fireworks models to be registered"
+        );
+        let provider = reg
+            .get(&format!(
+                "fireworks::{}",
+                fw_models[0].id.split("::").last().unwrap_or_default()
+            ))
+            .expect("fireworks model should be in registry");
+        assert!(
+            provider.supports_tools(),
+            "fireworks models must support tool calling"
         );
     }
 
