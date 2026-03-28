@@ -397,10 +397,7 @@ pub async fn handle_message_direct(
                     if document_file.media_type.starts_with("image/") {
                         // Optimize image documents the same way as photo messages
                         let (final_data, media_type) =
-                            match moltis_media::image_ops::optimize_for_llm(
-                                &document_data,
-                                None,
-                            ) {
+                            match moltis_media::image_ops::optimize_for_llm(&document_data, None) {
                                 Ok(optimized) => {
                                     if optimized.was_resized {
                                         info!(
@@ -1672,14 +1669,13 @@ fn extract_text_document_content(data: &[u8], media_type: &str) -> Option<String
     }
 
     // Char-limit: find the byte offset of the Nth char boundary in one pass.
-    let mut text = if let Some((byte_idx, _)) =
-        trimmed.char_indices().nth(MAX_INLINE_DOCUMENT_CHARS)
-    {
-        truncated = true;
-        trimmed[..byte_idx].to_string()
-    } else {
-        trimmed.to_string()
-    };
+    let mut text =
+        if let Some((byte_idx, _)) = trimmed.char_indices().nth(MAX_INLINE_DOCUMENT_CHARS) {
+            truncated = true;
+            trimmed[..byte_idx].to_string()
+        } else {
+            trimmed.to_string()
+        };
 
     if truncated {
         text.push_str("\n\n[Document content truncated]");
@@ -2270,7 +2266,10 @@ mod tests {
 
     #[test]
     fn normalize_media_type_strips_params() {
-        assert_eq!(normalize_media_type("text/plain; charset=utf-8"), "text/plain");
+        assert_eq!(
+            normalize_media_type("text/plain; charset=utf-8"),
+            "text/plain"
+        );
         assert_eq!(normalize_media_type("TEXT/HTML"), "text/html");
         assert_eq!(normalize_media_type("application/json"), "application/json");
     }
@@ -2292,8 +2291,8 @@ mod tests {
         data.push(0xE2);
         data.push(0x82);
         data.push(0xAC);
-        let result = extract_text_document_content(&data, "text/plain")
-            .expect("should produce text");
+        let result =
+            extract_text_document_content(&data, "text/plain").expect("should produce text");
         // Should not end with the replacement character
         assert!(!result.contains('\u{FFFD}'));
     }
@@ -2306,13 +2305,19 @@ mod tests {
         // U+4E00 (一) = [0xE4, 0xB8, 0x80]
         let cjk = [0xE4u8, 0xB8, 0x80];
         let char_count = (MAX_INLINE_DOCUMENT_BYTES + 2) / 3; // enough to exceed byte cap
-        assert!(char_count < MAX_INLINE_DOCUMENT_CHARS, "test requires char count below cap");
+        assert!(
+            char_count < MAX_INLINE_DOCUMENT_CHARS,
+            "test requires char count below cap"
+        );
         let data: Vec<u8> = cjk.iter().copied().cycle().take(char_count * 3).collect();
         assert!(data.len() > MAX_INLINE_DOCUMENT_BYTES);
 
-        let result = extract_text_document_content(&data, "text/plain")
-            .expect("should produce text");
-        assert!(!result.contains('\u{FFFD}'), "U+FFFD found in CJK truncation result");
+        let result =
+            extract_text_document_content(&data, "text/plain").expect("should produce text");
+        assert!(
+            !result.contains('\u{FFFD}'),
+            "U+FFFD found in CJK truncation result"
+        );
         assert!(result.contains("[Document content truncated]"));
     }
 
