@@ -1652,34 +1652,30 @@ fn extract_text_document_content(data: &[u8], media_type: &str) -> Option<String
     let mut truncated = false;
 
     // Byte-limit: find the largest valid UTF-8 prefix within the cap.
-    let text_slice = if data.len() > MAX_INLINE_DOCUMENT_BYTES {
+    let bounded = if data.len() > MAX_INLINE_DOCUMENT_BYTES {
         truncated = true;
-        let slice = &data[..MAX_INLINE_DOCUMENT_BYTES];
-        match std::str::from_utf8(slice) {
-            Ok(s) => s,
-            Err(e) => std::str::from_utf8(&slice[..e.valid_up_to()]).unwrap_or_default(),
-        }
+        &data[..MAX_INLINE_DOCUMENT_BYTES]
     } else {
-        // Full data — may still contain invalid UTF-8 from non-text bytes.
-        match std::str::from_utf8(data) {
-            Ok(s) => s,
-            Err(_) => return Some(String::from_utf8_lossy(data).trim().to_string()),
-        }
+        data
     };
 
-    let text_slice = text_slice.trim();
-    if text_slice.is_empty() {
+    // Convert to a string, lossy-replacing any invalid bytes. This handles
+    // both the truncated case (where we may have cut a multi-byte sequence)
+    // and files with stray non-UTF-8 bytes.
+    let lossy = String::from_utf8_lossy(bounded);
+    let trimmed = lossy.trim();
+    if trimmed.is_empty() {
         return None;
     }
 
     // Char-limit: find the byte offset of the Nth char boundary in one pass.
     let mut text = if let Some((byte_idx, _)) =
-        text_slice.char_indices().nth(MAX_INLINE_DOCUMENT_CHARS)
+        trimmed.char_indices().nth(MAX_INLINE_DOCUMENT_CHARS)
     {
         truncated = true;
-        text_slice[..byte_idx].to_string()
+        trimmed[..byte_idx].to_string()
     } else {
-        text_slice.to_string()
+        trimmed.to_string()
     };
 
     if truncated {
