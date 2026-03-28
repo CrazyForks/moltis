@@ -4856,4 +4856,117 @@ mod tests {
             "unexpected error: {error}"
         );
     }
+
+    /// Regression test for <https://github.com/moltis-org/moltis/issues/502>.
+    ///
+    /// Before the fix, custom providers without a model fell through to the
+    /// model-probing loop, which sent chat completions to every discovered
+    /// model and timed out. The discovery path must return the model list
+    /// directly without ever hitting the chat completions endpoint.
+    #[tokio::test]
+    async fn validate_key_custom_provider_does_not_probe_when_model_unset() {
+        use {
+            axum::{
+                Json, Router,
+                http::StatusCode,
+                routing::{get, post},
+            },
+            std::sync::atomic::{AtomicBool, Ordering},
+        };
+
+        static COMPLETIONS_CALLED: AtomicBool = AtomicBool::new(false);
+
+        let app = Router::new()
+            .route(
+                "/models",
+                get(|| async {
+                    Json(serde_json::json!({
+                        "data": [
+                            {"id": "llama-3.1-70b", "object": "model", "created": 1700000000},
+                        ]
+                    }))
+                }),
+            )
+            .route(
+                "/chat/completions",
+                post(|| async {
+                    COMPLETIONS_CALLED.store(true, Ordering::SeqCst);
+                    StatusCode::INTERNAL_SERVER_ERROR
+                }),
+            )
+            .route(
+                "/v1/chat/completions",
+                post(|| async {
+                    COMPLETIONS_CALLED.store(true, Ordering::SeqCst);
+                    StatusCode::INTERNAL_SERVER_ERROR
+                }),
+            );
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
+        let addr = listener.local_addr().expect("local addr");
+        let server = tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+
+        COMPLETIONS_CALLED.store(false, Ordering::SeqCst);
+
+        let registry = Arc::new(RwLock::new(ProviderRegistry::from_env_with_config(
+            &ProvidersConfig::default(),
+        )));
+        let svc = LiveProviderSetupService::new(registry, ProvidersConfig::default(), None);
+        let result = svc
+            .validate_key(serde_json::json!({
+                "provider": "custom-test-server",
+                "apiKey": "sk-test",
+                "baseUrl": format!("http://{addr}")
+            }))
+            .await
+            .expect("validate_key should return payload");
+        server.abort();
+
+        assert_eq!(result.get("valid").and_then(|v| v.as_bool()), Some(true));
+        assert!(
+            result.get("models").and_then(|v| v.as_array()).is_some(),
+            "should return discovered models"
+        );
+        assert!(
+            !COMPLETIONS_CALLED.load(Ordering::SeqCst),
+            "chat completions endpoint must NOT be called when model is unset — \
+             the discovery path should return models directly (issue #502)"
+        );
+    }
+
+    /// When a custom provider's `/models` endpoint is unreachable, validation
+    /// should return an error promptly rather than falling through to probing.
+    #[tokio::test]
+    async fn validate_key_custom_provider_connection_refused_returns_error() {
+        // Bind a port and immediately drop the listener so connections are refused.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
+        let addr = listener.local_addr().expect("local addr");
+        drop(listener);
+
+        let registry = Arc::new(RwLock::new(ProviderRegistry::from_env_with_config(
+            &ProvidersConfig::default(),
+        )));
+        let svc = LiveProviderSetupService::new(registry, ProvidersConfig::default(), None);
+        let result = svc
+            .validate_key(serde_json::json!({
+                "provider": "custom-test-server",
+                "apiKey": "sk-test",
+                "baseUrl": format!("http://{addr}")
+            }))
+            .await
+            .expect("validate_key should return payload");
+
+        assert_eq!(result.get("valid").and_then(|v| v.as_bool()), Some(false));
+        let error = result.get("error").and_then(|v| v.as_str()).unwrap_or("");
+        assert!(
+            error.contains("Failed to discover models"),
+            "should report discovery failure, got: {error}"
+        );
+    }
 }
