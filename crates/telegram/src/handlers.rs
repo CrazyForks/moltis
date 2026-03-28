@@ -2304,7 +2304,7 @@ mod tests {
         // char-limit branch is NOT taken. U+FFFD must still not appear.
         // U+4E00 (一) = [0xE4, 0xB8, 0x80]
         let cjk = [0xE4u8, 0xB8, 0x80];
-        let char_count = (MAX_INLINE_DOCUMENT_BYTES + 2) / 3; // enough to exceed byte cap
+        let char_count = MAX_INLINE_DOCUMENT_BYTES.div_ceil(3); // enough to exceed byte cap
         assert!(
             char_count < MAX_INLINE_DOCUMENT_CHARS,
             "test requires char count below cap"
