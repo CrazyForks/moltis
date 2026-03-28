@@ -791,6 +791,15 @@ pub fn known_providers() -> Vec<KnownProvider> {
             key_optional: false,
         },
         KnownProvider {
+            name: "fireworks",
+            display_name: "Fireworks",
+            auth_type: AuthType::ApiKey,
+            env_key: Some("FIREWORKS_API_KEY"),
+            default_base_url: Some("https://api.fireworks.ai/inference/v1"),
+            requires_model: false,
+            key_optional: false,
+        },
+        KnownProvider {
             name: "mistral",
             display_name: "Mistral",
             auth_type: AuthType::ApiKey,

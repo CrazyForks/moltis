@@ -91,6 +91,7 @@ const KNOWN_PROVIDER_NAMES: &[&str] = &[
     "groq",
     "xai",
     "deepseek",
+    "fireworks",
     "mistral",
     "openrouter",
     "cerebras",
