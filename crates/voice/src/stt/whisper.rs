@@ -258,11 +258,7 @@ mod tests {
 
     #[test]
     fn test_with_custom_base_url() {
-        let provider = WhisperStt::with_options(
-            None,
-            Some("http://10.1.2.30:8001".into()),
-            None,
-        );
+        let provider = WhisperStt::with_options(None, Some("http://10.1.2.30:8001".into()), None);
         assert!(provider.is_configured());
         assert_eq!(provider.base_url, "http://10.1.2.30:8001");
     }

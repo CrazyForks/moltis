@@ -534,9 +534,7 @@ impl LiveSttService {
                     cfg.voice.stt.whisper.model.clone(),
                 );
                 if provider.is_configured() {
-                    Some(
-                        Box::new(provider) as Box<dyn SttProvider + Send + Sync>,
-                    )
+                    Some(Box::new(provider) as Box<dyn SttProvider + Send + Sync>)
                 } else {
                     None
                 }

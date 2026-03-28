@@ -263,12 +263,8 @@ mod tests {
 
     #[test]
     fn test_with_custom_base_url() {
-        let provider = OpenAiTts::with_defaults(
-            None,
-            Some("http://10.1.2.30:8003".into()),
-            None,
-            None,
-        );
+        let provider =
+            OpenAiTts::with_defaults(None, Some("http://10.1.2.30:8003".into()), None, None);
         assert!(provider.is_configured());
         assert_eq!(provider.base_url, "http://10.1.2.30:8003");
     }
