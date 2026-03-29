@@ -69,6 +69,8 @@ test.describe("Settings navigation", () => {
 			};
 			return {
 				nodes: readRuleMask('.settings-nav-item[data-section="nodes"]::before'),
+				ssh: readRuleMask('.settings-nav-item[data-section="ssh"]::before'),
+				tools: readRuleMask('.settings-nav-item[data-section="tools"]::before'),
 				tailscale: readRuleMask('.settings-nav-item[data-section="tailscale"]::before'),
 				networkAudit: readRuleMask('.settings-nav-item[data-section="network-audit"]::before'),
 				mcp: readRuleMask('.settings-nav-item[data-section="mcp"]::before'),
@@ -84,6 +86,8 @@ test.describe("Settings navigation", () => {
 		if (masks.nodes !== null) {
 			expect(hasMask(masks.nodes)).toBeTruthy();
 		}
+		expect(hasMask(masks.ssh)).toBeTruthy();
+		expect(hasMask(masks.tools)).toBeTruthy();
 		expect(hasMask(masks.tailscale)).toBeTruthy();
 		expect(hasMask(masks.networkAudit)).toBeTruthy();
 		expect(hasMask(masks.mcp)).toBeTruthy();
@@ -110,6 +114,7 @@ test.describe("Settings navigation", () => {
 		{ id: "network-audit", heading: "Network Audit" },
 		{ id: "notifications", heading: "Notifications" },
 		{ id: "providers", heading: "LLMs" },
+		{ id: "tools", heading: "Tools" },
 		{ id: "channels", heading: "Channels" },
 		{ id: "mcp", heading: "MCP" },
 		{ id: "hooks", heading: "Hooks" },
@@ -151,6 +156,23 @@ test.describe("Settings navigation", () => {
 		await expect(page.getByRole("heading", { name: "Remote Exec Status", exact: true })).toBeVisible();
 		await expect(page.getByRole("button", { name: "SSH Settings", exact: true })).toBeVisible();
 		await expect(page.getByText("Backend", { exact: true })).toBeVisible();
+
+		expect(pageErrors).toEqual([]);
+	});
+
+	test("tools settings shows effective inventory and routing summary", async ({ page }) => {
+		const pageErrors = watchPageErrors(page);
+		await navigateAndWait(page, "/settings/tools");
+
+		await expect(page.getByRole("heading", { name: "Tools", exact: true })).toBeVisible();
+		await expect(
+			page.getByText("This page shows the effective tool inventory for the active session and model.", {
+				exact: false,
+			}),
+		).toBeVisible();
+		await expect(page.getByText("Tool Calling", { exact: true })).toBeVisible();
+		await expect(page.getByText("Execution Routes", { exact: true })).toBeVisible();
+		await expect(page.getByText("Registered Tools", { exact: true })).toBeVisible();
 
 		expect(pageErrors).toEqual([]);
 	});
@@ -524,7 +546,17 @@ test.describe("Settings navigation", () => {
 		];
 		if (navItems.includes("Encryption")) expectedPrefix.push("Encryption");
 		if (navItems.includes("SSH")) expectedPrefix.push("SSH");
-		expectedPrefix.push("Tailscale", "Network Audit", "Sandboxes", "Channels", "Hooks", "LLMs", "MCP", "Skills");
+		expectedPrefix.push(
+			"Tailscale",
+			"Network Audit",
+			"Sandboxes",
+			"Channels",
+			"Hooks",
+			"LLMs",
+			"Tools",
+			"MCP",
+			"Skills",
+		);
 		const expectedSystem = ["Terminal", "Monitoring", "Logs"];
 		const expected = [...expectedPrefix];
 		if (navItems.includes("OpenClaw Import")) expected.push("OpenClaw Import");

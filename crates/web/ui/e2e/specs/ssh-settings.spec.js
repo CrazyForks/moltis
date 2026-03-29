@@ -5,6 +5,8 @@ test.describe("SSH settings", () => {
 	test("can generate a deploy key and add a managed SSH target", async ({ page }) => {
 		const pageErrors = watchPageErrors(page);
 		await navigateAndWait(page, "/settings/ssh");
+		await expect(page.locator('.settings-nav-item[data-section="ssh"]')).toHaveText("SSH");
+		await expect(page.locator('.settings-nav-item[data-section="ssh"] .icon')).toHaveCount(0);
 
 		const suffix = Date.now().toString().slice(-6);
 		const keyName = `e2e-key-${suffix}`;

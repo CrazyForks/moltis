@@ -160,7 +160,7 @@ var sections = [
 	{
 		id: "ssh",
 		label: "SSH",
-		icon: html`<span class="icon icon-link"></span>`,
+		icon: html`<span class="icon icon-ssh"></span>`,
 	},
 	{
 		id: "tailscale",
@@ -197,6 +197,11 @@ var sections = [
 		label: "LLMs",
 		icon: html`<span class="icon icon-layers"></span>`,
 		page: true,
+	},
+	{
+		id: "tools",
+		label: "Tools",
+		icon: html`<span class="icon icon-settings-gear"></span>`,
 	},
 	{
 		id: "mcp",
@@ -242,6 +247,57 @@ function getVisibleSections() {
 /** Return only items with an id (no group headings). */
 function getSectionItems() {
 	return getVisibleSections().filter((s) => s.id);
+}
+
+function pluralizeToolsCount(count, noun) {
+	return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
+
+function toolsOverviewCategory(name) {
+	if (typeof name !== "string" || !name) return "Core";
+	if (name.startsWith("mcp__")) return "MCP";
+	if (name === "exec" || name.startsWith("node") || name.startsWith("sandbox") || name.includes("checkpoint")) {
+		return "Execution";
+	}
+	if (name.startsWith("session") || name.startsWith("sessions_")) return "Sessions";
+	if (name.startsWith("memory") || name.includes("memory")) return "Memory";
+	if (name.startsWith("browser") || name.startsWith("web_") || name.includes("screenshot") || name.includes("fetch")) {
+		return "Web & Browser";
+	}
+	if (name.startsWith("skill") || name.includes("skill")) return "Skills";
+	return "Core";
+}
+
+function groupToolsForOverview(tools) {
+	var grouped = new Map();
+	(tools || []).forEach((tool) => {
+		var category = toolsOverviewCategory(tool?.name);
+		if (!grouped.has(category)) grouped.set(category, []);
+		grouped.get(category).push(tool);
+	});
+	var order = ["Execution", "Sessions", "Memory", "Web & Browser", "Skills", "MCP", "Core"];
+	return order
+		.filter((label) => grouped.has(label))
+		.map((label) => ({
+			label,
+			tools: grouped
+				.get(label)
+				.slice()
+				.sort((left, right) => String(left?.name || "").localeCompare(String(right?.name || ""))),
+		}));
+}
+
+function summarizeRemoteExecInventory(entries) {
+	var summary = { pairedNodes: 0, sshTargets: 0 };
+	(entries || []).forEach((entry) => {
+		if (!entry || typeof entry !== "object") return;
+		if (entry.platform === "ssh") {
+			summary.sshTargets += 1;
+			return;
+		}
+		summary.pairedNodes += 1;
+	});
+	return summary;
 }
 
 function SettingsSidebar() {
@@ -1671,6 +1727,307 @@ function VaultSection() {
 	</div>`;
 }
 
+function ToolsSection() {
+	var [loadingTools, setLoadingTools] = useState(true);
+	var [toolData, setToolData] = useState(null);
+	var [nodeInventory, setNodeInventory] = useState([]);
+	var [toolsErr, setToolsErr] = useState(null);
+
+	function loadToolsOverview() {
+		setLoadingTools(true);
+		setToolsErr(null);
+		Promise.allSettled([sendRpc("chat.context", {}), sendRpc("node.list", {})])
+			.then((results) => {
+				var contextResult = results[0];
+				if (contextResult.status !== "fulfilled" || !contextResult.value?.ok) {
+					throw new Error(contextResult.value?.error?.message || "Failed to load tools overview.");
+				}
+				var nextToolData = contextResult.value.payload || {};
+				var nodesResult = results[1];
+				var nextNodeInventory =
+					nodesResult.status === "fulfilled" && nodesResult.value?.ok && Array.isArray(nodesResult.value.payload)
+						? nodesResult.value.payload
+						: [];
+				setToolData(nextToolData);
+				setNodeInventory(nextNodeInventory);
+				setLoadingTools(false);
+			})
+			.catch((error) => {
+				setLoadingTools(false);
+				setToolsErr(error.message);
+			});
+	}
+
+	useEffect(() => {
+		loadToolsOverview();
+	}, []);
+
+	var data = toolData || {};
+	var session = data.session || {};
+	var execution = data.execution || {};
+	var sandbox = data.sandbox || {};
+	var tools = Array.isArray(data.tools) ? data.tools : [];
+	var toolGroups = groupToolsForOverview(tools);
+	var skills = Array.isArray(data.skills) ? data.skills : [];
+	var pluginCount = skills.filter((entry) => entry?.source === "plugin").length;
+	var personalSkillCount = skills.length - pluginCount;
+	var mcpServers = Array.isArray(data.mcpServers) ? data.mcpServers : [];
+	var runningMcpServers = mcpServers.filter((entry) => entry?.state === "running");
+	var runningMcpToolCount = runningMcpServers.reduce((sum, entry) => sum + (Number(entry?.tool_count) || 0), 0);
+	var remoteExecInventory = summarizeRemoteExecInventory(nodeInventory);
+	var routeDetails = [];
+	routeDetails.push(execution.mode === "sandbox" ? "sandboxed commands" : "host commands");
+	if (remoteExecInventory.pairedNodes > 0) {
+		routeDetails.push(pluralizeToolsCount(remoteExecInventory.pairedNodes, "paired node"));
+	}
+	if (remoteExecInventory.sshTargets > 0) {
+		routeDetails.push(pluralizeToolsCount(remoteExecInventory.sshTargets, "SSH target"));
+	}
+	if (remoteExecInventory.pairedNodes === 0 && remoteExecInventory.sshTargets === 0) {
+		routeDetails.push("local only");
+	}
+
+	return html`<div class="flex-1 flex flex-col min-w-0 p-4 gap-4 overflow-y-auto">
+		<div class="flex items-start justify-between gap-3 flex-wrap max-w-[1100px]">
+			<div class="min-w-0">
+				<h2 class="text-lg font-medium text-[var(--text-strong)]">Tools</h2>
+				<p class="text-xs text-[var(--muted)] mt-1 max-w-[900px] leading-relaxed">
+					This page shows the effective tool inventory for the active session and model. Change the
+					current LLM, disable MCP for a session, or switch execution routes and the inventory here will
+					change with it.
+				</p>
+			</div>
+			<button
+				type="button"
+				class="provider-btn provider-btn-secondary"
+				onClick=${loadToolsOverview}
+				disabled=${loadingTools}
+			>
+				${loadingTools ? "Refreshing…" : "Refresh"}
+			</button>
+		</div>
+
+		<div class="rounded border border-[var(--border)] bg-[var(--surface2)] p-3 max-w-[1100px]">
+			<div class="text-xs text-[var(--muted)] leading-relaxed">
+				Use this as the operator view of what the model can currently reach. For setup changes, jump straight
+				to the relevant control surface.
+			</div>
+			<div class="mt-3 flex gap-2 flex-wrap">
+				<button type="button" class="provider-btn provider-btn-secondary" onClick=${() => navigate(settingsPath("providers"))}>
+					LLMs
+				</button>
+				<button type="button" class="provider-btn provider-btn-secondary" onClick=${() => navigate(settingsPath("mcp"))}>
+					MCP
+				</button>
+				<button type="button" class="provider-btn provider-btn-secondary" onClick=${() => navigate(settingsPath("skills"))}>
+					Skills
+				</button>
+				<button type="button" class="provider-btn provider-btn-secondary" onClick=${() => navigate(settingsPath("nodes"))}>
+					Nodes
+				</button>
+				<button type="button" class="provider-btn provider-btn-secondary" onClick=${() => navigate(settingsPath("ssh"))}>
+					SSH
+				</button>
+			</div>
+		</div>
+
+		${toolsErr ? html`<div class="text-xs text-[var(--error)] max-w-[1100px]">${toolsErr}</div>` : null}
+
+		<div class="grid gap-4 md:grid-cols-2 max-w-[1100px]">
+			<div class="rounded border border-[var(--border)] bg-[var(--surface)] p-4">
+				<div class="text-xs uppercase tracking-wide text-[var(--muted)]">Tool Calling</div>
+				<div class="mt-2 flex items-center gap-2 flex-wrap">
+					<span class="provider-item-badge ${data.supportsTools === false ? "warning" : "configured"}">
+						${data.supportsTools === false ? "Disabled" : "Enabled"}
+					</span>
+					<span class="text-sm font-medium text-[var(--text)]">
+						${tools.length} registered tool${tools.length === 1 ? "" : "s"}
+					</span>
+				</div>
+				<div class="text-xs text-[var(--muted)] mt-2 leading-relaxed">
+					${
+						data.supportsTools === false
+							? "The current model is chat-only, so the agent cannot call tools in this session."
+							: "Built-in, MCP, and runtime-routed tools available to the active model."
+					}
+				</div>
+			</div>
+
+			<div class="rounded border border-[var(--border)] bg-[var(--surface)] p-4">
+				<div class="text-xs uppercase tracking-wide text-[var(--muted)]">Active Model</div>
+				<div class="mt-2 text-sm font-medium text-[var(--text)] break-words">
+					${session.model || "Default model selection"}
+				</div>
+				<div class="text-xs text-[var(--muted)] mt-2 leading-relaxed">
+					${session.provider ? `Provider: ${session.provider}` : "Provider selected automatically."}
+					${session.label ? ` Session: ${session.label}.` : ""}
+				</div>
+			</div>
+
+			<div class="rounded border border-[var(--border)] bg-[var(--surface)] p-4">
+				<div class="text-xs uppercase tracking-wide text-[var(--muted)]">MCP</div>
+				<div class="mt-2 flex items-center gap-2 flex-wrap">
+					<span class="provider-item-badge ${
+						data.supportsTools === false || data.mcpDisabled
+							? "warning"
+							: runningMcpServers.length > 0
+								? "configured"
+								: "muted"
+					}">
+						${
+							data.supportsTools === false
+								? "Unavailable"
+								: data.mcpDisabled
+									? "Off for session"
+									: runningMcpServers.length > 0
+										? "Active"
+										: "No running servers"
+						}
+					</span>
+					<span class="text-sm font-medium text-[var(--text)]">
+						${pluralizeToolsCount(runningMcpToolCount, "MCP tool")}
+					</span>
+				</div>
+				<div class="text-xs text-[var(--muted)] mt-2 leading-relaxed">
+					${pluralizeToolsCount(runningMcpServers.length, "running server")}
+					${data.mcpDisabled ? ", disabled explicitly for this session." : "."}
+				</div>
+			</div>
+
+			<div class="rounded border border-[var(--border)] bg-[var(--surface)] p-4">
+				<div class="text-xs uppercase tracking-wide text-[var(--muted)]">Execution Routes</div>
+				<div class="mt-2 text-sm font-medium text-[var(--text)]">
+					${routeDetails.join(" · ")}
+				</div>
+				<div class="text-xs text-[var(--muted)] mt-2 leading-relaxed">
+					${sandbox.enabled ? `Sandbox backend: ${sandbox.backend || "configured"}. ` : ""}
+					${execution.promptSymbol ? `Prompt symbol: ${execution.promptSymbol}. ` : ""}
+					The <code class="text-[var(--text)]">exec</code> tool uses these routes rather than exposing SSH as
+					a separate command runner.
+				</div>
+			</div>
+		</div>
+
+		${
+			data.supportsTools === false
+				? html`<div class="rounded border border-[var(--warn)] bg-[var(--surface2)] p-3 max-w-[1100px]">
+					<div class="text-xs text-[var(--muted)] leading-relaxed">
+						Tools are unavailable because the current model does not support tool calling. Switch to a tool-capable
+						model in <strong class="text-[var(--text)]">Settings → LLMs</strong> and refresh this page.
+					</div>
+				</div>`
+				: null
+		}
+
+		<div class="grid gap-4 md:grid-cols-2 max-w-[1100px]">
+			<div class="rounded border border-[var(--border)] bg-[var(--surface)] p-4">
+				<div class="flex items-center justify-between gap-2 flex-wrap">
+					<h3 class="text-sm font-medium text-[var(--text-strong)] m-0">Registered Tools</h3>
+					<span class="provider-item-badge muted">${tools.length}</span>
+				</div>
+				${
+					toolGroups.length > 0
+						? html`<div class="mt-3 flex flex-col gap-3">
+							${toolGroups.map(
+								(group) => html`<div key=${group.label}>
+									<div class="text-xs uppercase tracking-wide text-[var(--muted)] mb-2">
+										${group.label} · ${group.tools.length}
+									</div>
+									<div class="flex flex-col gap-2">
+										${group.tools.map(
+											(tool) => html`<div
+												key=${tool.name}
+												class="rounded border border-[var(--border)] bg-[var(--surface2)] p-3"
+											>
+												<div class="flex items-center justify-between gap-2 flex-wrap">
+													<div class="text-xs font-medium text-[var(--text)] break-words">${tool.name}</div>
+													${
+														tool.name?.startsWith("mcp__")
+															? html`<span class="provider-item-badge configured">MCP</span>`
+															: null
+													}
+												</div>
+												<div class="text-xs text-[var(--muted)] mt-1 leading-relaxed">
+													${tool.description || "No description provided."}
+												</div>
+											</div>`,
+										)}
+									</div>
+								</div>`,
+							)}
+						</div>`
+						: html`<div class="text-xs text-[var(--muted)] mt-3">
+							No tools are currently exposed to this session.
+						</div>`
+				}
+			</div>
+
+			<div class="flex flex-col gap-4">
+				<div class="rounded border border-[var(--border)] bg-[var(--surface)] p-4">
+					<div class="flex items-center justify-between gap-2 flex-wrap">
+						<h3 class="text-sm font-medium text-[var(--text-strong)] m-0">Skills & Plugins</h3>
+						<span class="provider-item-badge muted">${skills.length}</span>
+					</div>
+					<div class="text-xs text-[var(--muted)] mt-3 leading-relaxed">
+						${pluralizeToolsCount(personalSkillCount, "skill")}, ${pluralizeToolsCount(pluginCount, "plugin")}.
+					</div>
+					${
+						skills.length > 0
+							? html`<div class="mt-3 flex flex-col gap-2">
+								${skills.map(
+									(entry) => html`<div
+										key=${entry.name}
+										class="rounded border border-[var(--border)] bg-[var(--surface2)] p-3"
+									>
+										<div class="flex items-center justify-between gap-2 flex-wrap">
+											<div class="text-xs font-medium text-[var(--text)]">${entry.name}</div>
+											<span class="provider-item-badge ${entry.source === "plugin" ? "configured" : "muted"}">
+												${entry.source === "plugin" ? "Plugin" : "Skill"}
+											</span>
+										</div>
+										<div class="text-xs text-[var(--muted)] mt-1 leading-relaxed">
+											${entry.description || "No description provided."}
+										</div>
+									</div>`,
+								)}
+							</div>`
+							: html`<div class="text-xs text-[var(--muted)] mt-3">No skills or plugins enabled.</div>`
+					}
+				</div>
+
+				<div class="rounded border border-[var(--border)] bg-[var(--surface)] p-4">
+					<div class="flex items-center justify-between gap-2 flex-wrap">
+						<h3 class="text-sm font-medium text-[var(--text-strong)] m-0">MCP Servers</h3>
+						<span class="provider-item-badge muted">${mcpServers.length}</span>
+					</div>
+					${
+						mcpServers.length > 0
+							? html`<div class="mt-3 flex flex-col gap-2">
+								${mcpServers.map(
+									(entry) => html`<div
+										key=${entry.name}
+										class="rounded border border-[var(--border)] bg-[var(--surface2)] p-3"
+									>
+										<div class="flex items-center justify-between gap-2 flex-wrap">
+											<div class="text-xs font-medium text-[var(--text)]">${entry.name}</div>
+											<span class="provider-item-badge ${entry.state === "running" ? "configured" : "warning"}">
+												${entry.state || "unknown"}
+											</span>
+										</div>
+										<div class="text-xs text-[var(--muted)] mt-1 leading-relaxed">
+											${pluralizeToolsCount(Number(entry.tool_count) || 0, "tool")}
+										</div>
+									</div>`,
+								)}
+							</div>`
+							: html`<div class="text-xs text-[var(--muted)] mt-3">No MCP servers configured.</div>`
+					}
+				</div>
+			</div>
+		</div>
+	</div>`;
+}
+
 function SshSection() {
 	var [loadingSsh, setLoadingSsh] = useState(true);
 	var [keys, setKeys] = useState([]);
@@ -2042,12 +2399,12 @@ function SshSection() {
 
 	return html`<div class="flex-1 flex flex-col min-w-0 p-4 gap-4 overflow-y-auto">
 		<h2 class="text-lg font-medium text-[var(--text-strong)]">SSH</h2>
-		<div class="rounded border border-[var(--border)] bg-[var(--surface2)] p-3 max-w-[760px]">
-			<p class="text-xs text-[var(--muted)] m-0 mb-1.5 leading-relaxed">
-				Manage outbound SSH keys and named remote exec targets. Generated deploy keys use
-				<strong class="text-[var(--text)]">Ed25519</strong>, the private half stays inside Moltis,
-				and the public half is shown so you can install it in <code class="text-[var(--text)]">authorized_keys</code>.
-			</p>
+				<div class="rounded border border-[var(--border)] bg-[var(--surface2)] p-3 max-w-[760px]">
+					<p class="text-xs text-[var(--muted)] m-0 mb-1.5 leading-relaxed">
+						Manage outbound SSH keys and named remote exec targets. Generated deploy keys use <strong class="text-[var(--text)]">Ed25519</strong>,
+						the private half stays inside Moltis,
+						and the public half is shown so you can install it in <code class="text-[var(--text)]">authorized_keys</code>.
+					</p>
 			<p class="text-xs text-[var(--muted)] m-0 leading-relaxed">
 				Current auth path:
 				<strong class="text-[var(--text)]">
@@ -2126,20 +2483,22 @@ function SshSection() {
 							: keys.length === 0
 								? html`<div class="text-xs text-[var(--muted)]">No managed SSH keys yet.</div>`
 								: keys.map(
-										(entry) => html`<div class="provider-item" key=${entry.id}>
-										<div class="flex-1 min-w-0">
-											<div class="provider-item-name">${entry.name}</div>
-											<div class="text-xs text-[var(--muted)] break-all">${entry.fingerprint}</div>
-											<div class="text-xs text-[var(--muted)] mt-1">
-												${entry.encrypted ? "Encrypted in vault" : "Stored plaintext until the vault is available"}
-												${entry.target_count > 0 ? `, used by ${entry.target_count} target${entry.target_count === 1 ? "" : "s"}` : ""}
+										(entry) => html`<div class="provider-item items-start gap-4" key=${entry.id}>
+											<div class="flex-1 min-w-0">
+												<div class="provider-item-name">${entry.name}</div>
+												<div class="text-xs text-[var(--muted)] break-all mt-1">
+													<span class="text-[var(--text)]">Fingerprint (SHA256):</span> ${entry.fingerprint}
+												</div>
+												<div class="text-xs text-[var(--muted)] mt-1">
+													${entry.encrypted ? "Encrypted in vault" : "Stored plaintext until the vault is available"}
+													${entry.target_count > 0 ? `, used by ${entry.target_count} target${entry.target_count === 1 ? "" : "s"}` : ""}
+												</div>
+												<pre class="mt-3 whitespace-pre-wrap break-all rounded border border-[var(--border)] bg-[var(--surface2)] p-2 text-[11px] leading-relaxed text-[var(--muted)]">${entry.public_key}</pre>
 											</div>
-											<pre class="mt-2 whitespace-pre-wrap break-all rounded border border-[var(--border)] bg-[var(--surface2)] p-2 text-[11px] leading-relaxed text-[var(--muted)]">${entry.public_key}</pre>
-										</div>
-										<div class="flex flex-col gap-2">
-											<button type="button" class="provider-btn provider-btn-secondary" onClick=${() => onCopyPublicKey(entry)}>
-												${copiedKeyId === entry.id ? "Copied" : "Copy Public Key"}
-											</button>
+											<div class="flex flex-col gap-2 shrink-0 self-start">
+												<button type="button" class="provider-btn provider-btn-secondary" onClick=${() => onCopyPublicKey(entry)}>
+													${copiedKeyId === entry.id ? "Copied" : "Copy Public Key"}
+												</button>
 											<button
 												type="button"
 												class="provider-btn provider-btn-danger"
@@ -4684,6 +5043,7 @@ function SettingsPage() {
 					${section === "identity" ? html`<${IdentitySection} />` : null}
 					${section === "memory" ? html`<${MemorySection} />` : null}
 					${section === "environment" ? html`<${EnvironmentSection} />` : null}
+						${section === "tools" ? html`<${ToolsSection} />` : null}
 						${section === "security" ? html`<${SecuritySection} />` : null}
 						${section === "vault" ? html`<${VaultSection} />` : null}
 						${section === "ssh" ? html`<${SshSection} />` : null}

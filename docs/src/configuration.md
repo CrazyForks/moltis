@@ -91,6 +91,11 @@ targets exist, the default one is used when `tools.exec.host = "ssh"` and no
 session-specific route is selected. `moltis doctor` also reports remote-exec
 inventory, active backend mode, and obvious SSH setup problems from the CLI.
 
+`Settings -> Tools` shows the effective tool inventory for the active session
+and model, including tool-calling support, MCP server state, skills/plugins,
+and available execution routes. It is session-aware by design, switching the
+model or disabling MCP for a session changes what appears there.
+
 ## Sandbox Configuration
 
 Commands run inside isolated containers for security:
