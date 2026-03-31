@@ -854,6 +854,15 @@ pub fn known_providers() -> Vec<KnownProvider> {
             key_optional: false,
         },
         KnownProvider {
+            name: "zai-code",
+            display_name: "Z.AI (Coding Plan)",
+            auth_type: AuthType::ApiKey,
+            env_key: Some("Z_CODE_API_KEY"),
+            default_base_url: Some("https://api.z.ai/api/coding/paas/v4"),
+            requires_model: false,
+            key_optional: false,
+        },
+        KnownProvider {
             name: "venice",
             display_name: "Venice",
             auth_type: AuthType::ApiKey,
@@ -2215,8 +2224,6 @@ impl ProviderSetupService for LiveProviderSetupService {
     }
 
     async fn validate_key(&self, params: Value) -> ServiceResult {
-        use moltis_agents::model::ChatMessage;
-
         let provider_name = params
             .get("provider")
             .and_then(|v| v.as_str())
@@ -2368,6 +2375,62 @@ impl ProviderSetupService for LiveProviderSetupService {
             }
         }
 
+        // Custom OpenAI-compatible providers: discover models via /v1/models
+        // when no model is specified, instead of probing (which can timeout).
+        if is_custom && selected_model.is_none() {
+            let api_key_str = api_key.unwrap_or_default();
+            let base = base_url_value.unwrap_or_default();
+            match moltis_providers::openai::fetch_models_from_api(
+                Secret::new(api_key_str.to_string()),
+                base.to_string(),
+            )
+            .await
+            {
+                Ok(discovered) => {
+                    let model_list: Vec<Value> = discovered
+                        .iter()
+                        .map(|m| {
+                            serde_json::json!({
+                                "id": format!("{provider_name}::{}", m.id),
+                                "displayName": &m.display_name,
+                                "provider": provider_name,
+                            })
+                        })
+                        .collect();
+                    self.emit_validation_progress(
+                        &validation_provider_name,
+                        request_id.as_deref(),
+                        "complete",
+                        progress_payload(serde_json::json!({
+                            "message": "Discovered models from endpoint.",
+                            "modelCount": model_list.len(),
+                        })),
+                    )
+                    .await;
+                    return Ok(serde_json::json!({
+                        "valid": true,
+                        "models": model_list,
+                    }));
+                },
+                Err(err) => {
+                    let error = format!("Failed to discover models from endpoint: {err}");
+                    self.emit_validation_progress(
+                        &validation_provider_name,
+                        request_id.as_deref(),
+                        "error",
+                        progress_payload(serde_json::json!({
+                            "message": error.clone(),
+                        })),
+                    )
+                    .await;
+                    return Ok(serde_json::json!({
+                        "valid": false,
+                        "error": error,
+                    }));
+                },
+            }
+        }
+
         let normalized_base_url = if provider_name == "ollama" {
             base_url_value.map(|url| normalize_ollama_openai_base_url(Some(url)))
         } else {
@@ -2436,14 +2499,18 @@ impl ProviderSetupService for LiveProviderSetupService {
         .await;
 
         const VALIDATION_MAX_MODEL_PROBES: usize = 8;
-        const VALIDATION_MAX_TIMEOUTS: usize = 3;
-        const VALIDATION_PROBE_TIMEOUT_SECS: u64 = 10;
+        // With a 30 s per-probe timeout, a single timeout is enough to
+        // decide the endpoint is unreachable — keeps worst-case at ~30 s.
+        const VALIDATION_MAX_TIMEOUTS: usize = 1;
+        // Local LLM servers may need 10-20+ seconds to load a model before
+        // responding.  30 s gives them room while still failing reasonably
+        // fast when the endpoint is genuinely unreachable.
+        const VALIDATION_PROBE_TIMEOUT_SECS: u64 = 30;
 
         reorder_models_for_validation(&mut models);
 
         let total_probe_attempts = models.len().min(VALIDATION_MAX_MODEL_PROBES);
 
-        let probe = [ChatMessage::user("ping")];
         let mut probe_attempted = false;
         let mut unsupported_errors = Vec::new();
         let mut last_error: Option<String> = None;
@@ -2484,7 +2551,7 @@ impl ProviderSetupService for LiveProviderSetupService {
             .await;
             let result = tokio::time::timeout(
                 std::time::Duration::from_secs(VALIDATION_PROBE_TIMEOUT_SECS),
-                llm_provider.complete(&probe, &[]),
+                llm_provider.probe(),
             )
             .await;
 
@@ -2854,6 +2921,7 @@ fn reorder_models_for_validation(models: &mut [moltis_providers::ModelInfo]) {
     /// Known-fast model substrings, ordered by preference.
     /// These are small/cheap models that respond quickly on every major provider.
     const FAST_PATTERNS: &[&str] = &[
+        "highspeed",
         "gpt-4o-mini",
         "gpt-4.1-mini",
         "gpt-4.1-nano",
@@ -3972,6 +4040,7 @@ mod tests {
         assert!(names.contains(&"minimax"), "missing minimax");
         assert!(names.contains(&"moonshot"), "missing moonshot");
         assert!(names.contains(&"zai"), "missing zai");
+        assert!(names.contains(&"zai-code"), "missing zai-code");
         assert!(names.contains(&"kimi-code"), "missing kimi-code");
         assert!(names.contains(&"venice"), "missing venice");
         assert!(names.contains(&"ollama"), "missing ollama");
@@ -3999,6 +4068,7 @@ mod tests {
             ("minimax", "MINIMAX_API_KEY"),
             ("moonshot", "MOONSHOT_API_KEY"),
             ("zai", "Z_API_KEY"),
+            ("zai-code", "Z_CODE_API_KEY"),
             ("kimi-code", "KIMI_API_KEY"),
             ("venice", "VENICE_API_KEY"),
             ("ollama", "OLLAMA_API_KEY"),
@@ -4030,6 +4100,7 @@ mod tests {
             "minimax",
             "moonshot",
             "zai",
+            "zai-code",
             "kimi-code",
             "venice",
             "ollama",
@@ -4067,6 +4138,7 @@ mod tests {
             "minimax",
             "moonshot",
             "zai",
+            "zai-code",
             "kimi-code",
             "venice",
             "ollama",
@@ -4700,6 +4772,234 @@ mod tests {
         assert_eq!(
             ids[2], "openrouter::gpt-4o-search-preview",
             "slow namespaced model should be last, got: {ids:?}"
+        );
+    }
+
+    #[test]
+    fn reorder_models_for_validation_prefers_highspeed_variants() {
+        let mut models = vec![
+            make_model("minimax::MiniMax-M2.7"),
+            make_model("minimax::MiniMax-M2.7-highspeed"),
+            make_model("minimax::MiniMax-M2.5"),
+        ];
+
+        reorder_models_for_validation(&mut models);
+        let ids: Vec<&str> = models.iter().map(|m| m.id.as_str()).collect();
+
+        assert_eq!(
+            ids[0], "minimax::MiniMax-M2.7-highspeed",
+            "highspeed variant should probe first, got: {ids:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn validate_key_custom_provider_without_model_returns_discovered_models() {
+        use axum::{Json, Router, routing::get};
+
+        let app = Router::new().route(
+            "/models",
+            get(|| async {
+                Json(serde_json::json!({
+                    "data": [
+                        {"id": "gpt-4o", "object": "model", "created": 1700000000},
+                        {"id": "gpt-4o-mini", "object": "model", "created": 1700000001},
+                        {"id": "dall-e-3", "object": "model", "created": 1700000002}
+                    ]
+                }))
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
+        let addr = listener.local_addr().expect("local addr");
+        let server = tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+
+        let registry = Arc::new(RwLock::new(ProviderRegistry::from_env_with_config(
+            &ProvidersConfig::default(),
+        )));
+        let svc = LiveProviderSetupService::new(registry, ProvidersConfig::default(), None);
+        let result = svc
+            .validate_key(serde_json::json!({
+                "provider": "custom-test-server",
+                "apiKey": "sk-test",
+                "baseUrl": format!("http://{addr}")
+            }))
+            .await
+            .expect("validate_key should return payload");
+        server.abort();
+
+        assert_eq!(result.get("valid").and_then(|v| v.as_bool()), Some(true));
+        let models = result
+            .get("models")
+            .and_then(|v| v.as_array())
+            .expect("models array should be present");
+        // Chat-capable models should be included (namespaced with provider).
+        assert!(
+            models.iter().any(|m| m.get("id").and_then(|v| v.as_str())
+                == Some("custom-test-server::gpt-4o"))
+        );
+        assert!(models.iter().any(
+            |m| m.get("id").and_then(|v| v.as_str()) == Some("custom-test-server::gpt-4o-mini")
+        ));
+        // Non-chat models (dall-e-3) are filtered by fetch_models_from_api.
+        assert!(
+            !models
+                .iter()
+                .any(|m| m.get("id").and_then(|v| v.as_str())
+                    == Some("custom-test-server::dall-e-3"))
+        );
+    }
+
+    #[tokio::test]
+    async fn validate_key_custom_provider_discovery_error_returns_invalid() {
+        use axum::{Router, http::StatusCode, routing::get};
+
+        let app = Router::new().route(
+            "/models",
+            get(|| async { StatusCode::INTERNAL_SERVER_ERROR }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
+        let addr = listener.local_addr().expect("local addr");
+        let server = tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+
+        let registry = Arc::new(RwLock::new(ProviderRegistry::from_env_with_config(
+            &ProvidersConfig::default(),
+        )));
+        let svc = LiveProviderSetupService::new(registry, ProvidersConfig::default(), None);
+        let result = svc
+            .validate_key(serde_json::json!({
+                "provider": "custom-test-server",
+                "apiKey": "sk-test",
+                "baseUrl": format!("http://{addr}")
+            }))
+            .await
+            .expect("validate_key should return payload");
+        server.abort();
+
+        assert_eq!(result.get("valid").and_then(|v| v.as_bool()), Some(false));
+        let error = result.get("error").and_then(|v| v.as_str()).unwrap_or("");
+        assert!(
+            error.contains("Failed to discover models"),
+            "unexpected error: {error}"
+        );
+    }
+
+    /// Regression test for <https://github.com/moltis-org/moltis/issues/502>.
+    ///
+    /// Before the fix, custom providers without a model fell through to the
+    /// model-probing loop, which sent chat completions to every discovered
+    /// model and timed out. The discovery path must return the model list
+    /// directly without ever hitting the chat completions endpoint.
+    #[tokio::test]
+    async fn validate_key_custom_provider_does_not_probe_when_model_unset() {
+        use {
+            axum::{
+                Json, Router,
+                http::StatusCode,
+                routing::{get, post},
+            },
+            std::sync::atomic::{AtomicBool, Ordering},
+        };
+
+        let completions_called = Arc::new(AtomicBool::new(false));
+        let cc1 = completions_called.clone();
+        let cc2 = completions_called.clone();
+
+        let app = Router::new()
+            .route(
+                "/models",
+                get(|| async {
+                    Json(serde_json::json!({
+                        "data": [
+                            {"id": "llama-3.1-70b", "object": "model", "created": 1700000000},
+                        ]
+                    }))
+                }),
+            )
+            .route(
+                "/chat/completions",
+                post(move || async move {
+                    cc1.store(true, Ordering::SeqCst);
+                    StatusCode::INTERNAL_SERVER_ERROR
+                }),
+            )
+            .route(
+                "/v1/chat/completions",
+                post(move || async move {
+                    cc2.store(true, Ordering::SeqCst);
+                    StatusCode::INTERNAL_SERVER_ERROR
+                }),
+            );
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
+        let addr = listener.local_addr().expect("local addr");
+        let server = tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+
+        let registry = Arc::new(RwLock::new(ProviderRegistry::from_env_with_config(
+            &ProvidersConfig::default(),
+        )));
+        let svc = LiveProviderSetupService::new(registry, ProvidersConfig::default(), None);
+        let result = svc
+            .validate_key(serde_json::json!({
+                "provider": "custom-test-server",
+                "apiKey": "sk-test",
+                "baseUrl": format!("http://{addr}")
+            }))
+            .await
+            .expect("validate_key should return payload");
+        server.abort();
+
+        assert_eq!(result.get("valid").and_then(|v| v.as_bool()), Some(true));
+        assert!(
+            result.get("models").and_then(|v| v.as_array()).is_some(),
+            "should return discovered models"
+        );
+        assert!(
+            !completions_called.load(Ordering::SeqCst),
+            "chat completions endpoint must NOT be called when model is unset — \
+             the discovery path should return models directly (issue #502)"
+        );
+    }
+
+    /// When a custom provider's `/models` endpoint is unreachable, validation
+    /// should return an error promptly rather than falling through to probing.
+    #[tokio::test]
+    async fn validate_key_custom_provider_connection_refused_returns_error() {
+        // Bind a port and immediately drop the listener so connections are refused.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
+        let addr = listener.local_addr().expect("local addr");
+        drop(listener);
+
+        let registry = Arc::new(RwLock::new(ProviderRegistry::from_env_with_config(
+            &ProvidersConfig::default(),
+        )));
+        let svc = LiveProviderSetupService::new(registry, ProvidersConfig::default(), None);
+        let result = svc
+            .validate_key(serde_json::json!({
+                "provider": "custom-test-server",
+                "apiKey": "sk-test",
+                "baseUrl": format!("http://{addr}")
+            }))
+            .await
+            .expect("validate_key should return payload");
+
+        assert_eq!(result.get("valid").and_then(|v| v.as_bool()), Some(false));
+        let error = result.get("error").and_then(|v| v.as_str()).unwrap_or("");
+        assert!(
+            error.contains("Failed to discover models"),
+            "should report discovery failure, got: {error}"
         );
     }
 }

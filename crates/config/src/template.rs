@@ -96,7 +96,7 @@ offered = ["local-llm", "github-copilot", "openai-codex", "openai", "anthropic",
 # All available providers:
 #   "anthropic", "openai", "gemini", "groq", "xai", "deepseek",
 #   "fireworks", "mistral", "openrouter", "cerebras", "minimax",
-#   "moonshot", "zai", "venice", "ollama", "local-llm", "openai-codex",
+#   "moonshot", "zai", "zai-code", "venice", "ollama", "local-llm", "openai-codex",
 #   "github-copilot", "kimi-code"
 
 # ── Anthropic (Claude) ────────────────────────────────────────
@@ -241,6 +241,12 @@ security_level = "allowlist"      # Security mode:
                                   #   "strict"     - Very restrictive
 allowlist = []                    # Command patterns to allow (when security_level = "allowlist")
                                   # Example: ["git *", "npm *", "cargo *"]
+host = "local"                    # Where to run commands:
+                                  #   "local" - Run on this machine (default)
+                                  #   "node"  - Run on a connected Moltis node
+                                  #   "ssh"   - Run through the system ssh client
+# node = "mac-mini"               # Default node id/display name when host = "node"
+# ssh_target = "deploy@box"       # SSH host alias or user@host when host = "ssh"
 
 # ── Sandbox Configuration ─────────────────────────────────────────────────────
 # Commands run inside isolated containers for security.

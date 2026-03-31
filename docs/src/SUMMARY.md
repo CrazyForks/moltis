@@ -38,6 +38,7 @@
 - [GraphQL API](graphql.md)
 - [Session State](session-state.md)
 - [Session Branching](session-branching.md)
+- [Checkpoints](checkpoints.md)
 - [Scheduling (Cron Jobs)](scheduling.md)
 - [Skill Self-Extension](skill-tools.md)
 - [Mobile PWA](mobile-pwa.md)
@@ -55,6 +56,7 @@
 - [Encryption at Rest (Vault)](vault.md)
 - [Security Architecture](security.md)
 - [Third-Party Skills Security](skills-security.md)
+- [Release Verification](release-verification.md)
 
 ---
 

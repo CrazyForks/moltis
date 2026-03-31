@@ -36,6 +36,20 @@ function buildShareUrl(payload) {
 	return url;
 }
 
+function isSshTargetNode(node) {
+	return node?.platform === "ssh" || String(node?.nodeId || "").startsWith("ssh:");
+}
+
+function nodeOptionLabel(node) {
+	if (!node) return "Local";
+	if (node.displayName) return node.displayName;
+	if (isSshTargetNode(node)) {
+		var target = String(node.nodeId || "").replace(/^ssh:/, "");
+		return `SSH: ${target}`;
+	}
+	return node.nodeId;
+}
+
 async function copyShareUrl(url, visibility) {
 	try {
 		if (navigator.clipboard?.writeText) {
@@ -65,12 +79,6 @@ export function SessionHeader({
 } = {}) {
 	var session = sessionStore.activeSession.value;
 	var currentKey = sessionStore.activeSessionKey.value;
-	var isChannelSessionKey =
-		currentKey.startsWith("telegram:") ||
-		currentKey.startsWith("msteams:") ||
-		currentKey.startsWith("discord:") ||
-		currentKey.startsWith("slack:") ||
-		currentKey.startsWith("matrix:");
 	var gonAgentsPayload = parseAgentsListPayload(gon.get("agents"));
 	var initialAgentOptions = Array.isArray(gonAgentsPayload?.agents) ? gonAgentsPayload.agents : [];
 	var initialDefaultAgentId = typeof gonAgentsPayload?.defaultId === "string" ? gonAgentsPayload.defaultId : "main";
@@ -92,9 +100,8 @@ export function SessionHeader({
 	var activeRunId = session?.activeRunId.value || null;
 
 	var isMain = currentKey === "main";
-	var isChannel = session?.channelBinding || isChannelSessionKey;
 	var isCron = currentKey.startsWith("cron:");
-	var canRename = !(isMain || isChannel || isCron);
+	var canRename = !(isMain || isCron);
 	var canStop = !isCron && replying;
 	var currentAgentId = session?.agent_id || defaultAgentId || "main";
 	var currentNodeId = session?.node_id || "";
@@ -353,14 +360,15 @@ export function SessionHeader({
 		{ value: "", label: "Local" },
 		...nodeOptions.map((node) => ({
 			value: node.nodeId,
-			label: node.displayName || node.nodeId,
+			label: nodeOptionLabel(node),
 		})),
 	];
 	if (!hasCurrentNodeOption && currentNodeId) {
+		var fallbackLabel = currentNodeId.startsWith("ssh:") ? `SSH: ${currentNodeId.slice(4)}` : `node:${currentNodeId}`;
 		nodeSelectOptions = [
 			{
 				value: currentNodeId,
-				label: switchingNode ? "Switching…" : `node:${currentNodeId}`,
+				label: switchingNode ? "Switching…" : fallbackLabel,
 			},
 			...nodeSelectOptions,
 		];

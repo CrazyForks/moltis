@@ -642,9 +642,7 @@ async fn run_single_probe(
         };
     }
 
-    let probe = [ChatMessage::user("ping")];
-    let completion =
-        tokio::time::timeout(Duration::from_secs(20), provider.complete(&probe, &[])).await;
+    let completion = tokio::time::timeout(Duration::from_secs(20), provider.probe()).await;
 
     match completion {
         Ok(Ok(_)) => {
@@ -2222,30 +2220,8 @@ impl ModelService for LiveModelService {
         let started = Instant::now();
         info!(model_id, provider = provider.name(), "model probe started");
 
-        // Use streaming and return as soon as the first token arrives.
-        // Dropping the stream closes the HTTP connection, which tells the
-        // provider to stop generating — effectively max_tokens: 1.
-        let probe = vec![ChatMessage::user("ping")];
-        let mut stream = provider.stream(probe);
-
-        let result = tokio::time::timeout(Duration::from_secs(10), async {
-            while let Some(event) = stream.next().await {
-                match event {
-                    StreamEvent::Delta(_) | StreamEvent::Done(_) => return Ok(()),
-                    StreamEvent::Error(err) => return Err(err),
-                    // Skip other events (tool calls, etc.) and keep waiting.
-                    _ => continue,
-                }
-            }
-            Err("stream ended without producing any output".to_string())
-        })
-        .await;
-
-        // Drop the stream early to cancel the request on the provider side.
-        drop(stream);
-
-        match result {
-            Ok(Ok(())) => {
+        match provider.probe().await {
+            Ok(()) => {
                 info!(
                     model_id,
                     provider = provider.name(),
@@ -2257,12 +2233,13 @@ impl ModelService for LiveModelService {
                     "modelId": model_id,
                 }))
             },
-            Ok(Err(err)) => {
-                let error_obj = parse_chat_error(&err, Some(provider.name()));
+            Err(err) => {
+                let error_text = err.to_string();
+                let error_obj = parse_chat_error(&error_text, Some(provider.name()));
                 let detail = error_obj
                     .get("detail")
                     .and_then(|v| v.as_str())
-                    .unwrap_or(&err)
+                    .unwrap_or(&error_text)
                     .to_string();
 
                 warn!(
@@ -2273,15 +2250,6 @@ impl ModelService for LiveModelService {
                     "model probe failed"
                 );
                 Err(detail.into())
-            },
-            Err(_) => {
-                warn!(
-                    model_id,
-                    provider = provider.name(),
-                    elapsed_ms = started.elapsed().as_millis(),
-                    "model probe timed out after 10s"
-                );
-                Err("Connection timed out after 10 seconds".into())
             },
         }
     }
@@ -2950,6 +2918,7 @@ impl ChatService for LiveChatService {
                         target.channel_type.as_str(),
                         &target.account_id,
                         &target.chat_id,
+                        target.thread_id.as_deref(),
                     )
                     .await
                     .map(|k| k == session_key)
@@ -3363,6 +3332,7 @@ impl ChatService for LiveChatService {
                     target.channel_type.as_str(),
                     &target.account_id,
                     &target.chat_id,
+                    target.thread_id.as_deref(),
                 )
                 .await
                 .map(|k| k == session_key)
@@ -4385,21 +4355,17 @@ impl ChatService for LiveChatService {
             return Err("compact produced empty summary".into());
         }
 
-        // Replace history with a single assistant message containing the summary.
-        let compacted_msg = PersistedMessage::Assistant {
-            content: format!("[Conversation Summary]\n\n{summary}"),
+        // Replace history with a single user message containing the summary.
+        // Using the user role (not assistant) avoids breaking providers like
+        // llama.cpp that require every assistant message to follow a user message,
+        // and ensures the summary stays in the conversation turn array for
+        // providers using the Responses API (which promotes system messages to
+        // instructions).
+        let compacted_msg = PersistedMessage::User {
+            content: MessageContent::Text(format!("[Conversation Summary]\n\n{summary}")),
             created_at: Some(now_ms()),
-            model: None,
-            provider: None,
-            input_tokens: None,
-            output_tokens: None,
-            duration_ms: None,
-            request_input_tokens: None,
-            request_output_tokens: None,
-            tool_calls: None,
-            reasoning: None,
-            llm_api_response: None,
             audio: None,
+            channel: None,
             seq: None,
             run_id: None,
         };
@@ -5159,6 +5125,7 @@ struct ChannelReplyTargetKey {
     account_id: String,
     chat_id: String,
     message_id: Option<String>,
+    thread_id: Option<String>,
 }
 
 impl From<&moltis_channels::ChannelReplyTarget> for ChannelReplyTargetKey {
@@ -5168,6 +5135,7 @@ impl From<&moltis_channels::ChannelReplyTarget> for ChannelReplyTargetKey {
             account_id: target.account_id.clone(),
             chat_id: target.chat_id.clone(),
             message_id: target.message_id.clone(),
+            thread_id: target.thread_id.clone(),
         }
     }
 }
@@ -5236,16 +5204,17 @@ impl ChannelStreamDispatcher {
             let outbound = Arc::clone(&self.outbound);
             let completed = Arc::clone(&self.completed);
             let account_id = target.account_id.clone();
-            let chat_id = target.chat_id.clone();
+            let to = target.outbound_to().into_owned();
             let reply_to = target.message_id.clone();
             let key_for_insert = key.clone();
             let account_for_log = account_id.clone();
-            let chat_for_log = chat_id.clone();
+            let chat_for_log = target.chat_id.clone();
+            let thread_for_log = target.thread_id.clone();
 
             self.workers.push(ChannelStreamWorker { sender: tx });
             self.tasks.push(tokio::spawn(async move {
                 match outbound
-                    .send_stream(&account_id, &chat_id, reply_to.as_deref(), rx)
+                    .send_stream(&account_id, &to, reply_to.as_deref(), rx)
                     .await
                 {
                     Ok(()) => {
@@ -5255,6 +5224,7 @@ impl ChannelStreamDispatcher {
                         warn!(
                             account_id = account_for_log,
                             chat_id = chat_for_log,
+                            thread_id = thread_for_log.as_deref().unwrap_or("-"),
                             "channel stream outbound failed: {e}"
                         );
                     },
@@ -5591,11 +5561,18 @@ fn is_path_in_agent_memory_scope(path: &Path, agent_id: &str) -> bool {
 struct AgentScopedMemoryWriter {
     manager: Arc<moltis_memory::manager::MemoryManager>,
     agent_id: String,
+    checkpoints: moltis_tools::checkpoints::CheckpointManager,
 }
 
 impl AgentScopedMemoryWriter {
     fn new(manager: Arc<moltis_memory::manager::MemoryManager>, agent_id: String) -> Self {
-        Self { manager, agent_id }
+        Self {
+            manager,
+            agent_id,
+            checkpoints: moltis_tools::checkpoints::CheckpointManager::new(
+                moltis_config::data_dir(),
+            ),
+        }
     }
 }
 
@@ -5620,6 +5597,10 @@ impl moltis_agents::memory_writer::MemoryWriter for AgentScopedMemoryWriter {
             tokio::fs::create_dir_all(parent).await?;
         }
 
+        let checkpoint = self
+            .checkpoints
+            .checkpoint_path(&path, "memory_write")
+            .await?;
         let final_content = if append && tokio::fs::try_exists(&path).await? {
             let existing = tokio::fs::read_to_string(&path).await?;
             format!("{existing}\n\n{content}")
@@ -5636,6 +5617,7 @@ impl moltis_agents::memory_writer::MemoryWriter for AgentScopedMemoryWriter {
         Ok(moltis_agents::memory_writer::MemoryWriteResult {
             location: path.to_string_lossy().into_owned(),
             bytes_written,
+            checkpoint_id: Some(checkpoint.id),
         })
     }
 }
@@ -5859,6 +5841,7 @@ impl AgentTool for AgentScopedMemorySaveTool {
             "saved": true,
             "path": file,
             "bytes_written": result.bytes_written,
+            "checkpointId": result.checkpoint_id,
         }))
     }
 }
@@ -6902,20 +6885,16 @@ async fn compact_session(
         return Err(error::Error::message("compact produced empty summary"));
     }
 
-    let compacted_msg = PersistedMessage::Assistant {
-        content: format!("[Conversation Summary]\n\n{summary}"),
+    // Use user role so strict providers (e.g. llama.cpp) don't reject the
+    // history for having an assistant message without a preceding user message.
+    // User role also keeps the summary in the conversation turn array for
+    // providers using the Responses API (system messages get promoted to
+    // instructions and disappear from turns).
+    let compacted_msg = PersistedMessage::User {
+        content: MessageContent::Text(format!("[Conversation Summary]\n\n{summary}")),
         created_at: Some(now_ms()),
-        model: None,
-        provider: None,
-        input_tokens: None,
-        output_tokens: None,
-        duration_ms: None,
-        request_input_tokens: None,
-        request_output_tokens: None,
-        tool_calls: None,
-        reasoning: None,
-        llm_api_response: None,
         audio: None,
+        channel: None,
         seq: None,
         run_id: None,
     };
@@ -7560,14 +7539,16 @@ async fn send_channel_logbook_follow_up_to_targets(
     for target in targets {
         let outbound = Arc::clone(&outbound);
         let html = html.clone();
+        let to = target.outbound_to().into_owned();
         tasks.push(tokio::spawn(async move {
             if let Err(e) = outbound
-                .send_html(&target.account_id, &target.chat_id, &html, None)
+                .send_html(&target.account_id, &to, &html, None)
                 .await
             {
                 warn!(
                     account_id = target.account_id,
                     chat_id = target.chat_id,
+                    thread_id = target.thread_id.as_deref().unwrap_or("-"),
                     "failed to send logbook follow-up: {e}"
                 );
             }
@@ -7625,15 +7606,17 @@ async fn send_retry_status_to_channels(
     for target in targets {
         let outbound = Arc::clone(&outbound);
         let message = message.clone();
+        let to = target.outbound_to().into_owned();
         tasks.push(tokio::spawn(async move {
             let reply_to = target.message_id.as_deref();
             if let Err(e) = outbound
-                .send_text_silent(&target.account_id, &target.chat_id, &message, reply_to)
+                .send_text_silent(&target.account_id, &to, &message, reply_to)
                 .await
             {
                 warn!(
                     account_id = target.account_id,
                     chat_id = target.chat_id,
+                    thread_id = target.thread_id.as_deref().unwrap_or("-"),
                     "failed to send retry status to channel: {e}"
                 );
             }
@@ -7667,17 +7650,18 @@ async fn deliver_channel_error(state: &Arc<dyn ChatRuntime>, session_key: &str, 
         let outbound = Arc::clone(&outbound);
         let error_text = error_text.clone();
         let logbook_html = logbook_html.clone();
+        let to = target.outbound_to().into_owned();
         tasks.push(tokio::spawn(async move {
             let reply_to = target.message_id.as_deref();
             let send_result = if logbook_html.is_empty() {
                 outbound
-                    .send_text(&target.account_id, &target.chat_id, &error_text, reply_to)
+                    .send_text(&target.account_id, &to, &error_text, reply_to)
                     .await
             } else {
                 outbound
                     .send_text_with_suffix(
                         &target.account_id,
-                        &target.chat_id,
+                        &to,
                         &error_text,
                         &logbook_html,
                         reply_to,
@@ -7688,6 +7672,7 @@ async fn deliver_channel_error(state: &Arc<dyn ChatRuntime>, session_key: &str, 
                 warn!(
                     account_id = target.account_id,
                     chat_id = target.chat_id,
+                    thread_id = target.thread_id.as_deref().unwrap_or("-"),
                     "failed to send channel error reply: {e}"
                 );
             }
@@ -7725,6 +7710,7 @@ async fn deliver_channel_replies_to_targets(
         // caption/follow-up and only send the TTS voice audio.
         let text_already_streamed =
             streamed_target_keys.contains(&ChannelReplyTargetKey::from(&target));
+        let to = target.outbound_to().into_owned();
         tasks.push(tokio::spawn(async move {
             let tts_payload = match desired_reply_medium {
                 ReplyMedium::Voice => build_tts_payload(&state, &session_key, &target, &text).await,
@@ -7739,29 +7725,26 @@ async fn deliver_channel_replies_to_targets(
                         if text_already_streamed {
                             // Text was already streamed — send voice audio only.
                             if let Err(e) = outbound
-                                .send_media(&target.account_id, &target.chat_id, &payload, reply_to)
+                                .send_media(&target.account_id, &to, &payload, reply_to)
                                 .await
                             {
                                 warn!(
                                     account_id = target.account_id,
                                     chat_id = target.chat_id,
+                                    thread_id = target.thread_id.as_deref().unwrap_or("-"),
                                     "failed to send channel voice reply: {e}"
                                 );
                             }
                             // Send logbook as a follow-up if present.
                             if !logbook_html.is_empty()
                                 && let Err(e) = outbound
-                                    .send_html(
-                                        &target.account_id,
-                                        &target.chat_id,
-                                        &logbook_html,
-                                        None,
-                                    )
+                                    .send_html(&target.account_id, &to, &logbook_html, None)
                                     .await
                             {
                                 warn!(
                                     account_id = target.account_id,
                                     chat_id = target.chat_id,
+                                    thread_id = target.thread_id.as_deref().unwrap_or("-"),
                                     "failed to send logbook follow-up: {e}"
                                 );
                             }
@@ -7771,29 +7754,26 @@ async fn deliver_channel_replies_to_targets(
                             // Short transcript fits as a caption on the voice message.
                             payload.text = transcript;
                             if let Err(e) = outbound
-                                .send_media(&target.account_id, &target.chat_id, &payload, reply_to)
+                                .send_media(&target.account_id, &to, &payload, reply_to)
                                 .await
                             {
                                 warn!(
                                     account_id = target.account_id,
                                     chat_id = target.chat_id,
+                                    thread_id = target.thread_id.as_deref().unwrap_or("-"),
                                     "failed to send channel voice reply: {e}"
                                 );
                             }
                             // Send logbook as a follow-up if present.
                             if !logbook_html.is_empty()
                                 && let Err(e) = outbound
-                                    .send_html(
-                                        &target.account_id,
-                                        &target.chat_id,
-                                        &logbook_html,
-                                        None,
-                                    )
+                                    .send_html(&target.account_id, &to, &logbook_html, None)
                                     .await
                             {
                                 warn!(
                                     account_id = target.account_id,
                                     chat_id = target.chat_id,
+                                    thread_id = target.thread_id.as_deref().unwrap_or("-"),
                                     "failed to send logbook follow-up: {e}"
                                 );
                             }
@@ -7801,29 +7781,25 @@ async fn deliver_channel_replies_to_targets(
                             // Transcript too long for a caption — send voice
                             // without caption, then the full text as a follow-up.
                             if let Err(e) = outbound
-                                .send_media(&target.account_id, &target.chat_id, &payload, reply_to)
+                                .send_media(&target.account_id, &to, &payload, reply_to)
                                 .await
                             {
                                 warn!(
                                     account_id = target.account_id,
                                     chat_id = target.chat_id,
+                                    thread_id = target.thread_id.as_deref().unwrap_or("-"),
                                     "failed to send channel voice reply: {e}"
                                 );
                             }
                             let text_result = if logbook_html.is_empty() {
                                 outbound
-                                    .send_text(
-                                        &target.account_id,
-                                        &target.chat_id,
-                                        &transcript,
-                                        None,
-                                    )
+                                    .send_text(&target.account_id, &to, &transcript, None)
                                     .await
                             } else {
                                 outbound
                                     .send_text_with_suffix(
                                         &target.account_id,
-                                        &target.chat_id,
+                                        &to,
                                         &transcript,
                                         &logbook_html,
                                         None,
@@ -7834,6 +7810,7 @@ async fn deliver_channel_replies_to_targets(
                                 warn!(
                                     account_id = target.account_id,
                                     chat_id = target.chat_id,
+                                    thread_id = target.thread_id.as_deref().unwrap_or("-"),
                                     "failed to send transcript follow-up: {e}"
                                 );
                             }
@@ -7844,12 +7821,13 @@ async fn deliver_channel_replies_to_targets(
                         // only send logbook follow-up if present.
                         if !logbook_html.is_empty()
                             && let Err(e) = outbound
-                                .send_html(&target.account_id, &target.chat_id, &logbook_html, None)
+                                .send_html(&target.account_id, &to, &logbook_html, None)
                                 .await
                         {
                             warn!(
                                 account_id = target.account_id,
                                 chat_id = target.chat_id,
+                                thread_id = target.thread_id.as_deref().unwrap_or("-"),
                                 "failed to send logbook follow-up: {e}"
                             );
                         }
@@ -7857,13 +7835,13 @@ async fn deliver_channel_replies_to_targets(
                     None => {
                         let result = if logbook_html.is_empty() {
                             outbound
-                                .send_text(&target.account_id, &target.chat_id, &text, reply_to)
+                                .send_text(&target.account_id, &to, &text, reply_to)
                                 .await
                         } else {
                             outbound
                                 .send_text_with_suffix(
                                     &target.account_id,
-                                    &target.chat_id,
+                                    &to,
                                     &text,
                                     &logbook_html,
                                     reply_to,
@@ -7874,6 +7852,7 @@ async fn deliver_channel_replies_to_targets(
                             warn!(
                                 account_id = target.account_id,
                                 chat_id = target.chat_id,
+                                thread_id = target.thread_id.as_deref().unwrap_or("-"),
                                 "failed to send channel reply: {e}"
                             );
                         }
@@ -7882,12 +7861,13 @@ async fn deliver_channel_replies_to_targets(
                 _ => match tts_payload {
                     Some(payload) => {
                         if let Err(e) = outbound
-                            .send_media(&target.account_id, &target.chat_id, &payload, reply_to)
+                            .send_media(&target.account_id, &to, &payload, reply_to)
                             .await
                         {
                             warn!(
                                 account_id = target.account_id,
                                 chat_id = target.chat_id,
+                                thread_id = target.thread_id.as_deref().unwrap_or("-"),
                                 "failed to send channel voice reply: {e}"
                             );
                         }
@@ -7897,12 +7877,13 @@ async fn deliver_channel_replies_to_targets(
                         // only send logbook follow-up if present.
                         if !logbook_html.is_empty()
                             && let Err(e) = outbound
-                                .send_html(&target.account_id, &target.chat_id, &logbook_html, None)
+                                .send_html(&target.account_id, &to, &logbook_html, None)
                                 .await
                         {
                             warn!(
                                 account_id = target.account_id,
                                 chat_id = target.chat_id,
+                                thread_id = target.thread_id.as_deref().unwrap_or("-"),
                                 "failed to send logbook follow-up: {e}"
                             );
                         }
@@ -7910,13 +7891,13 @@ async fn deliver_channel_replies_to_targets(
                     None => {
                         let result = if logbook_html.is_empty() {
                             outbound
-                                .send_text(&target.account_id, &target.chat_id, &text, reply_to)
+                                .send_text(&target.account_id, &to, &text, reply_to)
                                 .await
                         } else {
                             outbound
                                 .send_text_with_suffix(
                                     &target.account_id,
-                                    &target.chat_id,
+                                    &to,
                                     &text,
                                     &logbook_html,
                                     reply_to,
@@ -7927,6 +7908,7 @@ async fn deliver_channel_replies_to_targets(
                             warn!(
                                 account_id = target.account_id,
                                 chat_id = target.chat_id,
+                                thread_id = target.thread_id.as_deref().unwrap_or("-"),
                                 "failed to send channel reply: {e}"
                             );
                         }
@@ -8324,27 +8306,30 @@ async fn send_screenshot_to_channels(
     for target in targets {
         let outbound = Arc::clone(&outbound);
         let payload = payload.clone();
+        let to = target.outbound_to().into_owned();
         tasks.push(tokio::spawn(async move {
             {
                 let reply_to = target.message_id.as_deref();
                 if let Err(e) = outbound
-                    .send_media(&target.account_id, &target.chat_id, &payload, reply_to)
+                    .send_media(&target.account_id, &to, &payload, reply_to)
                     .await
                 {
                     warn!(
                         account_id = target.account_id,
                         chat_id = target.chat_id,
+                        thread_id = target.thread_id.as_deref().unwrap_or("-"),
                         "failed to send screenshot to channel: {e}"
                     );
                     // Notify the user of the error
                     let error_msg = format!("⚠️ Failed to send screenshot: {e}");
                     let _ = outbound
-                        .send_text(&target.account_id, &target.chat_id, &error_msg, reply_to)
+                        .send_text(&target.account_id, &to, &error_msg, reply_to)
                         .await;
                 } else {
                     debug!(
                         account_id = target.account_id,
                         chat_id = target.chat_id,
+                        thread_id = target.thread_id.as_deref().unwrap_or("-"),
                         "sent screenshot to channel"
                     );
                 }
@@ -8380,25 +8365,28 @@ async fn dispatch_document_to_channels(
     for target in targets {
         let outbound = Arc::clone(&outbound);
         let payload = payload.clone();
+        let to = target.outbound_to().into_owned();
         tasks.push(tokio::spawn(async move {
             let reply_to = target.message_id.as_deref();
             if let Err(e) = outbound
-                .send_media(&target.account_id, &target.chat_id, &payload, reply_to)
+                .send_media(&target.account_id, &to, &payload, reply_to)
                 .await
             {
                 warn!(
                     account_id = target.account_id,
                     chat_id = target.chat_id,
+                    thread_id = target.thread_id.as_deref().unwrap_or("-"),
                     "failed to send document to channel: {e}"
                 );
                 let error_msg = format!("\u{26a0}\u{fe0f} Failed to send document: {e}");
                 let _ = outbound
-                    .send_text(&target.account_id, &target.chat_id, &error_msg, reply_to)
+                    .send_text(&target.account_id, &to, &error_msg, reply_to)
                     .await;
             } else {
                 debug!(
                     account_id = target.account_id,
                     chat_id = target.chat_id,
+                    thread_id = target.thread_id.as_deref().unwrap_or("-"),
                     "sent document to channel"
                 );
             }
@@ -8517,12 +8505,13 @@ async fn send_location_to_channels(
     for target in targets {
         let outbound = Arc::clone(&outbound);
         let title_ref = title_owned.clone();
+        let to = target.outbound_to().into_owned();
         tasks.push(tokio::spawn(async move {
             let reply_to = target.message_id.as_deref();
             if let Err(e) = outbound
                 .send_location(
                     &target.account_id,
-                    &target.chat_id,
+                    &to,
                     latitude,
                     longitude,
                     title_ref.as_deref(),
@@ -8533,12 +8522,14 @@ async fn send_location_to_channels(
                 warn!(
                     account_id = target.account_id,
                     chat_id = target.chat_id,
+                    thread_id = target.thread_id.as_deref().unwrap_or("-"),
                     "failed to send location to channel: {e}"
                 );
             } else {
                 debug!(
                     account_id = target.account_id,
                     chat_id = target.chat_id,
+                    thread_id = target.thread_id.as_deref().unwrap_or("-"),
                     "sent location pin to channel"
                 );
             }
@@ -9185,6 +9176,7 @@ mod tests {
             account_id: "bot-main".to_string(),
             chat_id: "123456".to_string(),
             message_id: Some("99".to_string()),
+            thread_id: None,
         };
         let binding_json = serde_json::to_string(&binding).expect("serialize binding");
         let entry = make_session_entry_with_binding(Some(binding_json));
@@ -9447,6 +9439,7 @@ mod tests {
             account_id: "acct".to_string(),
             chat_id: "123".to_string(),
             message_id: None,
+            thread_id: None,
         }];
         let state = mock_runtime();
 
@@ -9485,6 +9478,7 @@ mod tests {
             account_id: "acct".to_string(),
             chat_id: "123".to_string(),
             message_id: Some("42".to_string()),
+            thread_id: None,
         };
 
         state
@@ -9530,6 +9524,7 @@ mod tests {
             account_id: "acct".to_string(),
             chat_id: "123".to_string(),
             message_id: Some("42".to_string()),
+            thread_id: None,
         };
 
         state
@@ -9577,6 +9572,7 @@ mod tests {
             account_id: "acct".to_string(),
             chat_id: "123".to_string(),
             message_id: Some("42".to_string()),
+            thread_id: None,
         };
         let session_key = "telegram:acct:123";
         state.push_channel_reply(session_key, target.clone()).await;
@@ -9626,6 +9622,7 @@ mod tests {
             account_id: "acct".to_string(),
             chat_id: "456".to_string(),
             message_id: Some("99".to_string()),
+            thread_id: None,
         };
         let session_key = "discord:acct:456";
         state.push_channel_reply(session_key, target.clone()).await;
@@ -9672,6 +9669,7 @@ mod tests {
             account_id: "acct".to_string(),
             chat_id: "123".to_string(),
             message_id: Some("42".to_string()),
+            thread_id: None,
         };
         let session_key = "discord:acct:123";
         state.push_channel_reply(session_key, target.clone()).await;
@@ -9720,6 +9718,7 @@ mod tests {
             account_id: "acct".to_string(),
             chat_id: "123".to_string(),
             message_id: Some("55".to_string()),
+            thread_id: None,
         };
         let session_key = "telegram:acct:123";
         state.push_channel_reply(session_key, target.clone()).await;
@@ -9755,6 +9754,7 @@ mod tests {
             account_id: "acct".to_string(),
             chat_id: "123".to_string(),
             message_id: Some("55".to_string()),
+            thread_id: None,
         };
         let session_key = "telegram:acct:123";
         state.push_channel_reply(session_key, target.clone()).await;
@@ -9791,6 +9791,7 @@ mod tests {
             account_id: "acct".to_string(),
             chat_id: "123".to_string(),
             message_id: Some("55".to_string()),
+            thread_id: None,
         };
         let session_key = "telegram:acct:123";
         state.push_channel_reply(session_key, target.clone()).await;
@@ -9823,6 +9824,7 @@ mod tests {
             account_id: "acct".to_string(),
             chat_id: "123".to_string(),
             message_id: Some("55".to_string()),
+            thread_id: None,
         };
         let session_key = "telegram:acct:123";
         state.push_channel_reply(session_key, target.clone()).await;
@@ -9863,6 +9865,7 @@ mod tests {
             account_id: "acct".to_string(),
             chat_id: "456".to_string(),
             message_id: Some("77".to_string()),
+            thread_id: None,
         };
         let session_key = "telegram:acct:456";
         state.push_channel_reply(session_key, target.clone()).await;
@@ -10025,10 +10028,11 @@ mod tests {
         .expect("assistant reply should be persisted");
 
         assert_eq!(history.len(), 3);
-        assert_eq!(
-            history[0].get("role").and_then(Value::as_str),
-            Some("assistant")
-        );
+        // Compacted summary must be a user message so that strict providers
+        // (e.g. llama.cpp) don't reject the history for having an assistant
+        // message without a preceding user message, and so the summary stays
+        // in the conversation turn array for the Responses API.  See #501.
+        assert_eq!(history[0].get("role").and_then(Value::as_str), Some("user"));
         assert!(
             history[0]
                 .get("content")
@@ -10045,6 +10049,74 @@ mod tests {
         assert!(
             main_history.is_empty(),
             "auto-compact should not touch the default web session"
+        );
+    }
+
+    /// Regression test for GitHub issue #501: compaction must produce a user
+    /// message, not an assistant message, so that strict providers (llama.cpp)
+    /// don't reject the history for having an orphan assistant turn, and the
+    /// summary stays in the conversation turn array for the Responses API.
+    #[tokio::test]
+    async fn compact_session_produces_user_role() {
+        use moltis_agents::model::values_to_chat_messages;
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store = Arc::new(SessionStore::new(dir.path().to_path_buf()));
+
+        let session_key = "test::compact-role";
+
+        // Seed a minimal conversation.
+        store
+            .append(
+                session_key,
+                &serde_json::json!({ "role": "user", "content": "Hello" }),
+            )
+            .await
+            .expect("seed user msg");
+        store
+            .append(
+                session_key,
+                &serde_json::json!({ "role": "assistant", "content": "Hi there!" }),
+            )
+            .await
+            .expect("seed assistant msg");
+
+        let provider: Arc<dyn LlmProvider> = Arc::new(AutoCompactRegressionProvider {
+            context_window: 100,
+        });
+        compact_session(&store, session_key, &provider)
+            .await
+            .expect("compact_session should succeed");
+
+        let history = store.read(session_key).await.expect("read compacted");
+        assert_eq!(
+            history.len(),
+            1,
+            "compaction should leave exactly one message"
+        );
+
+        // The compacted message must be a user message.
+        assert_eq!(
+            history[0].get("role").and_then(Value::as_str),
+            Some("user"),
+            "compacted summary must use user role, not assistant (issue #501)"
+        );
+        assert!(
+            history[0]
+                .get("content")
+                .and_then(Value::as_str)
+                .is_some_and(|c| c.starts_with("[Conversation Summary]")),
+        );
+
+        // Verify the compacted history converts to a User ChatMessage.
+        let chat_msgs = values_to_chat_messages(&history);
+        assert!(
+            !chat_msgs.is_empty(),
+            "compacted history should convert to at least one ChatMessage"
+        );
+        assert!(
+            matches!(chat_msgs[0], ChatMessage::User { .. }),
+            "first ChatMessage after compaction must be User (issue #501)"
         );
     }
 
@@ -12284,5 +12356,121 @@ mod tests {
             mode: Some(ToolMode::Auto),
         };
         assert_eq!(effective_tool_mode(&text), ToolMode::Text);
+    }
+
+    // ── Slow-start provider for model-probe timeout regression tests ────
+
+    /// Provider that delays `startup_delay` before yielding the first token.
+    /// Simulates local LLM servers that need to load a model into memory.
+    struct SlowStartProvider {
+        name: String,
+        id: String,
+        startup_delay: Duration,
+    }
+
+    #[async_trait]
+    impl LlmProvider for SlowStartProvider {
+        fn name(&self) -> &str {
+            &self.name
+        }
+
+        fn id(&self) -> &str {
+            &self.id
+        }
+
+        async fn complete(
+            &self,
+            _messages: &[ChatMessage],
+            _tools: &[Value],
+        ) -> Result<moltis_agents::model::CompletionResponse> {
+            tokio::time::sleep(self.startup_delay).await;
+            Ok(moltis_agents::model::CompletionResponse {
+                text: Some("pong".to_string()),
+                tool_calls: vec![],
+                usage: moltis_agents::model::Usage::default(),
+            })
+        }
+
+        fn stream(
+            &self,
+            _messages: Vec<ChatMessage>,
+        ) -> Pin<Box<dyn Stream<Item = StreamEvent> + Send + '_>> {
+            let delay = self.startup_delay;
+            Box::pin(async_stream::stream! {
+                tokio::time::sleep(delay).await;
+                yield StreamEvent::Delta("pong".to_string());
+                yield StreamEvent::Done(moltis_agents::model::Usage::default());
+            })
+        }
+    }
+
+    /// Regression test for GitHub issue #514: local LLM servers that need
+    /// time to load a model should not be rejected by the probe timeout.
+    /// The probe timeout is 30 s; a 2 s delay must succeed.
+    #[tokio::test]
+    async fn model_probe_succeeds_with_slow_start_provider() {
+        let mut registry = ProviderRegistry::empty();
+        registry.register(
+            moltis_providers::ModelInfo {
+                id: "local::slow-model".to_string(),
+                provider: "local".to_string(),
+                display_name: "Slow Model".to_string(),
+                created_at: None,
+            },
+            Arc::new(SlowStartProvider {
+                name: "local".to_string(),
+                id: "local::slow-model".to_string(),
+                startup_delay: Duration::from_secs(2),
+            }),
+        );
+
+        let disabled = Arc::new(RwLock::new(DisabledModelsStore::default()));
+        let service = LiveModelService::new(Arc::new(RwLock::new(registry)), disabled, vec![]);
+
+        let result = service
+            .test(serde_json::json!({ "modelId": "local::slow-model" }))
+            .await;
+        assert!(
+            result.is_ok(),
+            "probe should succeed for slow-start provider: {result:?}"
+        );
+        let payload = result.unwrap();
+        assert_eq!(payload["ok"], true);
+        assert_eq!(payload["modelId"], "local::slow-model");
+    }
+
+    /// Verify that a truly unreachable provider still produces a timeout error
+    /// (not an infinite hang) after the 30 s limit.
+    /// Uses `start_paused = true` so the 30 s timeout elapses instantly.
+    #[tokio::test(start_paused = true)]
+    async fn model_probe_times_out_for_unresponsive_provider() {
+        let mut registry = ProviderRegistry::empty();
+        registry.register(
+            moltis_providers::ModelInfo {
+                id: "local::stuck-model".to_string(),
+                provider: "local".to_string(),
+                display_name: "Stuck Model".to_string(),
+                created_at: None,
+            },
+            Arc::new(SlowStartProvider {
+                name: "local".to_string(),
+                id: "local::stuck-model".to_string(),
+                // Well beyond the 30 s timeout — will trigger the timeout branch.
+                startup_delay: Duration::from_secs(120),
+            }),
+        );
+
+        let disabled = Arc::new(RwLock::new(DisabledModelsStore::default()));
+        let service = LiveModelService::new(Arc::new(RwLock::new(registry)), disabled, vec![]);
+
+        let result = service
+            .test(serde_json::json!({ "modelId": "local::stuck-model" }))
+            .await;
+        assert!(result.is_err(), "probe should fail for stuck provider");
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("timed out"),
+            "error should mention timeout: {err}"
+        );
     }
 }

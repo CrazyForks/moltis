@@ -265,8 +265,9 @@ in Settings > Authentication), unseals automatically on login, and
 re-seals on server restart. A recovery key is provided at initialization
 for emergency access.
 
-When the vault is sealed, a middleware layer blocks API requests with
-`423 Locked` to prevent serving stale data.
+When the vault is sealed, a middleware layer blocks vault-protected API
+requests with `423 Locked`. Session history and bootstrap endpoints remain
+available because those payloads are not yet encrypted at rest.
 
 For full details on the key hierarchy, vault states, API endpoints, and
 cryptographic parameters, see [Encryption at Rest (Vault)](vault.md).
@@ -565,6 +566,20 @@ Run Moltis on a private network or behind a reverse proxy with:
 
 Subscribe to security advisories and update promptly when vulnerabilities are
 disclosed.
+
+## Release Signing and Verification
+
+All release artifacts are signed with two independent methods:
+
+1. **Sigstore keyless signing** (automated in CI) — proves the artifact was
+   built by the `moltis-org/moltis` GitHub Actions pipeline
+2. **GPG signing** (maintainer's YubiKey hardware key) — proves a specific
+   maintainer authorized the release
+
+Checksums (SHA-256 and SHA-512) are generated for every artifact.
+
+See [Release Verification](release-verification.md) for detailed verification
+instructions, artifact file extensions, and maintainer signing workflow.
 
 ## Reporting Security Issues
 

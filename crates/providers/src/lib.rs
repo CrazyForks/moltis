@@ -1013,6 +1013,16 @@ const OPENAI_COMPAT_PROVIDERS: &[OpenAiCompatDef] = &[
         local_only: false,
     },
     OpenAiCompatDef {
+        config_name: "zai-code",
+        env_key: "Z_CODE_API_KEY",
+        env_base_url_key: "Z_CODE_BASE_URL",
+        default_base_url: "https://api.z.ai/api/coding/paas/v4",
+        models: ZAI_MODELS,
+        supports_model_discovery: true,
+        requires_api_key: true,
+        local_only: false,
+    },
+    OpenAiCompatDef {
         config_name: "venice",
         env_key: "VENICE_API_KEY",
         env_base_url_key: "VENICE_BASE_URL",
@@ -1563,7 +1573,8 @@ impl ProviderRegistry {
             let Some(base_url) = entry.base_url.as_ref().filter(|u| !u.trim().is_empty()) else {
                 continue;
             };
-            if should_fetch_models(config, name) {
+            let has_explicit_models = !configured_models_for_provider(config, name).is_empty();
+            if !has_explicit_models && should_fetch_models(config, name) {
                 pending.push((
                     name.clone(),
                     openai::start_model_discovery(api_key.clone(), base_url.clone()),
@@ -3091,6 +3102,20 @@ mod tests {
     }
 
     #[test]
+    fn zai_code_registers_with_api_key() {
+        let mut config = ProvidersConfig::default();
+        config
+            .providers
+            .insert("zai-code".into(), moltis_config::schema::ProviderEntry {
+                api_key: Some(secrecy::Secret::new("sk-test-zai-code".into())),
+                ..Default::default()
+            });
+
+        let reg = ProviderRegistry::from_env_with_config(&config);
+        assert!(reg.list_models().iter().any(|m| m.provider == "zai-code"));
+    }
+
+    #[test]
     fn moonshot_registers_with_api_key() {
         let mut config = ProvidersConfig::default();
         config
@@ -4114,6 +4139,82 @@ mod tests {
             "anthropic::claude-opus-4-5-20251101@reasoning-high"
         );
         assert_eq!(variant_ids[4], "openai::gpt-4o");
+    }
+
+    #[test]
+    fn custom_provider_with_explicit_models_skips_discovery() {
+        let mut config = ProvidersConfig::default();
+        config.providers.insert(
+            "custom-mylocal".into(),
+            moltis_config::schema::ProviderEntry {
+                enabled: true,
+                api_key: Some(secret("sk-test")),
+                base_url: Some("http://localhost:8080/v1".into()),
+                models: vec!["my-model".into()],
+                fetch_models: true,
+                ..Default::default()
+            },
+        );
+        let pending = ProviderRegistry::fire_discoveries(&config, &HashMap::new());
+        let names: Vec<&str> = pending.iter().map(|(n, _)| n.as_str()).collect();
+        assert!(
+            !names.contains(&"custom-mylocal"),
+            "should not fire discovery for custom provider with explicit models, got: {names:?}"
+        );
+    }
+
+    #[test]
+    fn custom_provider_without_explicit_models_fires_discovery() {
+        let mut config = ProvidersConfig::default();
+        config.providers.insert(
+            "custom-mylocal".into(),
+            moltis_config::schema::ProviderEntry {
+                enabled: true,
+                api_key: Some(secret("sk-test")),
+                base_url: Some("http://localhost:8080/v1".into()),
+                models: vec![],
+                fetch_models: true,
+                ..Default::default()
+            },
+        );
+        let pending = ProviderRegistry::fire_discoveries(&config, &HashMap::new());
+        let names: Vec<&str> = pending.iter().map(|(n, _)| n.as_str()).collect();
+        assert!(
+            names.contains(&"custom-mylocal"),
+            "should fire discovery for custom provider without explicit models, got: {names:?}"
+        );
+    }
+
+    #[test]
+    fn custom_provider_with_explicit_models_registers_from_empty_prefetch() {
+        // After the fix, fire_discoveries() won't spawn a discovery task for
+        // a custom provider that already has explicit models.  This means the
+        // prefetched map will have no entry for that provider.  Verify the
+        // explicit model is still registered in that scenario.
+        let mut config = ProvidersConfig::default();
+        config.providers.insert(
+            "custom-mylocal".into(),
+            moltis_config::schema::ProviderEntry {
+                enabled: true,
+                api_key: Some(secret("sk-test")),
+                base_url: Some("http://localhost:8080/v1".into()),
+                models: vec!["my-model".into()],
+                ..Default::default()
+            },
+        );
+        // Empty prefetched — mirrors the real scenario after the fix.
+        let registry = ProviderRegistry::from_config_with_prefetched(
+            &config,
+            &HashMap::new(),
+            &HashMap::new(),
+        );
+        let models = registry.list_models();
+        assert!(
+            models
+                .iter()
+                .any(|m| m.id == "custom-mylocal::my-model" && m.provider == "custom-mylocal"),
+            "explicit model should be registered even with empty prefetch, got: {models:?}"
+        );
     }
 
     #[test]

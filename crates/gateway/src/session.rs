@@ -989,6 +989,7 @@ impl SessionService for LiveSessionService {
                             target.channel_type.as_str(),
                             &target.account_id,
                             &target.chat_id,
+                            target.thread_id.as_deref(),
                         )
                         .await
                         .map(|k| k == e.key)
@@ -1181,9 +1182,6 @@ impl SessionService for LiveSessionService {
             .await
             .ok_or_else(|| format!("session '{key}' not found"))?;
         if p.label.is_some() {
-            if entry.channel_binding.is_some() {
-                return Err("cannot rename a channel-bound session".into());
-            }
             let _ = self.metadata.upsert(key, p.label).await;
         }
         if p.model.is_some() {
