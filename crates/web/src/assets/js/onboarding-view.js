@@ -2232,10 +2232,9 @@ function ChannelTypeSelector({ onSelect, offered }) {
 		}
 		${
 			offered.has("msteams") &&
-			html`<button type="button" class="backend-card flex-1 items-center gap-3 py-6 relative" onClick=${() => onSelect("msteams")}>
+			html`<button type="button" class="backend-card flex-1 items-center gap-3 py-6" onClick=${() => onSelect("msteams")}>
 			<span class="icon icon-xl icon-msteams"></span>
 			<span class="text-sm font-medium text-[var(--text-strong)]">Microsoft Teams</span>
-			<span class="text-[9px] text-[var(--muted)] opacity-70">Requires public URL</span>
 		</button>`
 		}
 		${
