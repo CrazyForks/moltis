@@ -225,6 +225,7 @@ pub async fn handle_room_message(
         channel_type: ChannelType::Matrix,
         account_id: account_id.clone(),
         chat_id: room_id.clone(),
+        thread_id: None,
         message_id: if config.reply_to_message {
             Some(event_id.clone())
         } else {
@@ -376,6 +377,7 @@ pub async fn handle_poll_response(
         channel_type: ChannelType::Matrix,
         account_id: account_id.clone(),
         chat_id: room_id,
+        thread_id: None,
         message_id: None,
     };
 
