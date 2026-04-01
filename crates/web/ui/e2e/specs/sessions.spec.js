@@ -664,23 +664,22 @@ test.describe("Session management", () => {
 		// Give the session an initial display name before the rename step.
 		await expectRpcOk(page, "sessions.patch", { key: channelKey, label: "Telegram 1" });
 
-		// Switch to the channels tab so the session is visible.
-		const channelsTab = page.locator('#sessionTabBar .session-tab[data-tab="channels"]');
-		await expect(channelsTab).toBeVisible({ timeout: 5_000 });
-		await channelsTab.click();
+		// Channel-bound sessions are listed in the regular Sessions tab.
+		const sessionsTab = page.locator('#sessionTabBar .session-tab[data-tab="sessions"]');
+		await expect(sessionsTab).toBeVisible({ timeout: 5_000 });
+		await sessionsTab.click();
 
 		// Click the channel session to select it.
 		const channelItem = page.locator(`#sessionList .session-item[data-session-key="${channelKey}"]`);
 		await expect(channelItem).toBeVisible({ timeout: 10_000 });
 		await channelItem.click();
 
-		// The session name should be visible and clickable for rename.
-		const sessionName = page.getByTitle("Click to rename");
-		await expect(sessionName).toBeVisible({ timeout: 5_000 });
-
-		// Click to start rename.
-		await sessionName.click();
-		const renameInput = page.getByRole("textbox");
+		// Open session controls and start rename from the modal.
+		await openChatMoreModal(page);
+		const renameBtn = page.locator('#chatMoreModal button[title="Rename session"]');
+		await expect(renameBtn).toBeVisible({ timeout: 5_000 });
+		await renameBtn.click();
+		const renameInput = page.locator("#chatMoreModal .chat-session-rename-input");
 		await expect(renameInput).toBeVisible({ timeout: 5_000 });
 
 		// Type a new name and press Enter.
@@ -688,9 +687,10 @@ test.describe("Session management", () => {
 		await renameInput.fill(newName);
 		await renameInput.press("Enter");
 
-		// Verify the rename stuck.
-		await expect(sessionName).toBeVisible({ timeout: 5_000 });
-		await expect(sessionName).toHaveText(newName);
+		// Verify the rename stuck in the sidebar.
+		await expect(
+			page.locator(`#sessionList .session-item[data-session-key="${channelKey}"] [data-label-text]`),
+		).toHaveText(newName, { timeout: 5_000 });
 
 		expect(pageErrors).toEqual([]);
 	});
