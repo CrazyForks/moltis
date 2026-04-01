@@ -1893,6 +1893,24 @@ pub use prepare_gateway_embedded as prepare_httpd_embedded;
 pub use moltis_gateway::server::openclaw_detected_for_ui;
 
 #[cfg(feature = "ngrok")]
+fn ngrok_loopback_has_proxy_headers(headers: &axum::http::HeaderMap) -> bool {
+    moltis_auth::locality::has_proxy_headers(headers)
+}
+
+#[cfg(feature = "ngrok")]
+async fn require_ngrok_proxy_headers(
+    request: axum::http::Request<axum::body::Body>,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    if !ngrok_loopback_has_proxy_headers(request.headers()) {
+        warn!("rejecting ngrok loopback request without proxy headers");
+        return StatusCode::FORBIDDEN.into_response();
+    }
+
+    next.run(request).await
+}
+
+#[cfg(feature = "ngrok")]
 async fn start_ngrok_tunnel(
     app: Router,
     gateway: Arc<GatewayState>,
@@ -1903,7 +1921,9 @@ async fn start_ngrok_tunnel(
 
     let internal_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     let internal_addr = internal_listener.local_addr()?;
-    let internal_app = app.clone();
+    let internal_app = app
+        .clone()
+        .layer(axum::middleware::from_fn(require_ngrok_proxy_headers));
     let loopback_shutdown = CancellationToken::new();
     let loopback_cancel = loopback_shutdown.clone();
     let loopback_task = tokio::spawn(async move {
@@ -2802,6 +2822,21 @@ mod tests {
             assert!(!display.ip().is_unspecified());
             assert_eq!(display.port(), 9999);
         }
+    }
+
+    #[cfg(feature = "ngrok")]
+    #[test]
+    fn ngrok_loopback_guard_rejects_requests_without_proxy_headers() {
+        let headers = axum::http::HeaderMap::new();
+        assert!(!ngrok_loopback_has_proxy_headers(&headers));
+    }
+
+    #[cfg(feature = "ngrok")]
+    #[test]
+    fn ngrok_loopback_guard_allows_requests_with_proxy_headers() {
+        let mut headers = axum::http::HeaderMap::new();
+        headers.insert("x-forwarded-for", "203.0.113.50".parse().unwrap());
+        assert!(ngrok_loopback_has_proxy_headers(&headers));
     }
 
     #[test]

@@ -42,9 +42,10 @@ fn authtoken_source(config: &moltis_config::NgrokConfig) -> Option<&'static str>
     }
 }
 
-async fn status_payload(state: &AppState) -> serde_json::Value {
-    let config = moltis_config::discover_and_load();
-    let runtime = state.ngrok_runtime.read().await.clone();
+fn status_payload_with(
+    config: &moltis_config::MoltisConfig,
+    runtime: Option<crate::server::NgrokRuntimeStatus>,
+) -> serde_json::Value {
     let authtoken_source = authtoken_source(&config.ngrok);
     let runtime_active = runtime.is_some();
 
@@ -57,6 +58,12 @@ async fn status_payload(state: &AppState) -> serde_json::Value {
         "passkey_warning": runtime.and_then(|status| status.passkey_warning),
         "runtime_active": runtime_active,
     })
+}
+
+async fn status_payload(state: &AppState) -> serde_json::Value {
+    let config = moltis_config::discover_and_load();
+    let runtime = state.ngrok_runtime.read().await.clone();
+    status_payload_with(&config, runtime)
 }
 
 #[derive(Deserialize)]
@@ -88,6 +95,7 @@ async fn save_config_handler(
     let existing = moltis_config::discover_and_load();
     let domain = normalize_optional(body.domain.as_deref());
     let new_authtoken = normalize_optional(body.authtoken.as_deref());
+    let mut updated = existing.clone();
 
     let token_will_exist = if body.clear_authtoken {
         new_authtoken.is_some() || std::env::var_os("NGROK_AUTHTOKEN").is_some()
@@ -108,16 +116,17 @@ async fn save_config_handler(
             .into_response();
     }
 
-    if let Err(error) = moltis_config::update_config(|config| {
-        config.ngrok.enabled = body.enabled;
-        config.ngrok.domain = domain.clone();
+    updated.ngrok.enabled = body.enabled;
+    updated.ngrok.domain = domain.clone();
+    if body.clear_authtoken {
+        updated.ngrok.authtoken = None;
+    }
+    if let Some(authtoken) = new_authtoken.as_ref() {
+        updated.ngrok.authtoken = Some(Secret::new(authtoken.clone()));
+    }
 
-        if body.clear_authtoken {
-            config.ngrok.authtoken = None;
-        }
-        if let Some(authtoken) = new_authtoken.as_ref() {
-            config.ngrok.authtoken = Some(Secret::new(authtoken.clone()));
-        }
+    if let Err(error) = moltis_config::update_config(|config| {
+        config.ngrok = updated.ngrok.clone();
     }) {
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -129,7 +138,6 @@ async fn save_config_handler(
             .into_response();
     }
 
-    let updated = moltis_config::discover_and_load();
     let Some(controller) = state.ngrok_controller.upgrade() else {
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -141,20 +149,22 @@ async fn save_config_handler(
             .into_response();
     };
     if let Err(error) = controller.apply(&updated.ngrok).await {
+        let runtime = state.ngrok_runtime.read().await.clone();
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({
                 "code": NGROK_APPLY_FAILED,
                 "error": format!("saved ngrok config but failed to apply it: {error}"),
-                "status": status_payload(&state).await,
+                "status": status_payload_with(&updated, runtime),
             })),
         )
             .into_response();
     }
 
+    let runtime = state.ngrok_runtime.read().await.clone();
     Json(serde_json::json!({
         "ok": true,
-        "status": status_payload(&state).await,
+        "status": status_payload_with(&updated, runtime),
     }))
     .into_response()
 }
