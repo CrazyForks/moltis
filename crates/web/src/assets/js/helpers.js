@@ -4,8 +4,9 @@ import * as S from "./state.js";
 
 /**
  * Extract the highest version number from a model ID for sorting.
- * e.g. "gpt-5.4-mini" → 5.4, "claude-opus-4-6-20260301" → 4.6, "o4-mini" → 4
- * Returns 0 when no number is found.
+ * e.g. "gpt-5.4-mini" → 5.4, "claude-opus-4-6-20260301" → 20260301, "o4-mini" → 4
+ * For models with a date suffix the date itself becomes the sort key, which is
+ * intentional — newer dates rank higher.  Returns 0 when no number is found.
  */
 export function modelVersionScore(id) {
 	var matches = (id || "").match(/\d+(?:\.\d+)?/g);

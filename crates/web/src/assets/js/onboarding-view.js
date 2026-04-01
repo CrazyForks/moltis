@@ -916,7 +916,7 @@ function OnboardingProviderRow({
 							? html`<button
 						class="text-xs text-[var(--accent)] cursor-pointer bg-transparent border-none py-1 text-left hover:underline"
 						onClick=${() => setShowAllModels(!showAllModels)}
-					>${showAllModels ? "Show fewer models" : `Show ${hiddenModelCount} more models\u2026`}</button>`
+					>${showAllModels ? t("providers:showFewerModels") : t("providers:showAllModels", { count: hiddenModelCount })}</button>`
 							: null
 					}
 				</div>
