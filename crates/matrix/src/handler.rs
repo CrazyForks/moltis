@@ -140,9 +140,15 @@ pub async fn handle_room_message(
         return;
     }
 
-    if let Err(reason) =
-        access::check_access(&config, &chat_type, &sender_id, &room_id, bot_mentioned)
-    {
+    if let Err(reason) = checked_chat_type(
+        &config,
+        &sender_id,
+        &room_id,
+        direct_flag,
+        active_members,
+        joined_members,
+        bot_mentioned,
+    ) {
         if matches!(chat_type, ChatType::Dm)
             && matches!(reason, access::AccessDenied::NotOnAllowlist)
             && config.otp_self_approval
@@ -353,19 +359,72 @@ pub async fn handle_poll_response(
     };
 
     let room_id = room.room_id().to_string();
-    let (event_sink, bot_user_id) = {
+    let (config, event_sink, bot_user_id) = {
         let guard = accounts.read().unwrap_or_else(|e| e.into_inner());
         let Some(state) = guard.get(&account_id) else {
             warn!(account_id, "account state not found");
             return;
         };
 
-        (state.event_sink.clone(), state.bot_user_id.clone())
+        (
+            state.config.clone(),
+            state.event_sink.clone(),
+            state.bot_user_id.clone(),
+        )
     };
 
     if sender_id == bot_user_id {
         return;
     }
+
+    let direct_flag = match room.is_direct().await {
+        Ok(is_direct) => is_direct,
+        Err(error) => {
+            warn!(
+                account_id,
+                room = %room_id,
+                "failed to determine Matrix DM state for poll response, falling back to member-count heuristic: {error}"
+            );
+            false
+        },
+    };
+    let active_members = room.active_members_count();
+    let joined_members = room.joined_members_count();
+    let chat_type = match checked_chat_type(
+        &config,
+        &sender_id,
+        &room_id,
+        direct_flag,
+        active_members,
+        joined_members,
+        true,
+    ) {
+        Ok(chat_type) => chat_type,
+        Err(reason) => {
+            info!(
+                account_id,
+                room = %room_id,
+                sender = %sender_id,
+                direct_flag,
+                active_members,
+                joined_members,
+                %reason,
+                "matrix poll response access denied"
+            );
+            return;
+        },
+    };
+
+    info!(
+        account_id,
+        room = %room_id,
+        sender = %sender_id,
+        direct_flag,
+        active_members,
+        joined_members,
+        chat_type = ?chat_type,
+        "matrix poll response"
+    );
 
     let Some(sink) = event_sink else {
         return;
@@ -427,6 +486,20 @@ fn should_auto_join_invite(
                 || gating::is_allowed(room_id, &config.room_allowlist)
         },
     }
+}
+
+fn checked_chat_type(
+    config: &MatrixAccountConfig,
+    sender_id: &str,
+    room_id: &str,
+    direct_flag: bool,
+    active_members: u64,
+    joined_members: u64,
+    bot_mentioned: bool,
+) -> Result<ChatType, access::AccessDenied> {
+    let chat_type = infer_chat_type(direct_flag, active_members, joined_members);
+    access::check_access(config, &chat_type, sender_id, room_id, bot_mentioned)?;
+    Ok(chat_type)
 }
 
 fn is_bot_mentioned(
@@ -997,11 +1070,15 @@ fn unix_now() -> i64 {
 mod tests {
     use {
         super::{
-            audio_format_from_metadata, first_selection, infer_audio_kind, infer_chat_type,
-            is_bot_mentioned, location_dispatch_body, parse_geo_uri, saved_audio_filename,
-            should_auto_join_invite, update_utd_notice_window, utd_notice_message,
+            audio_format_from_metadata, checked_chat_type, first_selection, infer_audio_kind,
+            infer_chat_type, is_bot_mentioned, location_dispatch_body, parse_geo_uri,
+            saved_audio_filename, should_auto_join_invite, update_utd_notice_window,
+            utd_notice_message,
         },
-        crate::config::{AutoJoinPolicy, MatrixAccountConfig},
+        crate::{
+            access,
+            config::{AutoJoinPolicy, MatrixAccountConfig},
+        },
         matrix_sdk::{
             encryption::VerificationState,
             ruma::{
@@ -1013,7 +1090,10 @@ mod tests {
                 serde::Raw,
             },
         },
-        moltis_channels::{gating::{DmPolicy, GroupPolicy}, plugin::ChannelMessageKind},
+        moltis_channels::{
+            gating::{DmPolicy, GroupPolicy},
+            plugin::ChannelMessageKind,
+        },
         moltis_common::types::ChatType,
         serde_json::json,
         std::{
@@ -1108,6 +1188,48 @@ mod tests {
     #[test]
     fn infer_chat_type_keeps_larger_rooms_as_groups() {
         assert_eq!(infer_chat_type(false, 3, 3), ChatType::Group);
+    }
+
+    #[test]
+    fn checked_chat_type_rejects_unallowlisted_dm_poll_sender() {
+        let cfg = MatrixAccountConfig {
+            dm_policy: DmPolicy::Allowlist,
+            user_allowlist: vec!["@alice:example.org".into()],
+            ..Default::default()
+        };
+
+        let result = checked_chat_type(
+            &cfg,
+            "@mallory:example.org",
+            "!dm:example.org",
+            true,
+            2,
+            2,
+            true,
+        );
+
+        assert_eq!(result, Err(access::AccessDenied::NotOnAllowlist));
+    }
+
+    #[test]
+    fn checked_chat_type_allows_group_poll_response_without_fresh_mention() {
+        let cfg = MatrixAccountConfig {
+            room_policy: GroupPolicy::Allowlist,
+            room_allowlist: vec!["!ops:example.org".into()],
+            ..Default::default()
+        };
+
+        let result = checked_chat_type(
+            &cfg,
+            "@alice:example.org",
+            "!ops:example.org",
+            false,
+            3,
+            3,
+            true,
+        );
+
+        assert_eq!(result, Ok(ChatType::Group));
     }
 
     #[test]
