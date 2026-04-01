@@ -1245,7 +1245,6 @@ function showMultiModelSelector(providerName, providerDisplayName, models, saved
 				var unsupBadge = document.createElement("span");
 				unsupBadge.className = probe.timeout ? "tier-badge" : "provider-item-badge warning";
 				unsupBadge.textContent = probe.timeout ? "Slow" : "Unsupported";
-				unsupBadge.title = probe.error || "";
 				badges.appendChild(unsupBadge);
 			}
 			header.appendChild(badges);
@@ -1255,6 +1254,13 @@ function showMultiModelSelector(providerName, providerDisplayName, models, saved
 			idLine.className = "text-xs text-[var(--muted)] mt-1 font-mono";
 			idLine.textContent = mdl.id;
 			card.appendChild(idLine);
+
+			if (probe && probe !== "ok" && probe !== "probing" && probe.error) {
+				var errorLine = document.createElement("div");
+				errorLine.className = "text-xs text-[var(--warning)] mt-0.5";
+				errorLine.textContent = probe.error;
+				card.appendChild(errorLine);
+			}
 
 			if (mdl.createdAt) {
 				var dateLine = document.createElement("time");
