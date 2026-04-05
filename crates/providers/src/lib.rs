@@ -773,38 +773,35 @@ pub fn supports_tools_for_model(model_id: &str) -> bool {
 /// Vision-capable models can process images in tool results and user messages.
 /// When true, the runner sends images as multimodal content blocks rather than
 /// stripping them from the context.
+///
+/// Uses a deny-list approach: most modern LLMs support vision, so unknown
+/// models default to `true`. The consequence of a false positive (sending
+/// images to a text-only model) is an API error — visible and diagnosable.
+/// The consequence of a false negative (stripping images from a capable model)
+/// is a silent failure that confuses users.
 pub fn supports_vision_for_model(model_id: &str) -> bool {
-    let model_id = capability_model_id(model_id);
-    // Claude models: all modern Claude models support vision
-    if model_id.starts_with("claude-") {
-        return true;
+    let id = capability_model_id(model_id);
+
+    // ── Known text-only models ──────────────────────────────────────
+    // Code-focused models
+    if id.starts_with("codestral") {
+        return false;
     }
-    // GPT-4o and variants support vision
-    if model_id.starts_with("gpt-4o") {
-        return true;
+    // Legacy OpenAI models without vision
+    if id.starts_with("gpt-3.5") || id.starts_with("text-") || id.starts_with("gpt-4-") {
+        // gpt-4-turbo is the exception — it supports vision
+        if id.starts_with("gpt-4-turbo") {
+            return true;
+        }
+        return false;
     }
-    // GPT-4 turbo supports vision
-    if model_id.starts_with("gpt-4-turbo") {
-        return true;
+    // Z.AI GLM text-only models (vision variants contain 'v' suffix)
+    if id.starts_with("glm-") && !id.contains('v') {
+        return false;
     }
-    // GPT-5 series supports vision
-    if model_id.starts_with("gpt-5") {
-        return true;
-    }
-    // o3/o4 series supports vision
-    if model_id.starts_with("o3") || model_id.starts_with("o4") {
-        return true;
-    }
-    // Gemini models support vision
-    if model_id.starts_with("gemini-") {
-        return true;
-    }
-    // Z.AI GLM vision models
-    if model_id.starts_with("glm-") && model_id.contains('v') {
-        return true;
-    }
-    // Default: no vision support
-    false
+
+    // ── Default: assume vision support ──────────────────────────────
+    true
 }
 
 /// Check if a model supports reasoning/extended thinking.
@@ -2718,6 +2715,23 @@ mod tests {
         assert!(supports_vision_for_model("glm-4.6v"));
         assert!(supports_vision_for_model("glm-4.6v-flash"));
         assert!(supports_vision_for_model("glm-4.5v"));
+
+        // Mistral vision-capable models
+        assert!(supports_vision_for_model("mistral-large-latest"));
+        assert!(supports_vision_for_model("mistral-medium-2505"));
+        assert!(supports_vision_for_model("mistral-small-latest"));
+        assert!(supports_vision_for_model("pixtral-large-latest"));
+        assert!(supports_vision_for_model("pixtral-12b-2409"));
+
+        // Qwen vision models
+        assert!(supports_vision_for_model("qwen-vl-max"));
+        assert!(supports_vision_for_model("qwen2.5-vl-72b"));
+        assert!(supports_vision_for_model("qwen3-vl-8b"));
+
+        // Unknown models default to vision support (better to try and fail
+        // with an API error than to silently strip images)
+        assert!(supports_vision_for_model("some-unknown-model"));
+        assert!(supports_vision_for_model("kimi-k2.5"));
     }
 
     #[test]
@@ -2725,19 +2739,15 @@ mod tests {
         // Codestral is code-focused, no vision
         assert!(!supports_vision_for_model("codestral-latest"));
 
-        // Mistral Large - no vision
-        assert!(!supports_vision_for_model("mistral-large-latest"));
-
-        // Kimi - no vision
-        assert!(!supports_vision_for_model("kimi-k2.5"));
+        // Legacy OpenAI models without vision
+        assert!(!supports_vision_for_model("gpt-3.5-turbo"));
+        assert!(!supports_vision_for_model("text-davinci-003"));
+        assert!(!supports_vision_for_model("gpt-4-0613"));
 
         // Z.AI text-only models - no vision
         assert!(!supports_vision_for_model("glm-5"));
         assert!(!supports_vision_for_model("glm-4.7"));
         assert!(!supports_vision_for_model("glm-4.5"));
-
-        // Unknown models default to no vision
-        assert!(!supports_vision_for_model("some-unknown-model"));
     }
 
     #[test]
@@ -3781,17 +3791,14 @@ mod tests {
 
     #[test]
     fn no_vision_for_text_only_models() {
-        // Models known to NOT support vision
+        // Models known to NOT support vision (deny-listed)
         let text_only_models = [
             "codestral-latest",
-            "mistral-large-latest",
-            "mistral-small-latest",
-            "mistral-7b",
-            "kimi-k2.5",
-            "llama-4-scout-17b-16e-instruct",
-            "MiniMax-M2.1",
-            "gpt-3.5-turbo", // old model without vision
+            "gpt-3.5-turbo",
             "text-davinci-003",
+            "gpt-4-0613",
+            "glm-5",
+            "glm-4.5",
         ];
         for model in text_only_models {
             assert!(
@@ -3803,19 +3810,45 @@ mod tests {
     }
 
     #[test]
-    fn vision_support_is_case_sensitive() {
-        // Model IDs are case-sensitive - uppercase should not match
-        assert!(!supports_vision_for_model("CLAUDE-SONNET-4"));
-        assert!(!supports_vision_for_model("GPT-4O"));
-        assert!(!supports_vision_for_model("Gemini-2.0-flash"));
+    fn vision_for_previously_excluded_models() {
+        // These models were previously excluded but actually support vision
+        let now_vision = [
+            "mistral-large-latest",
+            "mistral-small-latest",
+            "mistral-medium-2505",
+            "pixtral-large-latest",
+            "kimi-k2.5",
+            "llama-4-scout-17b-16e-instruct",
+            "MiniMax-M2.1",
+            "qwen-vl-max",
+            "qwen2.5-vl-72b",
+            "deepseek-chat",
+        ];
+        for model in now_vision {
+            assert!(
+                supports_vision_for_model(model),
+                "expected {} to support vision (default-allow)",
+                model
+            );
+        }
     }
 
     #[test]
-    fn vision_support_requires_exact_prefix() {
-        // Vision support is based on prefix matching - partial matches shouldn't work
-        assert!(!supports_vision_for_model("my-claude-model"));
-        assert!(!supports_vision_for_model("custom-gpt-4o-wrapper"));
-        assert!(!supports_vision_for_model("not-gemini-model"));
+    fn vision_denylist_is_case_sensitive() {
+        // Deny-list entries are lowercase; uppercase variants are not denied
+        // and fall through to default-true. This is fine — model IDs from
+        // providers are always lowercase in practice.
+        assert!(supports_vision_for_model("CODESTRAL-LATEST"));
+        assert!(supports_vision_for_model("GPT-3.5-TURBO"));
+    }
+
+    #[test]
+    fn vision_default_true_for_unknown_prefixes() {
+        // With deny-list approach, unknown models default to vision support
+        assert!(supports_vision_for_model("my-claude-model"));
+        assert!(supports_vision_for_model("custom-gpt-4o-wrapper"));
+        assert!(supports_vision_for_model("not-gemini-model"));
+        assert!(supports_vision_for_model("totally-new-model-2026"));
     }
 
     // ── Ollama tool detection ────────────────────────────────────────────
