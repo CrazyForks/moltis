@@ -39,6 +39,55 @@ async function waitForWsConnectedIfPossible(page) {
 	await waitForWsConnected(page, 5_000).catch(() => {});
 }
 
+async function mockFullContextRpc(page) {
+	await page.evaluate(async () => {
+		var appScript = document.querySelector('script[type="module"][src*="js/app.js"]');
+		if (!appScript) throw new Error("app module script not found");
+		var appUrl = new URL(appScript.src, window.location.origin);
+		var prefix = appUrl.href.slice(0, appUrl.href.length - "js/app.js".length);
+		var stateModule = await import(`${prefix}js/state.js`);
+		var ws = stateModule.ws;
+		if (!ws) throw new Error("websocket unavailable");
+
+		if (!window.__origFullContextWsSend) {
+			window.__origFullContextWsSend = ws.send.bind(ws);
+		}
+
+		ws.send = (payload) => {
+			try {
+				var parsed = JSON.parse(payload);
+				if (parsed?.method === "chat.full_context") {
+					var resolver = stateModule.pending?.[parsed.id];
+					if (typeof resolver === "function") {
+						delete stateModule.pending[parsed.id];
+						resolver({
+							ok: true,
+							payload: {
+								messageCount: 2,
+								systemPromptChars: 42,
+								totalChars: 128,
+								messages: [
+									{ role: "user", content: "How are you?" },
+									{
+										role: "assistant",
+										content: "Doing fine.",
+										tool_calls: [{ function: { name: "demo_tool", arguments: '{"hello":"world"}' } }],
+									},
+								],
+								llmOutputs: [{ text: "assistant raw output" }],
+							},
+						});
+					}
+					return;
+				}
+			} catch (_err) {
+				// Fall through to the original sender.
+			}
+			return window.__origFullContextWsSend(payload);
+		};
+	});
+}
+
 async function waitForChatInputReady(page) {
 	const chatInput = page.locator("#chatInput");
 	await expect(chatInput).toBeVisible({ timeout: 15_000 });
@@ -382,6 +431,7 @@ test.describe("Chat input and slash commands", () => {
 
 	test("full context copy button uses small button style", async ({ page }) => {
 		const pageErrors = watchPageErrors(page);
+		await mockFullContextRpc(page);
 		const copyBtn = await openFullContextWithRetry(page);
 		if (copyBtn === null) {
 			await expect(
@@ -445,6 +495,7 @@ test.describe("Chat input and slash commands", () => {
 
 	test("full context download button produces .jsonl file", async ({ page }) => {
 		const pageErrors = watchPageErrors(page);
+		await mockFullContextRpc(page);
 		const copyBtn = await openFullContextWithRetry(page);
 		if (copyBtn === null) {
 			await expect(

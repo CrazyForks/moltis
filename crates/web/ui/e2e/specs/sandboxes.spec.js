@@ -247,10 +247,14 @@ test.describe("Sandboxes page – Running Containers", () => {
 		const pageErrors = watchPageErrors(page);
 		var diskUsageFetched = false;
 
-		// Track via route interceptor to avoid waitForResponse race with goto.
+		// Fulfill directly so the test does not depend on the real runtime.
 		await page.route("**/api/sandbox/disk-usage", (route) => {
 			diskUsageFetched = true;
-			return route.continue();
+			return route.fulfill({
+				status: 200,
+				contentType: "application/json",
+				body: JSON.stringify({ size_bytes: 0, size_human: "0 B" }),
+			});
 		});
 
 		await navigateAndWait(page, "/settings/sandboxes");
@@ -344,15 +348,17 @@ test.describe("Sandboxes page – Container error handling", () => {
 	});
 
 	test.afterEach(async ({ page }) => {
-		await page.unrouteAll({ behavior: "ignoreErrors" });
+		await page.unrouteAll({ behavior: "ignoreErrors" }).catch(() => {});
 	});
 
 	test("delete failure shows error message that clears on refresh", async ({ page }) => {
 		const pageErrors = watchPageErrors(page);
+		var containerListFetches = 0;
 
 		// Mock container list with one container
 		await page.route("**/api/sandbox/containers", (route, request) => {
 			if (request.method() === "GET") {
+				containerListFetches++;
 				return route.fulfill({
 					status: 200,
 					contentType: "application/json",
@@ -387,11 +393,8 @@ test.describe("Sandboxes page – Container error handling", () => {
 			return route.continue();
 		});
 
-		const containerListResponse = page.waitForResponse(
-			(r) => r.url().includes("/api/sandbox/containers") && r.request().method() === "GET",
-		);
 		await navigateAndWait(page, "/settings/sandboxes");
-		await containerListResponse;
+		await expect.poll(() => containerListFetches, { timeout: 10_000 }).toBeGreaterThan(0);
 
 		// Click the delete button
 		await page.getByRole("button", { name: "Delete", exact: true }).click();
@@ -453,11 +456,8 @@ test.describe("Sandboxes page – Container error handling", () => {
 			return route.continue();
 		});
 
-		const containerListResponse = page.waitForResponse(
-			(r) => r.url().includes("/api/sandbox/containers") && r.request().method() === "GET",
-		);
 		await navigateAndWait(page, "/settings/sandboxes");
-		await containerListResponse;
+		await expect.poll(() => callCount, { timeout: 10_000 }).toBeGreaterThan(0);
 
 		// Click delete to trigger error (delete no longer auto-refreshes on failure)
 		await page.getByRole("button", { name: "Delete", exact: true }).click();
@@ -465,11 +465,8 @@ test.describe("Sandboxes page – Container error handling", () => {
 
 		// Click Refresh to trigger a successful container fetch that clears the error.
 		// Second mock returns empty list, so fetchContainers succeeds and clears containerError.
-		const refreshResponse = page.waitForResponse(
-			(r) => r.url().includes("/api/sandbox/containers") && r.request().method() === "GET",
-		);
 		await page.getByRole("button", { name: "Refresh", exact: true }).click();
-		await refreshResponse;
+		await expect.poll(() => callCount, { timeout: 10_000 }).toBeGreaterThan(1);
 		await expect(page.locator(".alert-error-text")).not.toBeVisible();
 
 		expect(pageErrors).toEqual([]);

@@ -1103,6 +1103,7 @@ test.describe("Settings navigation", () => {
 		});
 
 		await page.getByRole("button", { name: "Senders", exact: true }).click();
+		await expect.poll(() => page.locator(".senders-table tbody tr").count(), { timeout: 10_000 }).toBe(1);
 		await expect(page.getByText("Alice", { exact: true })).toBeVisible();
 		await expect(page.getByText("@alice:matrix.org", { exact: true })).toBeVisible();
 		await expect(page.getByText("@@alice:matrix.org", { exact: true })).toHaveCount(0);
