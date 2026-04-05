@@ -10,7 +10,7 @@ capabilities that control what features are available.
 |---------|-------------|--------------------|--------------------|
 | Telegram | Polling | No | Streaming, voice ingest, reactions, OTP, location |
 | Discord | Gateway (WebSocket) | No | Streaming, interactive messages, threads, reactions |
-| Matrix | Gateway (sync loop) | No | Streaming, voice ingest, interactive polls, threads, reactions, OTP, location, encrypted chats, device verification |
+| Matrix | Gateway (sync loop) | No | Streaming, voice ingest, interactive polls, threads, reactions, OTP, location, encrypted chats, device verification, ownership bootstrap |
 | Microsoft Teams | Webhook | Yes | Streaming, interactive messages, threads |
 | WhatsApp | Gateway (WebSocket) | No | Streaming, voice ingest, OTP, pairing, location |
 | Slack | Socket Mode | No | Streaming, interactive messages, threads, reactions |
@@ -77,7 +77,7 @@ Some channel integrations also have platform-specific limits. For Matrix,
 encrypted chats require password auth. Access-token auth is only suitable for
 plain Matrix traffic because Moltis cannot import an existing device's private
 E2EE keys from an access token alone. See [Matrix](./matrix.md) for the full
-setup and verification flow.
+setup, ownership, verification, and troubleshooting flow.
 
 `moltis.toml` and the web UI are both loaded at startup. If the same `(channel_type, account_id)` exists in both, the `moltis.toml` entry wins.
 
@@ -114,6 +114,12 @@ For detailed configuration, see the per-channel pages:
 [Matrix](matrix.md), [WhatsApp](whatsapp.md).
 
 You can also use the web UI's **Channels** tab for guided setup with each platform. Web-added channels do not get written back into `moltis.toml`.
+
+For Matrix specifically, the web UI now supports the full normal setup flow:
+
+- password auth is the default because it unlocks encrypted chats
+- dedicated bot accounts default to `moltis_owned` so Moltis can bootstrap cross-signing and recovery
+- older Matrix accounts that need one external approval expose that approval flow in the channel card instead of failing silently
 
 ## Proactive Outbound Messaging
 

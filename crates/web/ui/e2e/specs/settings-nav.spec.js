@@ -984,7 +984,7 @@ test.describe("Settings navigation", () => {
 						});
 					} else if (req.method === "channels.senders.list") {
 						resolver({ ok: true, payload: { senders: [] } });
-					} else if (req.method === "channels.update") {
+					} else if (req.method === "channels.retry_ownership") {
 						window.__matrixOwnershipRetryRequest = req.params;
 						resolver({ ok: true, payload: { ok: true } });
 					} else {
@@ -1024,15 +1024,13 @@ test.describe("Settings navigation", () => {
 		});
 		await expect(retryButton).toBeVisible();
 		const approvalNote = approvalLink.locator("xpath=../following-sibling::div[1]");
-		await expect(approvalNote).toContainText("Make sure the browser page is signed into");
-		await expect(approvalNote).toContainText("@moltis-testbot:matrix.org");
+		await expect(approvalNote).toContainText("Make sure the browser page is signed into @moltis-testbot:matrix.org.");
 		await retryButton.click();
 		await expect.poll(() => page.evaluate(() => window.__matrixOwnershipRetryRequest)).not.toBeNull();
 		const retryRequest = await page.evaluate(() => window.__matrixOwnershipRetryRequest);
 		expect(retryRequest).toEqual({
 			type: "matrix",
 			account_id: "moltis-testbot",
-			config: {},
 		});
 		expect(pageErrors).toEqual([]);
 	});

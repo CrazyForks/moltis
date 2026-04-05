@@ -733,6 +733,10 @@ mod tests {
             Ok(self.update_result.clone())
         }
 
+        async fn retry_ownership(&self, _params: Value) -> ServiceResult {
+            Ok(json!({}))
+        }
+
         async fn senders_list(&self, _params: Value) -> ServiceResult {
             Ok(json!({}))
         }
@@ -865,6 +869,10 @@ mod tests {
             }
 
             async fn update(&self, _: Value) -> ServiceResult {
+                Ok(json!({}))
+            }
+
+            async fn retry_ownership(&self, _: Value) -> ServiceResult {
                 Ok(json!({}))
             }
 

@@ -437,6 +437,47 @@ impl ChannelService for LiveChannelService {
         Ok(result)
     }
 
+    #[tracing::instrument(skip(self, params))]
+    async fn retry_ownership(&self, params: Value) -> ServiceResult {
+        let account_id = params
+            .get("account_id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "missing 'account_id'".to_string())?;
+        let channel_type = self
+            .resolve_channel_type(&params, account_id, ChannelType::Telegram)
+            .await?;
+
+        if channel_type != ChannelType::Matrix {
+            return Err(ServiceError::message(
+                "ownership retry is only supported for Matrix accounts",
+            ));
+        }
+
+        info!(
+            account_id,
+            channel_type = channel_type.as_str(),
+            "retrying channel ownership setup"
+        );
+
+        self.registry
+            .retry_account_setup(account_id)
+            .await
+            .map_err(|error| {
+                error!(
+                    error = %error,
+                    account_id,
+                    channel_type = channel_type.as_str(),
+                    "failed to retry channel ownership setup"
+                );
+                ServiceError::message(error)
+            })?;
+
+        Ok(serde_json::json!({
+            "retried": account_id,
+            "type": channel_type.to_string()
+        }))
+    }
+
     async fn send(&self, params: Value) -> ServiceResult {
         let account_id = params
             .get("account_id")

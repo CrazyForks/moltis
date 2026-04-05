@@ -190,7 +190,7 @@ function MatrixOwnershipCard({ channel, matrixStatus }) {
 				: "";
 	var detailText =
 		ownershipIssue === "approval_required"
-			? `Approve the reset while signed into ${matrixStatus?.user_id || "this Matrix account"} in the browser, then reconnect the Matrix channel so Moltis can finish taking ownership.`
+			? `Approve the reset while signed into ${matrixStatus?.user_id || "this Matrix account"} in the browser, then use the retry button here so Moltis can finish taking ownership.`
 			: ownershipError;
 	var approvalUrl = approvalMatch ? approvalMatch[0].replace(/[;),.]+$/, "") : "";
 	var verificationText = deviceVerified ? "Device verified by owner" : "Device not yet verified by owner";
@@ -203,10 +203,9 @@ function MatrixOwnershipCard({ channel, matrixStatus }) {
 	function retryOwnershipSetup() {
 		retryingOwnership.value = true;
 		retryOwnershipError.value = "";
-		sendRpc("channels.update", {
+		sendRpc("channels.retry_ownership", {
 			type: channelType(channel.type),
 			account_id: channel.account_id,
-			config: {},
 		}).then((res) => {
 			retryingOwnership.value = false;
 			if (res?.ok) {
@@ -267,10 +266,7 @@ function MatrixOwnershipCard({ channel, matrixStatus }) {
 						${retryingOwnership.value ? "Retrying ownership setup..." : "Click here once you reset the account"}
 					</button>
 				</div>
-				<div class="mt-2 text-[11px] text-sky-100/80">
-					Make sure the browser page is signed into{" "}
-					<span class="font-mono text-sky-50">${matrixStatus?.user_id || "the Matrix bot account"}</span>.
-				</div>
+				<div class="mt-2 text-[11px] text-sky-100/80">Make sure the browser page is signed into <span class="font-mono text-sky-50">${matrixStatus?.user_id || "the Matrix bot account"}</span>.</div>
 				${
 					retryOwnershipError.value &&
 					html`<div class="mt-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-amber-100">

@@ -1253,6 +1253,7 @@ mod tests {
             bot_user_id: "@bot:example.org".into(),
             ownership_startup_error: None,
             initial_sync_complete: AtomicBool::new(initial_sync_complete),
+            pending_identity_reset: Mutex::new(None),
             otp: Mutex::new(moltis_channels::otp::OtpState::new(300)),
             verification: Mutex::new(Default::default()),
         });

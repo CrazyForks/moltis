@@ -28,6 +28,36 @@ open the same bot account in Element yourself, switch the channel to
 user-managed mode instead.
 ```
 
+## Feature Set
+
+Matrix is no longer a minimal transport. The current integration supports the
+full day-to-day bot flow, including encrypted chats when you connect with
+password auth.
+
+| Area | Status | Notes |
+|------|--------|-------|
+| Web UI setup and editing | Supported | Add, edit, remove, and retry Matrix channels from **Settings -> Channels** |
+| Direct messages and rooms | Supported | DM policy, room policy, allowlists, mention gating, and auto-join |
+| End-to-end encrypted chats | Supported with password auth | Moltis creates and persists its own Matrix device and crypto state |
+| Device verification | Supported | Moltis accepts Element verification and you confirm with `verify yes`, `verify no`, `verify show`, or `verify cancel` |
+| Cross-signing / recovery ownership | Supported | Password auth defaults to `moltis_owned`; older accounts may require one browser approval before takeover |
+| Streaming replies | Supported | Edit-in-place streaming for text responses |
+| Thread-aware replies and context | Supported | Replies stay in threads and context fetch follows the thread root |
+| Voice and audio messages | Supported | Matrix audio is downloaded and sent through the normal transcription pipeline |
+| Interactive actions | Supported | Short action lists are sent as native Matrix polls |
+| Reactions | Supported | Ack reactions and normal reaction flows work |
+| Location | Supported | Inbound location shares update user location and outbound location sends are supported |
+| OTP sender approval | Supported | Unknown DM senders can self-approve through the shared OTP flow |
+| Model routing overrides | Supported | Per-room and per-user model/provider overrides |
+
+The main remaining Matrix-specific limitations are:
+
+- access-token auth is still plain-traffic-only, encrypted chats need password auth
+- existing Matrix accounts with old crypto state may require one browser approval before Moltis can take over ownership
+- Matrix interactive actions are poll-based, not arbitrary button/select UIs
+- older encrypted history may remain unreadable until the missing room keys are shared with the Moltis device
+- arbitrary remote-media fetch and reupload for outbound URLs is still limited
+
 ## How It Works
 
 ```
@@ -51,26 +81,6 @@ user-managed mode instead.
 │         (chat dispatch, tools, memory)                │
 └──────────────────────────────────────────────────────┘
 ```
-
-The Matrix integration currently supports:
-
-- Direct messages and room conversations
-- End-to-end encrypted Matrix chats
-- Matrix device verification / Element "Verify"
-- Interactive action prompts via native Matrix polls
-- Thread-aware replies and thread context fetch
-- Streaming text responses
-- Voice and audio message transcription
-- Emoji reactions
-- Native location sends and inbound location sharing
-- OTP self-approval for unknown DM senders
-- Per-room and per-user model overrides
-
-The Matrix integration currently does **not** support:
-
-- Channel pairing via the web UI
-- Rich button/select interactivity beyond poll-style actions
-- Automatic remote-media fetch and reupload for arbitrary outbound URLs
 
 ## Prerequisites
 
@@ -143,6 +153,42 @@ Moltis device anyway. The supported path for encrypted Matrix chats is still:
 2. Let Moltis create its own Matrix device
 3. Complete Element verification with that Moltis device
 4. Send new encrypted messages after verification
+
+## Ownership Modes
+
+When you add a password-based Matrix account, Moltis offers two ownership modes:
+
+### `moltis_owned`
+
+This is the default for dedicated bot accounts. Moltis tries to become the
+owner of the account's Matrix crypto state so the bot can verify its own device
+properly.
+
+In this mode Moltis will:
+
+- create or restore its own Matrix device
+- bootstrap or recover secret storage and cross-signing when possible
+- self-sign the Moltis device after takeover succeeds
+- show encryption ownership status directly in **Settings -> Channels**
+
+For fresh bot accounts, this is usually automatic.
+
+For older accounts with pre-existing Matrix crypto state, Matrix may require one
+browser approval before Moltis is allowed to reset and take over cross-signing.
+When that happens, the Channels page shows:
+
+- an **Open approval page for @user:server** button
+- a retry button after you finish the reset in the browser
+
+### `user_managed`
+
+Use this when you want to manage the same bot account yourself in Element or
+another Matrix client.
+
+In this mode Moltis still connects and can chat, but it does not try to take
+ownership of cross-signing or recovery. The Channels page shows the homeserver,
+user ID, device ID, and device name you need if you want to log into that bot
+account in your own Matrix app.
 
 ## Configuration
 
@@ -229,8 +275,10 @@ When you add Matrix through the web UI:
 - the saved account lives in `data_dir()/moltis.db`, not in `moltis.toml`
 - the web UI defaults to password auth because encrypted Matrix chats require it
 - password-based channels default to **Let Moltis own this Matrix account**
+- Matrix channels can be added, edited, removed, and retried entirely from **Settings -> Channels**
 - access-token auth is for plain Matrix traffic only, because Moltis cannot import the existing device's private E2EE keys from an access token
 - if you switch a channel to user-managed mode, the Channels page shows the homeserver, user ID, device ID, and device name you need to open that bot account in Element
+- if an older Matrix account needs one external approval before takeover, the channel card shows an approval link plus a retry action so you do not need to rebuild the channel config manually
 - if Element starts device verification, Moltis accepts it and posts emoji confirmation instructions in the room
 - send `verify yes`, `verify no`, `verify show`, or `verify cancel` as normal messages in that same Matrix chat to finish or inspect the verification flow
 - older encrypted history may still be unreadable if this Moltis device joined after those keys were created
@@ -402,6 +450,21 @@ seconds.
 - If the prompt scrolled away, send `verify show` as a normal message in that same Matrix chat
 - If an older stale verification request was replayed from sync history, start a fresh verification in Element and then use the `verify ...` commands
 - If nothing happens, check the Matrix logs for verification events and try starting verification again
+
+### Channels page says `Ownership approval required`
+
+- This means Moltis connected, but Matrix wants one explicit browser approval before cross-signing can be reset for this older account
+- Use the **Open approval page for @user:server** button in the Matrix channel card
+- Make sure the browser page is signed into that exact Matrix account, not your personal one
+- After approving the reset, use the retry button in the same channel card so Moltis can finish ownership bootstrap
+- Until that finishes, the bot may still chat, but the device can remain `unverified`
+
+### Bot can chat, but the Channels page still says `Device not yet verified by owner`
+
+- Matrix encryption and Matrix cross-signing are related, but not identical
+- A Matrix device can already send and receive messages before it is verified by the account owner
+- If you are using `moltis_owned`, let Moltis finish ownership bootstrap or complete the approval flow above
+- If you are using `user_managed`, verify the Moltis device from your own Matrix client instead
 
 ### Bot does not respond in rooms
 

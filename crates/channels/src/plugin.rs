@@ -572,6 +572,14 @@ pub trait ChannelPlugin: Send + Sync {
     /// Stop an account connection.
     async fn stop_account(&mut self, account_id: &str) -> Result<()>;
 
+    /// Retry account-specific setup that is waiting on some external action.
+    ///
+    /// Most channels do not need this. Matrix uses it to resume a pending
+    /// browser-approved cross-signing reset without tearing down the account.
+    async fn retry_account_setup(&mut self, _account_id: &str) -> Result<()> {
+        Err(Error::unavailable("account setup retry not supported"))
+    }
+
     /// Get outbound adapter for sending messages.
     fn outbound(&self) -> Option<&dyn ChannelOutbound>;
 

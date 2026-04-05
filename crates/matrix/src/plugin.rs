@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    sync::{Arc, RwLock, atomic::AtomicBool},
+    sync::{Arc, Mutex, RwLock, atomic::AtomicBool},
 };
 
 use {
@@ -287,8 +287,8 @@ impl ChannelPlugin for MatrixPlugin {
 
         info!(account_id, homeserver = %cfg.homeserver, "starting matrix account");
 
-        let client = client::build_client(account_id, &cfg).await?;
-        let authenticated = client::authenticate_client(&client, account_id, &cfg).await?;
+        let (client, authenticated) =
+            client::build_and_authenticate_client(account_id, &cfg).await?;
         let bot_user_id = authenticated.user_id;
 
         let cancel = tokio_util::sync::CancellationToken::new();
@@ -308,8 +308,9 @@ impl ChannelPlugin for MatrixPlugin {
                 bot_user_id: bot_user_id.to_string(),
                 ownership_startup_error: authenticated.ownership_startup_error,
                 initial_sync_complete: AtomicBool::new(false),
-                otp: std::sync::Mutex::new(OtpState::new(otp_cooldown)),
-                verification: std::sync::Mutex::new(Default::default()),
+                pending_identity_reset: Mutex::new(None),
+                otp: Mutex::new(OtpState::new(otp_cooldown)),
+                verification: Mutex::new(Default::default()),
             });
         }
 
@@ -331,6 +332,61 @@ impl ChannelPlugin for MatrixPlugin {
         } else {
             warn!(account_id, "matrix account not found");
         }
+        Ok(())
+    }
+
+    async fn retry_account_setup(&mut self, account_id: &str) -> ChannelResult<()> {
+        let (client, config, pending_handle) = {
+            let mut accounts = self
+                .accounts
+                .write()
+                .unwrap_or_else(|error| error.into_inner());
+            let state = accounts
+                .get_mut(account_id)
+                .ok_or_else(|| ChannelError::unknown_account(account_id))?;
+            let pending_handle = state
+                .pending_identity_reset
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .take();
+            (state.client.clone(), state.config.clone(), pending_handle)
+        };
+
+        let pending_handle = pending_handle.ok_or_else(|| {
+            ChannelError::invalid_input("matrix account has no pending ownership approval to retry")
+        })?;
+
+        pending_handle.reset(None).await.map_err(|error| {
+            ChannelError::external("matrix recovery reset identity approval", error)
+        })?;
+        client
+            .encryption()
+            .wait_for_e2ee_initialization_tasks()
+            .await;
+
+        let ownership_attempt =
+            client::maybe_take_matrix_account_ownership(&client, account_id, &config).await;
+
+        {
+            let mut accounts = self
+                .accounts
+                .write()
+                .unwrap_or_else(|error| error.into_inner());
+            let state = accounts
+                .get_mut(account_id)
+                .ok_or_else(|| ChannelError::unknown_account(account_id))?;
+            state.ownership_startup_error = ownership_attempt.startup_error.clone();
+            let mut pending_identity_reset = state
+                .pending_identity_reset
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            *pending_identity_reset = ownership_attempt.pending_identity_reset;
+        }
+
+        if let Some(error) = ownership_attempt.startup_error {
+            return Err(ChannelError::invalid_input(error));
+        }
+
         Ok(())
     }
 
@@ -476,7 +532,7 @@ mod tests {
         matrix_sdk::encryption::recovery::RecoveryState,
         moltis_channels::{ChannelPlugin, ChannelStatus, ChannelType, InboundMode, otp::OtpState},
         secrecy::{ExposeSecret, Secret},
-        std::sync::atomic::AtomicBool,
+        std::sync::{Mutex, atomic::AtomicBool},
         tokio_util::sync::CancellationToken,
     };
 
@@ -509,8 +565,9 @@ mod tests {
             bot_user_id: "@moltis:example.com".into(),
             ownership_startup_error: None,
             initial_sync_complete: AtomicBool::new(true),
-            otp: std::sync::Mutex::new(OtpState::new(300)),
-            verification: std::sync::Mutex::new(Default::default()),
+            pending_identity_reset: Mutex::new(None),
+            otp: Mutex::new(OtpState::new(300)),
+            verification: Mutex::new(Default::default()),
         }
     }
 

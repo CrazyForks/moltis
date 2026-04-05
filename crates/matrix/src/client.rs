@@ -4,7 +4,10 @@ use {
     matrix_sdk::{
         Client, Room,
         config::SyncSettings,
-        encryption::{BackupDownloadStrategy, EncryptionSettings, recovery::RecoveryState},
+        encryption::{
+            BackupDownloadStrategy, CrossSigningResetAuthType, EncryptionSettings,
+            recovery::{IdentityResetHandle, RecoveryState},
+        },
         ruma::{
             OwnedUserId,
             api::client::uiaa::{AuthData, Password, UserIdentifier},
@@ -39,6 +42,12 @@ pub(crate) struct AuthenticatedMatrixAccount {
     pub ownership_startup_error: Option<String>,
 }
 
+#[derive(Default)]
+pub(crate) struct OwnershipAttemptResult {
+    pub startup_error: Option<String>,
+    pub pending_identity_reset: Option<IdentityResetHandle>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct AccessTokenIdentity {
     user_id: OwnedUserId,
@@ -67,12 +76,49 @@ pub(crate) async fn build_client(
         .map_err(|error| ChannelError::external("matrix client build", error))
 }
 
+#[instrument(skip(config), fields(account_id))]
+pub(crate) async fn build_and_authenticate_client(
+    account_id: &str,
+    config: &MatrixAccountConfig,
+) -> ChannelResult<(Client, AuthenticatedMatrixAccount)> {
+    let client = build_client(account_id, config).await?;
+    match authenticate_client(&client, account_id, config).await {
+        Ok(authenticated) => Ok((client, authenticated)),
+        Err(error) if should_rebuild_store_after_auth_error(config, &error) => {
+            warn!(
+                account_id,
+                "matrix crypto store is pinned to an old device, resetting local store and retrying login once"
+            );
+            reset_store_path(account_id)?;
+            let client = build_client(account_id, config).await?;
+            let authenticated = authenticate_client(&client, account_id, config).await?;
+            Ok((client, authenticated))
+        },
+        Err(error) => Err(error),
+    }
+}
+
 fn encryption_settings() -> EncryptionSettings {
     EncryptionSettings {
         auto_enable_cross_signing: true,
         backup_download_strategy: BackupDownloadStrategy::AfterDecryptionFailure,
         ..Default::default()
     }
+}
+
+fn should_rebuild_store_after_auth_error(
+    config: &MatrixAccountConfig,
+    error: &ChannelError,
+) -> bool {
+    matches!(auth_mode(config), Ok(AuthMode::Password))
+        && matches!(
+            error,
+            ChannelError::External { context, source }
+                if context == "matrix password login"
+                    && source
+                        .to_string()
+                        .contains("the account in the store doesn't match the account in the constructor")
+        )
 }
 
 pub(crate) fn auth_mode(config: &MatrixAccountConfig) -> ChannelResult<AuthMode> {
@@ -136,31 +182,83 @@ pub(crate) async fn authenticate_client(
                 .await
                 .map_err(|error| ChannelError::external("matrix whoami", error))?
                 .user_id;
-            let ownership_startup_error =
-                maybe_take_matrix_account_ownership(client, account_id, config).await;
             info!(account_id, user_id = %bot_user_id, "matrix password login complete");
             Ok(AuthenticatedMatrixAccount {
                 user_id: bot_user_id,
-                ownership_startup_error,
+                ownership_startup_error: None,
             })
         },
     }
 }
 
-async fn maybe_take_matrix_account_ownership(
+pub(crate) async fn maybe_take_matrix_account_ownership(
     client: &Client,
     account_id: &str,
     config: &MatrixAccountConfig,
-) -> Option<String> {
+) -> OwnershipAttemptResult {
     if config.ownership_mode != MatrixOwnershipMode::MoltisOwned {
-        return None;
+        return OwnershipAttemptResult::default();
     }
 
     match ensure_moltis_owned_encryption_state(client, account_id, config).await {
-        Ok(()) => None,
+        Ok(Some(handle)) => {
+            let startup_error = ownership_approval_message(&handle);
+            warn!(
+                account_id,
+                error = startup_error,
+                "matrix ownership setup failed"
+            );
+            OwnershipAttemptResult {
+                startup_error: Some(startup_error),
+                pending_identity_reset: Some(handle),
+            }
+        },
+        Ok(None) => OwnershipAttemptResult::default(),
         Err(error) => {
             warn!(account_id, error = %error, "matrix ownership setup failed");
-            Some(error.to_string())
+            OwnershipAttemptResult {
+                startup_error: Some(error.to_string()),
+                pending_identity_reset: None,
+            }
+        },
+    }
+}
+
+async fn wait_for_e2ee_state_to_settle(client: &Client) {
+    client
+        .encryption()
+        .wait_for_e2ee_initialization_tasks()
+        .await;
+}
+
+async fn ownership_is_ready(client: &Client) -> ChannelResult<bool> {
+    Ok(ownership_is_effectively_ready(
+        cross_signing_is_complete(client).await,
+        own_device_is_cross_signed_by_owner(client).await?,
+    ))
+}
+
+async fn try_recover_secret_storage_with_password(
+    client: &Client,
+    account_id: &str,
+    password: &str,
+) -> bool {
+    match client.encryption().recovery().recover(password).await {
+        Ok(()) => {
+            wait_for_e2ee_state_to_settle(client).await;
+            info!(
+                account_id,
+                "matrix ownership recovered existing secret storage with account password"
+            );
+            true
+        },
+        Err(error) => {
+            warn!(
+                account_id,
+                error = %error,
+                "matrix ownership could not recover existing secret storage with account password"
+            );
+            false
         },
     }
 }
@@ -170,7 +268,7 @@ async fn ensure_moltis_owned_encryption_state(
     client: &Client,
     account_id: &str,
     config: &MatrixAccountConfig,
-) -> ChannelResult<()> {
+) -> ChannelResult<Option<IdentityResetHandle>> {
     let Some(user_id) = config
         .user_id
         .as_deref()
@@ -188,9 +286,26 @@ async fn ensure_moltis_owned_encryption_state(
 
     bootstrap_cross_signing_with_password(client, user_id, password.expose_secret()).await?;
 
-    if !cross_signing_is_complete(client).await {
-        force_take_over_existing_identity(client, account_id, user_id, password.expose_secret())
-            .await?;
+    if !ownership_is_ready(client).await? {
+        wait_for_e2ee_state_to_settle(client).await;
+    }
+
+    let initial_recovery_state = client.encryption().recovery().state();
+    if should_try_recover_existing_secret_storage(
+        ownership_is_ready(client).await?,
+        initial_recovery_state,
+    ) {
+        let _ =
+            try_recover_secret_storage_with_password(client, account_id, password.expose_secret())
+                .await;
+    }
+
+    if !ownership_is_ready(client).await?
+        && let Some(handle) =
+            force_take_over_existing_identity(client, account_id, user_id, password.expose_secret())
+                .await?
+    {
+        return Ok(Some(handle));
     }
 
     match client.encryption().recovery().state() {
@@ -205,32 +320,20 @@ async fn ensure_moltis_owned_encryption_state(
             info!(account_id, "matrix ownership recovery already enabled");
         },
         RecoveryState::Incomplete => {
-            match client
-                .encryption()
-                .recovery()
-                .recover(password.expose_secret())
-                .await
+            if !try_recover_secret_storage_with_password(
+                client,
+                account_id,
+                password.expose_secret(),
+            )
+            .await
             {
-                Ok(()) => {
-                    info!(
-                        account_id,
-                        "matrix ownership recovered existing secret storage with account password"
-                    );
-                },
-                Err(error) => {
-                    warn!(
-                        account_id,
-                        error = %error,
-                        "matrix ownership could not recover existing secret storage with account password"
-                    );
-                    force_take_over_existing_identity(
-                        client,
-                        account_id,
-                        user_id,
-                        password.expose_secret(),
-                    )
-                    .await?;
-                },
+                force_take_over_existing_identity(
+                    client,
+                    account_id,
+                    user_id,
+                    password.expose_secret(),
+                )
+                .await?;
             }
         },
         RecoveryState::Unknown => {
@@ -243,27 +346,33 @@ async fn ensure_moltis_owned_encryption_state(
 
     ensure_own_device_is_cross_signed(client).await?;
 
-    if !cross_signing_is_complete(client).await {
+    if !ownership_is_ready(client).await? {
         return Err(ChannelError::invalid_input(
             "matrix ownership bootstrap completed but cross-signing is still incomplete",
         ));
     }
 
-    Ok(())
+    Ok(None)
 }
 
 async fn enable_password_backed_recovery(client: &Client, password: &str) -> ChannelResult<String> {
-    client
+    let recovery_key = client
         .encryption()
         .recovery()
         .enable()
         .wait_for_backups_to_upload()
         .with_passphrase(password)
         .await
-        .map_err(|error| ChannelError::external("matrix recovery enable", error))
+        .map_err(|error| ChannelError::external("matrix recovery enable", error))?;
+    wait_for_e2ee_state_to_settle(client).await;
+    Ok(recovery_key)
 }
 
 async fn ensure_own_device_is_cross_signed(client: &Client) -> ChannelResult<()> {
+    if own_device_is_cross_signed_by_owner(client).await? {
+        return Ok(());
+    }
+
     let Some(own_device) = client
         .encryption()
         .get_own_device()
@@ -273,14 +382,37 @@ async fn ensure_own_device_is_cross_signed(client: &Client) -> ChannelResult<()>
         return Ok(());
     };
 
-    if own_device.is_cross_signed_by_owner() {
-        return Ok(());
-    }
-
     own_device
         .verify()
         .await
         .map_err(|error| ChannelError::external("matrix own device self-sign", error))
+}
+
+async fn own_device_is_cross_signed_by_owner(client: &Client) -> ChannelResult<bool> {
+    Ok(client
+        .encryption()
+        .get_own_device()
+        .await
+        .map_err(|error| ChannelError::external("matrix own device lookup", error))?
+        .is_some_and(|device| device.is_cross_signed_by_owner()))
+}
+
+fn ownership_is_effectively_ready(
+    cross_signing_complete: bool,
+    own_device_cross_signed_by_owner: bool,
+) -> bool {
+    cross_signing_complete || own_device_cross_signed_by_owner
+}
+
+fn should_try_recover_existing_secret_storage(
+    ownership_ready: bool,
+    recovery_state: RecoveryState,
+) -> bool {
+    !ownership_ready
+        && matches!(
+            recovery_state,
+            RecoveryState::Enabled | RecoveryState::Incomplete
+        )
 }
 
 async fn cross_signing_is_complete(client: &Client) -> bool {
@@ -291,13 +423,25 @@ async fn cross_signing_is_complete(client: &Client) -> bool {
         .is_some_and(|status| status.is_complete())
 }
 
+fn ownership_approval_message(handle: &IdentityResetHandle) -> String {
+    match handle.auth_type() {
+        CrossSigningResetAuthType::OAuth(info) => format!(
+            "matrix account requires browser approval to reset cross-signing at {}; complete that in Element or switch to user-managed mode",
+            info.approval_url
+        ),
+        CrossSigningResetAuthType::Uiaa(_) => {
+            "matrix account requires additional authentication to reset cross-signing".to_string()
+        },
+    }
+}
+
 #[instrument(skip(client, password), fields(account_id))]
 async fn force_take_over_existing_identity(
     client: &Client,
     account_id: &str,
     user_id: &str,
     password: &str,
-) -> ChannelResult<()> {
+) -> ChannelResult<Option<IdentityResetHandle>> {
     let maybe_handle = client
         .encryption()
         .recovery()
@@ -307,7 +451,7 @@ async fn force_take_over_existing_identity(
 
     if let Some(handle) = maybe_handle {
         match handle.auth_type() {
-            matrix_sdk::encryption::CrossSigningResetAuthType::Uiaa(uiaa) => {
+            CrossSigningResetAuthType::Uiaa(uiaa) => {
                 let mut auth = Password::new(
                     UserIdentifier::UserIdOrLocalpart(user_id.to_owned()),
                     password.to_owned(),
@@ -319,12 +463,10 @@ async fn force_take_over_existing_identity(
                     .map_err(|error| {
                         ChannelError::external("matrix recovery reset identity auth", error)
                     })?;
+                wait_for_e2ee_state_to_settle(client).await;
             },
-            matrix_sdk::encryption::CrossSigningResetAuthType::OAuth(info) => {
-                return Err(ChannelError::invalid_input(format!(
-                    "matrix account requires browser approval to reset cross-signing at {}; complete that in Element or switch to user-managed mode",
-                    info.approval_url
-                )));
+            CrossSigningResetAuthType::OAuth(_) => {
+                return Ok(Some(handle));
             },
         }
     }
@@ -336,7 +478,7 @@ async fn force_take_over_existing_identity(
         "matrix ownership forcibly reset existing recovery state and bootstrapped fresh Moltis-managed recovery"
     );
 
-    Ok(())
+    Ok(None)
 }
 
 async fn bootstrap_cross_signing_with_password(
@@ -484,6 +626,29 @@ pub(crate) async fn sync_once_and_spawn_loop(
             state.mark_initial_sync_complete();
         }
     }
+    wait_for_e2ee_state_to_settle(client).await;
+    let ownership_startup_error = {
+        let guard = accounts.read().unwrap_or_else(|error| error.into_inner());
+        guard
+            .get(account_id)
+            .map(|state| state.config.clone())
+            .filter(|config| config.ownership_mode == MatrixOwnershipMode::MoltisOwned)
+            .map(|config| async move {
+                maybe_take_matrix_account_ownership(client, account_id, &config).await
+            })
+    };
+    if let Some(ownership_attempt) = ownership_startup_error {
+        let ownership_attempt = ownership_attempt.await;
+        let mut guard = accounts.write().unwrap_or_else(|error| error.into_inner());
+        if let Some(state) = guard.get_mut(account_id) {
+            state.ownership_startup_error = ownership_attempt.startup_error;
+            let mut pending_identity_reset = state
+                .pending_identity_reset
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            *pending_identity_reset = ownership_attempt.pending_identity_reset;
+        }
+    }
     info!(
         account_id,
         "initial sync complete, starting continuous sync"
@@ -506,12 +671,33 @@ pub(crate) async fn sync_once_and_spawn_loop(
 }
 
 fn ensure_store_path(account_id: &str) -> ChannelResult<PathBuf> {
-    let path = moltis_config::data_dir()
-        .join("matrix")
-        .join(account_store_component(account_id));
+    let path = store_path(account_id);
     fs::create_dir_all(&path)
         .map_err(|error| ChannelError::external("matrix create store directory", error))?;
     Ok(path)
+}
+
+fn store_path(account_id: &str) -> PathBuf {
+    moltis_config::data_dir()
+        .join("matrix")
+        .join(account_store_component(account_id))
+}
+
+fn reset_store_path(account_id: &str) -> ChannelResult<()> {
+    let path = store_path(account_id);
+    match fs::remove_dir_all(&path) {
+        Ok(()) => {},
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {},
+        Err(error) => {
+            return Err(ChannelError::external(
+                "matrix remove stale store directory",
+                error,
+            ));
+        },
+    }
+    fs::create_dir_all(&path)
+        .map_err(|error| ChannelError::external("matrix recreate store directory", error))?;
+    Ok(())
 }
 
 fn account_store_component(account_id: &str) -> String {
@@ -835,6 +1021,55 @@ mod tests {
     }
 
     #[test]
+    fn stale_store_mismatch_triggers_rebuild_for_password_auth() {
+        let cfg = MatrixAccountConfig {
+            password: Some(Secret::new("wordpass".into())),
+            user_id: Some("@bot:example.com".into()),
+            ..config()
+        };
+        let error = ChannelError::external(
+            "matrix password login",
+            std::io::Error::other(
+                "failed to read or write to the crypto store the account in the store doesn't match the account in the constructor: expected @bot:example.com:OLD, got @bot:example.com:NEW",
+            ),
+        );
+
+        assert!(should_rebuild_store_after_auth_error(&cfg, &error));
+    }
+
+    #[test]
+    fn unrelated_auth_failures_do_not_reset_the_store() {
+        let password_cfg = MatrixAccountConfig {
+            password: Some(Secret::new("wordpass".into())),
+            user_id: Some("@bot:example.com".into()),
+            ..config()
+        };
+        let access_token_cfg = MatrixAccountConfig {
+            access_token: Secret::new("token".into()),
+            ..config()
+        };
+        let wrong_error = ChannelError::external(
+            "matrix password login",
+            std::io::Error::other("some other login failure"),
+        );
+        let access_token_error = ChannelError::external(
+            "matrix password login",
+            std::io::Error::other(
+                "the account in the store doesn't match the account in the constructor",
+            ),
+        );
+
+        assert!(!should_rebuild_store_after_auth_error(
+            &password_cfg,
+            &wrong_error
+        ));
+        assert!(!should_rebuild_store_after_auth_error(
+            &access_token_cfg,
+            &access_token_error
+        ));
+    }
+
+    #[test]
     fn encryption_settings_enable_cross_signing_and_key_backfill() {
         let settings = encryption_settings();
 
@@ -843,5 +1078,48 @@ mod tests {
             settings.backup_download_strategy,
             BackupDownloadStrategy::AfterDecryptionFailure
         );
+    }
+
+    #[test]
+    fn ownership_is_effectively_ready_when_cross_signing_is_complete() {
+        assert!(ownership_is_effectively_ready(true, false));
+    }
+
+    #[test]
+    fn ownership_is_effectively_ready_when_own_device_is_signed() {
+        assert!(ownership_is_effectively_ready(false, true));
+    }
+
+    #[test]
+    fn ownership_is_not_effectively_ready_when_neither_signal_is_present() {
+        assert!(!ownership_is_effectively_ready(false, false));
+    }
+
+    #[test]
+    fn restart_prefers_secret_storage_recovery_when_account_is_not_ready() {
+        assert!(should_try_recover_existing_secret_storage(
+            false,
+            RecoveryState::Enabled
+        ));
+        assert!(should_try_recover_existing_secret_storage(
+            false,
+            RecoveryState::Incomplete
+        ));
+    }
+
+    #[test]
+    fn restart_skips_secret_storage_recovery_when_it_cannot_help() {
+        assert!(!should_try_recover_existing_secret_storage(
+            true,
+            RecoveryState::Enabled
+        ));
+        assert!(!should_try_recover_existing_secret_storage(
+            false,
+            RecoveryState::Disabled
+        ));
+        assert!(!should_try_recover_existing_secret_storage(
+            false,
+            RecoveryState::Unknown
+        ));
     }
 }

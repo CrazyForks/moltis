@@ -8,6 +8,7 @@ use std::{
 };
 
 use {
+    matrix_sdk::encryption::recovery::IdentityResetHandle,
     moltis_channels::{ChannelEventSink, message_log::MessageLog, otp::OtpState},
     tokio_util::sync::CancellationToken,
 };
@@ -28,6 +29,7 @@ pub struct AccountState {
     pub bot_user_id: String,
     pub ownership_startup_error: Option<String>,
     pub initial_sync_complete: AtomicBool,
+    pub pending_identity_reset: Mutex<Option<IdentityResetHandle>>,
     /// In-memory OTP challenges (std::sync::Mutex — never held across .await).
     pub otp: Mutex<OtpState>,
     /// In-memory Matrix verification flow state.
