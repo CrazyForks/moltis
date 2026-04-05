@@ -917,27 +917,36 @@ function AddTeamsModal() {
 	}}
 	    title="Connect Microsoft Teams">
 	    <div class="channel-form">
-	      ${!tsLoading.value && !(tsStatus.value?.mode === "funnel" && tsStatus.value?.url) && html`
+	      ${
+					!tsLoading.value &&
+					!(tsStatus.value?.mode === "funnel" && tsStatus.value?.url) &&
+					html`
 	        <div class="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs flex flex-col gap-2">
 	          <span class="font-medium text-[var(--text-strong)]">Public URL required</span>
 	          <span class="text-[var(--muted)]">Teams sends messages to your server via webhook. Your Moltis instance must be reachable over HTTPS.</span>
-	          ${tsStatus.value?.installed && tsStatus.value?.tailscale_up
-							? html`<div class="flex flex-col gap-2">
+	          ${
+							tsStatus.value?.installed && tsStatus.value?.tailscale_up
+								? html`<div class="flex flex-col gap-2">
 	              <span class="text-[var(--muted)]">Tailscale is connected. Enable <strong>Funnel</strong> to make it publicly reachable:</span>
 	              <button type="button" class="provider-btn provider-btn-sm" onClick=${onEnableFunnel} disabled=${enablingFunnel.value}>
 	                ${enablingFunnel.value ? "Enabling\u2026" : "Enable Tailscale Funnel"}
 	              </button>
 	            </div>`
-							: html`<span class="text-[var(--muted)]">Enable <strong>Tailscale Funnel</strong> in Settings, or use <a href="https://ngrok.com/" target="_blank" class="text-[var(--accent)] underline">ngrok</a> / <a href="https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/" target="_blank" class="text-[var(--accent)] underline">Cloudflare Tunnel</a>.</span>`
+								: html`<span class="text-[var(--muted)]">Enable <strong>Tailscale Funnel</strong> in Settings, or use <a href="https://ngrok.com/" target="_blank" class="text-[var(--accent)] underline">ngrok</a> / <a href="https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/" target="_blank" class="text-[var(--accent)] underline">Cloudflare Tunnel</a>.</span>`
 						}
 	        </div>
-	      `}
-	      ${tsStatus.value?.mode === "funnel" && tsStatus.value?.url && html`
+	      `
+				}
+	      ${
+					tsStatus.value?.mode === "funnel" &&
+					tsStatus.value?.url &&
+					html`
 	        <div class="rounded-md border border-green-500/30 bg-green-500/5 p-3 text-xs flex items-center gap-2">
 	          <span class="text-green-600">\u2713</span>
 	          <span class="text-[var(--muted)]">Tailscale Funnel active \u2014 publicly reachable at <strong>${tsStatus.value.url}</strong></span>
 	        </div>
-	      `}
+	      `
+				}
 	      <div class="channel-card">
 	        <div class="flex flex-col gap-1">
 	          <span class="text-xs font-medium text-[var(--text-strong)]">How to create a Teams bot</span>
