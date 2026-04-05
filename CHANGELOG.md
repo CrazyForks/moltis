@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [20260405.06] - 2026-04-05
+### Security
+- Add GitHub artifact attestations to release workflow
+
 ## [20260405.05] - 2026-04-05
 
 ## [20260405.04] - 2026-04-05
