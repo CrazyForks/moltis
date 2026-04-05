@@ -232,8 +232,13 @@ pub struct MoltisConfig {
     /// When set, overrides the `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY` environment
     /// variables for all traffic (providers, channels, tools, OAuth).
     /// Localhost/loopback addresses are automatically excluded (`no_proxy`).
-    #[serde(default)]
-    pub upstream_proxy: Option<String>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "crate::schema::serialize_option_secret",
+        deserialize_with = "crate::schema::deserialize_option_secret"
+    )]
+    pub upstream_proxy: Option<Secret<String>>,
     /// Environment variables injected into the Moltis process at startup.
     /// Useful for API keys in Docker where you can't easily set env vars.
     /// Process env vars take precedence (existing vars are not overwritten).

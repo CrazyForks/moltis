@@ -2112,10 +2112,15 @@ pub async fn prepare_gateway_core(
     // ── Upstream proxy (user-configured) ─────────────────────────────────
     // Store the URL globally so any crate can build proxied clients, then
     // initialise the provider shared client before the sandbox proxy.
-    let upstream_proxy = config.upstream_proxy.as_deref();
+    let upstream_proxy = config
+        .upstream_proxy
+        .as_ref()
+        .map(|s| s.expose_secret().as_str());
     if let Some(url) = upstream_proxy {
         moltis_common::http_client::set_upstream_proxy(url);
-        info!(upstream_proxy = %url, "upstream proxy configured for providers and channels");
+        // Redact credentials from the log output.
+        let redacted = moltis_common::http_client::redact_proxy_url(url);
+        info!(upstream_proxy = %redacted, "upstream proxy configured for providers and channels");
     }
     moltis_providers::init_shared_http_client(upstream_proxy);
 

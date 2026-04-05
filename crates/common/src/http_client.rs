@@ -59,6 +59,24 @@ pub fn apply_proxy(mut builder: reqwest::ClientBuilder) -> reqwest::ClientBuilde
     builder
 }
 
+/// Redact credentials from a proxy URL for safe logging.
+///
+/// Returns a version of the URL with `user:pass@` replaced by `***@`.
+/// If the URL cannot be parsed, returns `"<invalid proxy URL>"`.
+pub fn redact_proxy_url(url: &str) -> String {
+    // Parse minimally: look for `://user:pass@` pattern.
+    if let Some(scheme_end) = url.find("://") {
+        let after_scheme = &url[scheme_end + 3..];
+        if let Some(at_pos) = after_scheme.find('@') {
+            // Has userinfo — redact it.
+            let host_part = &after_scheme[at_pos..]; // includes '@'
+            return format!("{}://***{host_part}", &url[..scheme_end]);
+        }
+    }
+    // No credentials or unparseable — return as-is (no secrets to leak).
+    url.to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -96,5 +114,38 @@ mod tests {
         let builder = apply_proxy(builder);
         let client = builder.build().unwrap_or_else(|_| reqwest::Client::new());
         drop(client);
+    }
+
+    #[test]
+    fn redact_proxy_url_with_credentials() {
+        assert_eq!(
+            redact_proxy_url("http://user:p%40ss@proxy.example.com:8080"),
+            "http://***@proxy.example.com:8080"
+        );
+    }
+
+    #[test]
+    fn redact_proxy_url_without_credentials() {
+        assert_eq!(
+            redact_proxy_url("http://proxy.example.com:8080"),
+            "http://proxy.example.com:8080"
+        );
+    }
+
+    #[test]
+    fn redact_proxy_url_socks5_with_credentials() {
+        assert_eq!(
+            redact_proxy_url("socks5://admin:secret@10.0.0.1:1080"),
+            "socks5://***@10.0.0.1:1080"
+        );
+    }
+
+    #[test]
+    fn redact_proxy_url_user_only() {
+        // user without password still has '@'
+        assert_eq!(
+            redact_proxy_url("http://user@proxy:8080"),
+            "http://***@proxy:8080"
+        );
     }
 }

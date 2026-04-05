@@ -5,6 +5,8 @@
 
 use std::{collections::HashMap, path::Path};
 
+use secrecy::ExposeSecret;
+
 use crate::schema::MoltisConfig;
 
 /// Severity level for a diagnostic.
@@ -1096,17 +1098,21 @@ fn check_semantic_warnings(config: &MoltisConfig, diagnostics: &mut Vec<Diagnost
 
     // upstream_proxy: must be a valid URL with a supported scheme.
     if let Some(ref proxy) = config.upstream_proxy {
-        let valid = proxy.starts_with("http://")
-            || proxy.starts_with("https://")
-            || proxy.starts_with("socks5://")
-            || proxy.starts_with("socks5h://");
+        let url = proxy.expose_secret();
+        let valid = url.starts_with("http://")
+            || url.starts_with("https://")
+            || url.starts_with("socks5://")
+            || url.starts_with("socks5h://");
         if !valid {
+            // Extract only the scheme portion (before "://") to avoid leaking
+            // credentials that may be embedded in the URL.
+            let scheme = url.split("://").next().unwrap_or("<unknown>");
             diagnostics.push(Diagnostic {
                 severity: Severity::Error,
                 category: "invalid-value",
                 path: "upstream_proxy".into(),
                 message: format!(
-                    "upstream_proxy must start with http://, https://, socks5://, or socks5h:// (got \"{proxy}\")"
+                    "upstream_proxy must use http://, https://, socks5://, or socks5h:// scheme (got \"{scheme}://\")"
                 ),
             });
         }
