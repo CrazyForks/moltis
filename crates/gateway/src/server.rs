@@ -2109,6 +2109,21 @@ pub async fn prepare_gateway_core(
         sandbox_config.clone(),
     ));
 
+    // ── Upstream proxy (user-configured) ─────────────────────────────────
+    // Store the URL globally so any crate can build proxied clients, then
+    // initialise the provider shared client before the sandbox proxy.
+    let upstream_proxy = config
+        .upstream_proxy
+        .as_ref()
+        .map(|s| s.expose_secret().as_str());
+    if let Some(url) = upstream_proxy {
+        moltis_common::http_client::set_upstream_proxy(url);
+        // Redact credentials from the log output.
+        let redacted = moltis_common::http_client::redact_proxy_url(url);
+        info!(upstream_proxy = %redacted, "upstream proxy configured for providers and channels");
+    }
+    moltis_providers::init_shared_http_client(upstream_proxy);
+
     // ── Trusted-network proxy + audit ────────────────────────────────────
     #[cfg(feature = "trusted-network")]
     let audit_buffer_for_broadcast: Option<crate::network_audit::NetworkAuditBuffer>;
@@ -2163,7 +2178,9 @@ pub async fn prepare_gateway_core(
                 network_policy = ?sandbox_config.network,
                 "trusted-network proxy not started (policy is not Trusted)"
             );
-            proxy_url_for_tools = None;
+            // No sandbox proxy — fall through to upstream proxy for tools too.
+            moltis_tools::init_shared_http_client(upstream_proxy);
+            proxy_url_for_tools = upstream_proxy.map(String::from);
             proxy_shutdown_tx = None;
         }
 
@@ -2173,6 +2190,13 @@ pub async fn prepare_gateway_core(
             crate::network_audit::LiveNetworkAuditService::new(audit_rx, audit_log_path, 2048);
         audit_buffer_for_broadcast = Some(audit_service.buffer().clone());
         services = services.with_network_audit(Arc::new(audit_service));
+    }
+
+    // When trusted-network feature is disabled, still initialize the tools
+    // shared client with the upstream proxy.
+    #[cfg(not(feature = "trusted-network"))]
+    {
+        moltis_tools::init_shared_http_client(upstream_proxy);
     }
 
     // Spawn background image pre-build. This bakes configured packages into a

@@ -10,6 +10,7 @@
 - [Installation](installation.md)
 - [Comparison](comparison.md)
 - [Configuration](configuration.md)
+  - [Upstream Proxy](upstream-proxy.md)
 - [Local Validation](local-validation.md)
 - [End-to-End Testing](e2e-testing.md)
 

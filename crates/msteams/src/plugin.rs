@@ -390,7 +390,7 @@ impl ChannelPlugin for MsTeamsPlugin {
             config: cfg,
             message_log: self.message_log.clone(),
             event_sink: self.event_sink.clone(),
-            http: reqwest::Client::new(),
+            http: moltis_common::http_client::build_default_http_client(),
             token_cache: Arc::new(tokio::sync::Mutex::new(None)),
             service_urls: Arc::new(RwLock::new(HashMap::new())),
         });

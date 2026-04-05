@@ -5,6 +5,8 @@
 
 use std::{collections::HashMap, path::Path};
 
+use secrecy::ExposeSecret;
+
 use crate::schema::MoltisConfig;
 
 /// Severity level for a diagnostic.
@@ -534,6 +536,7 @@ fn build_schema_map() -> KnownKeys {
             ])),
         ),
         ("env", Map(Box::new(Leaf))),
+        ("upstream_proxy", Leaf),
         (
             "caldav",
             Struct(HashMap::from([
@@ -1091,6 +1094,28 @@ fn check_semantic_warnings(config: &MoltisConfig, diagnostics: &mut Vec<Diagnost
             path: "tools.exec.sandbox.mode".into(),
             message: "sandbox mode is disabled — commands run without isolation".into(),
         });
+    }
+
+    // upstream_proxy: must be a valid URL with a supported scheme.
+    if let Some(ref proxy) = config.upstream_proxy {
+        let url = proxy.expose_secret();
+        let valid = url.starts_with("http://")
+            || url.starts_with("https://")
+            || url.starts_with("socks5://")
+            || url.starts_with("socks5h://");
+        if !valid {
+            // Extract only the scheme portion (before "://") to avoid leaking
+            // credentials that may be embedded in the URL.
+            let scheme = url.split("://").next().unwrap_or("<unknown>");
+            diagnostics.push(Diagnostic {
+                severity: Severity::Error,
+                category: "invalid-value",
+                path: "upstream_proxy".into(),
+                message: format!(
+                    "upstream_proxy must use http://, https://, socks5://, or socks5h:// scheme (got \"{scheme}://\")"
+                ),
+            });
+        }
     }
 
     // Loop limit must be positive to avoid immediate run failures.
@@ -2835,6 +2860,53 @@ cache_retention = "{mode}"
                 type_error.is_none(),
                 "cache_retention = \"{mode}\" should parse without type error, got: {:?}",
                 result.diagnostics
+            );
+        }
+    }
+
+    #[test]
+    fn upstream_proxy_not_flagged_as_unknown() {
+        let toml = r#"upstream_proxy = "http://127.0.0.1:8080""#;
+        let result = validate_toml_str(toml);
+        let unknown: Vec<_> = result
+            .diagnostics
+            .iter()
+            .filter(|d| d.category == "unknown-field" && d.path.contains("upstream_proxy"))
+            .collect();
+        assert!(
+            unknown.is_empty(),
+            "upstream_proxy should be a known field: {unknown:?}"
+        );
+    }
+
+    #[test]
+    fn upstream_proxy_invalid_scheme_rejected() {
+        let toml = r#"upstream_proxy = "ftp://proxy.example.com""#;
+        let result = validate_toml_str(toml);
+        let errors: Vec<_> = result
+            .diagnostics
+            .iter()
+            .filter(|d| d.severity == Severity::Error && d.path == "upstream_proxy")
+            .collect();
+        assert!(
+            !errors.is_empty(),
+            "upstream_proxy with ftp:// scheme should produce an error"
+        );
+    }
+
+    #[test]
+    fn upstream_proxy_valid_schemes_accepted() {
+        for scheme in ["http://", "https://", "socks5://", "socks5h://"] {
+            let toml = format!(r#"upstream_proxy = "{scheme}proxy.example.com:1080""#);
+            let result = validate_toml_str(&toml);
+            let errors: Vec<_> = result
+                .diagnostics
+                .iter()
+                .filter(|d| d.severity == Severity::Error && d.path == "upstream_proxy")
+                .collect();
+            assert!(
+                errors.is_empty(),
+                "upstream_proxy with {scheme} should not produce errors: {errors:?}"
             );
         }
     }

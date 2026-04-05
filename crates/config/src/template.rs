@@ -28,6 +28,16 @@ ws_request_logs = false                # Enable WebSocket RPC request/response l
 update_releases_url = "https://www.moltis.org/releases.json"    # Releases manifest URL for update checks (override to use a custom URL)
 
 # ══════════════════════════════════════════════════════════════════════════════
+# UPSTREAM PROXY
+# ══════════════════════════════════════════════════════════════════════════════
+# Route all outbound traffic (providers, channels, tools, OAuth) through a
+# proxy. Supports http://, https://, socks5://, socks5h:// schemes.
+# Authentication via URL: "http://user:pass@host:port"
+# When unset, reqwest honours HTTP_PROXY / HTTPS_PROXY / ALL_PROXY env vars.
+
+# upstream_proxy = "http://127.0.0.1:1080"
+
+# ══════════════════════════════════════════════════════════════════════════════
 # AUTHENTICATION
 # ══════════════════════════════════════════════════════════════════════════════
 

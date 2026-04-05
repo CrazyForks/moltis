@@ -43,14 +43,24 @@ use {
 
 use moltis_agents::model::{ChatMessage, LlmProvider, StreamEvent};
 
+static SHARED_CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+
+/// Initialize the shared provider HTTP client with optional upstream proxy.
+///
+/// Call once at gateway startup; subsequent calls are no-ops.
+pub fn init_shared_http_client(proxy_url: Option<&str>) {
+    let _ = SHARED_CLIENT.set(moltis_common::http_client::build_http_client(proxy_url));
+}
+
 /// Shared HTTP client for LLM providers.
 ///
 /// All providers that don't need custom redirect/proxy settings should
 /// reuse this client to share connection pools, DNS cache, and TLS sessions.
+///
+/// Falls back to a plain client if [`init_shared_http_client`] was never
+/// called (e.g. in tests).
 pub fn shared_http_client() -> &'static reqwest::Client {
-    static CLIENT: std::sync::LazyLock<reqwest::Client> =
-        std::sync::LazyLock::new(reqwest::Client::new);
-    &CLIENT
+    SHARED_CLIENT.get_or_init(reqwest::Client::new)
 }
 
 /// A model discovered from a provider API (e.g. `/v1/models`).

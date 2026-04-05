@@ -162,7 +162,11 @@ impl WebFetchTool {
         let mut client_builder = reqwest::Client::builder()
             .timeout(self.timeout)
             .redirect(reqwest::redirect::Policy::none()); // Manual redirect handling.
-        if let Some(ref url) = self.proxy_url
+        // Prefer the sandbox proxy when set, otherwise fall through to the
+        // upstream proxy (if configured).
+        let upstream = moltis_common::http_client::upstream_proxy_url();
+        let effective_proxy = self.proxy_url.as_deref().or(upstream);
+        if let Some(url) = effective_proxy
             && let Ok(proxy) = reqwest::Proxy::all(url)
         {
             let proxy = proxy.no_proxy(reqwest::NoProxy::from_string("localhost,127.0.0.1,::1"));
