@@ -211,7 +211,7 @@ impl moltis_tools::location::LocationRequester for GatewayLocationRequester {
             .send_text(
                 &reply_target.account_id,
                 &reply_target.outbound_to(),
-                "Please share your location in this chat.",
+                "Please share your location in this chat, or paste a geo: link / map pin.",
                 None,
             )
             .await
@@ -2489,6 +2489,17 @@ pub async fn prepare_gateway_core(
             store::ChannelStore,
         };
 
+        #[cfg(feature = "vault")]
+        let channel_store: Arc<dyn ChannelStore> = {
+            let inner: Arc<dyn ChannelStore> = Arc::new(
+                crate::channel_store::SqliteChannelStore::new(db_pool.clone()),
+            );
+            Arc::new(crate::channel_store::VaultChannelStore::new(
+                inner,
+                vault.clone(),
+            ))
+        };
+        #[cfg(not(feature = "vault"))]
         let channel_store: Arc<dyn ChannelStore> = Arc::new(
             crate::channel_store::SqliteChannelStore::new(db_pool.clone()),
         );
@@ -2527,6 +2538,18 @@ pub async fn prepare_gateway_core(
         registry
             .register(discord_plugin as Arc<tokio::sync::RwLock<dyn ChannelPlugin>>)
             .await;
+
+        #[cfg(feature = "matrix")]
+        {
+            let matrix_plugin = Arc::new(tokio::sync::RwLock::new(
+                moltis_matrix::MatrixPlugin::new()
+                    .with_message_log(Arc::clone(&message_log))
+                    .with_event_sink(Arc::clone(&channel_sink)),
+            ));
+            registry
+                .register(matrix_plugin as Arc<tokio::sync::RwLock<dyn ChannelPlugin>>)
+                .await;
+        }
 
         #[cfg(feature = "whatsapp")]
         {

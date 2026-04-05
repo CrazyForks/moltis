@@ -639,12 +639,15 @@ reset_on_exit = true              # Reset serve/funnel when gateway shuts down
 # CHANNELS
 # ══════════════════════════════════════════════════════════════════════════════
 # External messaging integrations.
+# Note: channels added or edited in the web UI are stored in Moltis's internal
+# database at data_dir()/moltis.db. They are not written back into this file.
+# Keep channel config here only if you want to manage it manually in TOML.
 
 [channels]
 # Which channel types appear in the web UI's "+ Add Channel" menu.
 # Default: ["telegram", "discord", "slack"]
-# Add "whatsapp" or "msteams" to enable them in the UI.
-# offered = ["telegram", "discord", "slack", "whatsapp"]
+# Add "matrix", "whatsapp", or "msteams" to enable them in the UI.
+# offered = ["telegram", "discord", "slack", "matrix", "whatsapp"]
 
 # WhatsApp linked-device accounts
 # [channels.whatsapp.my-bot]
@@ -706,6 +709,37 @@ reset_on_exit = true              # Reset serve/funnel when gateway shuts down
 # stream_mode = "edit_in_place"   # "edit_in_place", "native", or "off"
 # edit_throttle_ms = 500          # Min ms between streaming edits
 # thread_replies = true           # Reply in threads
+
+# Matrix bots / appservices using access tokens or password login
+# NOTE: Matrix encrypted rooms require password auth. Access tokens can connect
+# for plain Matrix traffic, but they reuse an existing Matrix session without
+# that device's private E2EE keys, so Moltis cannot reliably decrypt encrypted
+# chats from token auth alone. Use password auth so Moltis creates and persists
+# its own Matrix device keys, then finish Element verification in the chat with
+# `verify yes`, `verify no`, `verify show`, or `verify cancel`.
+# [channels.matrix.my-bot]
+# homeserver = "https://matrix.example.com"
+# access_token = "syt_..."        # Plain/unencrypted Matrix traffic only
+# password = "..."                # Required for encrypted Matrix chats
+# user_id = "@bot:example.com"    # Required for password login, auto-detected for token auth
+# device_id = "MOLTISBOT"         # Optional device ID for session restore
+# device_display_name = "Moltis Matrix Bot"  # Optional display name for password logins
+# ownership_mode = "moltis_owned" # "moltis_owned" or "user_managed"
+# dm_policy = "allowlist"         # "open", "allowlist", or "disabled"
+# room_policy = "allowlist"       # "open", "allowlist", or "disabled"
+# mention_mode = "mention"        # "mention", "always", or "none"
+# room_allowlist = []             # Matrix room IDs or aliases
+# user_allowlist = []             # Matrix user IDs
+# auto_join = "always"            # "always", "allowlist", or "off"
+# model = "gpt-4.1"
+# model_provider = "openai"
+# stream_mode = "edit_in_place"   # "edit_in_place" or "off"
+# edit_throttle_ms = 500          # Min ms between streaming edits
+# stream_min_initial_chars = 30   # Delay first streamed send until this many chars
+# reply_to_message = true         # Send threaded/rich replies when possible
+# ack_reaction = "👀"             # Emoji reaction while processing (omit to disable)
+# otp_self_approval = true        # OTP self-approval for non-allowlisted DM users
+# otp_cooldown_secs = 300         # Cooldown after 3 failed OTP attempts
 
 # ══════════════════════════════════════════════════════════════════════════════
 # HOOKS

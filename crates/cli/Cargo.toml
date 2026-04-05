@@ -115,6 +115,7 @@ default = [
   "jemalloc",
   "local-llm",
   "local-llm-metal",
+  "matrix",
   "mdns",
   "metrics",
   "ngrok",
@@ -158,6 +159,7 @@ local-llm          = ["moltis-gateway/local-llm"]
 local-llm-cuda     = ["local-llm", "moltis-gateway/local-llm-cuda"]
 local-llm-metal    = ["local-llm", "moltis-gateway/local-llm-metal"]
 local-llm-vulkan   = ["local-llm", "moltis-gateway/local-llm-vulkan"]
+matrix             = ["moltis-httpd/matrix"]
 mdns               = ["moltis-gateway/mdns"]
 metrics            = ["moltis-httpd/metrics", "moltis-web?/metrics"]
 ngrok              = ["moltis-httpd/ngrok", "moltis-web?/ngrok"]

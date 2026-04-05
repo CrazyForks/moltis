@@ -497,12 +497,14 @@ impl ChannelStatus for MsTeamsPlugin {
                 connected: true,
                 account_id: state.account_id.clone(),
                 details: Some(details),
+                extra: None,
             })
         } else {
             Ok(ChannelHealthSnapshot {
                 connected: false,
                 account_id: account_id.to_string(),
                 details: Some("account not started".into()),
+                extra: None,
             })
         }
     }
