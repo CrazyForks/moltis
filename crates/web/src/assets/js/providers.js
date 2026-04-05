@@ -696,7 +696,7 @@ function showModelSelector(provider, models, keyVal, endpointVal, modelVal, skip
 		if (allVisible) {
 			for (var mdl of visible) selectedIds.delete(mdl.id);
 		} else {
-			for (var mdl of visible) selectedIds.add(mdl.id);
+			for (var visibleModel of visible) selectedIds.add(visibleModel.id);
 		}
 		updateSelectAllLabel();
 		updateStatus();
@@ -882,9 +882,7 @@ function saveAndFinishProvider(provider, keyVal, endpointVal, modelVal, selected
 			if (modelIds.length > 0) {
 				// Test first model as a connectivity check
 				var firstModelId = modelIds[0];
-				var firstModelForTest = saveAsCustomProvider
-					? `${savedProviderName}::${modelsForSave[0]}`
-					: firstModelId;
+				var firstModelForTest = saveAsCustomProvider ? `${savedProviderName}::${modelsForSave[0]}` : firstModelId;
 				var testResult = await testModel(firstModelForTest);
 				var modelServiceUnavailable = !testResult.ok && isModelServiceNotConfigured(testResult.error || "");
 				modelTimedOut = !testResult.ok && isTimeoutError(testResult.error || "");

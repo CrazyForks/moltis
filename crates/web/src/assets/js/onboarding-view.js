@@ -1162,6 +1162,7 @@ function ProviderStep({ onNext, onBack }) {
 	var [providers, setProviders] = useState([]);
 	var [loading, setLoading] = useState(true);
 	var [error, setError] = useState(null);
+	var [showAllProviders, setShowAllProviders] = useState(false);
 
 	// Which provider has an open inline form (by name), or null
 	var [configuring, setConfiguring] = useState(null);
@@ -1687,7 +1688,6 @@ function ProviderStep({ onNext, onBack }) {
 	}
 
 	var configuredProviders = providers.filter((p) => p.configured);
-	var [showAllProviders, setShowAllProviders] = useState(false);
 
 	var recommendedProviders = providers.filter((p) => RECOMMENDED_PROVIDERS.has(p.name));
 	var otherProviders = providers.filter((p) => !RECOMMENDED_PROVIDERS.has(p.name));
