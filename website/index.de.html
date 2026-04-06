@@ -317,7 +317,7 @@
                             <span class="pill"><img src="images/icons/minimax.png" alt="" class="pill-icon pill-icon-color">MiniMax</span>
                             <span class="pill"><img src="images/icons/moonshot.svg" alt="" class="pill-icon">Moonshot</span>
                             <span class="pill"><img src="images/icons/zai.svg" alt="" class="pill-icon">Z.AI</span>
-                            <span class="pill">Venice</span>
+                            <span class="pill"><img src="images/icons/globe.svg" alt="" class="pill-icon">Venice</span>
                         </div>
                     </div>
 
@@ -1386,11 +1386,12 @@
         }
         // Scroll-reveal for pill groups
         var revealObserver = new IntersectionObserver(function(entries) {
-            entries.forEach(function(entry, i) {
-                if (entry.isIntersecting) {
-                    setTimeout(function() { entry.target.classList.add('revealed'); }, i * 100);
-                    revealObserver.unobserve(entry.target);
-                }
+            var idx = 0;
+            entries.forEach(function(entry) {
+                if (!entry.isIntersecting) return;
+                setTimeout(function() { entry.target.classList.add('revealed'); }, idx * 100);
+                idx++;
+                revealObserver.unobserve(entry.target);
             });
         }, { threshold: 0.15 });
         document.querySelectorAll('[data-reveal]').forEach(function(el) {

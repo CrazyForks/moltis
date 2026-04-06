@@ -12,25 +12,25 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="color-scheme" content="light dark">
-    <title>Moltis — A secure persistent personal agent server in Rust</title>
+    <title>Moltis — Un serveur d'agent personnel sécurisé et persistant en Rust</title>
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
-    <meta name="description" content="A secure persistent personal agent server in Rust. One binary, sandboxed execution, multi-provider LLMs, voice, memory, Telegram, WhatsApp, Discord, Teams, and MCP tools. Secure by design, runs on your hardware.">
-    <meta property="og:title" content="Moltis — A secure persistent personal agent server in Rust">
-    <meta property="og:description" content="A secure persistent personal agent server in Rust. One binary, sandboxed execution, multi-provider LLMs, voice, memory, Telegram, WhatsApp, Discord, Teams, and MCP tools. Secure by design, runs on your hardware.">
+    <meta name="description" content="Un serveur d'agent personnel sécurisé et persistant en Rust. Un seul binaire, exécution en sandbox, LLM multi-fournisseurs, voix, mémoire, Telegram, WhatsApp, Discord, Teams et outils MCP. Sécurisé par conception, fonctionne sur votre matériel.">
+    <meta property="og:title" content="Moltis — Un serveur d'agent personnel sécurisé et persistant en Rust">
+    <meta property="og:description" content="Un serveur d'agent personnel sécurisé et persistant en Rust. Un seul binaire, exécution en sandbox, LLM multi-fournisseurs, voix, mémoire, Telegram, WhatsApp, Discord, Teams et outils MCP. Sécurisé par conception, fonctionne sur votre matériel.">
     <meta property="og:site_name" content="Moltis">
-    <meta property="og:locale" content="en_US">
+    <meta property="og:locale" content="fr_FR">
     <meta property="og:image" content="https://moltis.org/og-social.png?v=8">
     <meta property="og:image:secure_url" content="https://moltis.org/og-social.png?v=8">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
-    <meta property="og:image:alt" content="Moltis — A secure persistent personal agent server in Rust">
+    <meta property="og:image:alt" content="Moltis — Un serveur d'agent personnel sécurisé et persistant en Rust">
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://moltis.org">
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:image" content="https://moltis.org/og-social.png?v=8">
-    <meta name="twitter:image:alt" content="Moltis — A secure persistent personal agent server in Rust">
-    <meta name="twitter:title" content="Moltis — A secure persistent personal agent server in Rust">
-    <meta name="twitter:description" content="A secure persistent personal agent server in Rust. One binary, sandboxed execution, multi-provider LLMs, voice, memory, Telegram, WhatsApp, Discord, Teams, and MCP tools. Secure by design, runs on your hardware.">
+    <meta name="twitter:image:alt" content="Moltis — Un serveur d'agent personnel sécurisé et persistant en Rust">
+    <meta name="twitter:title" content="Moltis — Un serveur d'agent personnel sécurisé et persistant en Rust">
+    <meta name="twitter:description" content="Un serveur d'agent personnel sécurisé et persistant en Rust. Un seul binaire, exécution en sandbox, LLM multi-fournisseurs, voix, mémoire, Telegram, WhatsApp, Discord, Teams et outils MCP. Sécurisé par conception, fonctionne sur votre matériel.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=JetBrains+Mono:wght@400&family=Outfit:wght@700&display=swap" rel="stylesheet">
@@ -413,7 +413,7 @@
                             <span class="pill"><img src="images/icons/minimax.png" alt="" class="pill-icon pill-icon-color">MiniMax</span>
                             <span class="pill"><img src="images/icons/moonshot.svg" alt="" class="pill-icon">Moonshot</span>
                             <span class="pill"><img src="images/icons/zai.svg" alt="" class="pill-icon">Z.AI</span>
-                            <span class="pill">Venice</span>
+                            <span class="pill"><img src="images/icons/globe.svg" alt="" class="pill-icon">Venice</span>
                         </div>
                     </div>
 
@@ -1482,11 +1482,12 @@
         }
         // Scroll-reveal for pill groups
         var revealObserver = new IntersectionObserver(function(entries) {
-            entries.forEach(function(entry, i) {
-                if (entry.isIntersecting) {
-                    setTimeout(function() { entry.target.classList.add('revealed'); }, i * 100);
-                    revealObserver.unobserve(entry.target);
-                }
+            var idx = 0;
+            entries.forEach(function(entry) {
+                if (!entry.isIntersecting) return;
+                setTimeout(function() { entry.target.classList.add('revealed'); }, idx * 100);
+                idx++;
+                revealObserver.unobserve(entry.target);
             });
         }, { threshold: 0.15 });
         document.querySelectorAll('[data-reveal]').forEach(function(el) {
