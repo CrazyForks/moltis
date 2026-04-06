@@ -62,7 +62,7 @@ struct GithubTokenResponse {
     error: Option<String>,
 }
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(serde::Deserialize)]
 struct CopilotTokenResponse {
     token: String,
     expires_at: u64,
@@ -72,6 +72,16 @@ struct CopilotTokenResponse {
     /// completions must use `stream: true`.
     #[serde(rename = "proxy-ep")]
     proxy_ep: Option<String>,
+}
+
+impl std::fmt::Debug for CopilotTokenResponse {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CopilotTokenResponse")
+            .field("token", &"[REDACTED]")
+            .field("expires_at", &self.expires_at)
+            .field("proxy_ep", &self.proxy_ep)
+            .finish()
+    }
 }
 
 /// Resolved authentication: a valid Copilot API token plus the base URL to
@@ -694,6 +704,7 @@ fn is_responses_api_required_error(body: &str) -> bool {
     lower.contains("unsupported_api_for_model")
         || lower.contains("not accessible via the /chat/completions")
 }
+
 // ── LlmProvider impl ────────────────────────────────────────────────────────
 
 #[async_trait]
