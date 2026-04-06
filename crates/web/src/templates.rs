@@ -469,8 +469,10 @@ pub(crate) async fn build_gon_data(gw: &GatewayState) -> GonData {
     }
 }
 
-fn load_channels_offered_from_config_path(path: &Path) -> crate::Result<Vec<String>> {
-    Ok(moltis_config::loader::load_config(path)?.channels.offered)
+fn load_channels_offered_from_config_path(
+    path: &Path,
+) -> std::result::Result<Vec<String>, moltis_config::Error> {
+    moltis_config::loader::load_config(path).map(|config| config.channels.offered)
 }
 
 fn resolve_channels_offered(cached_channels_offered: Vec<String>) -> Vec<String> {
