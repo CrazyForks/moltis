@@ -362,6 +362,20 @@ impl WebhookStore for SqliteWebhookStore {
     }
 
     async fn delete_webhook(&self, id: i64) -> Result<()> {
+        // Explicitly delete children first — ON DELETE CASCADE requires
+        // PRAGMA foreign_keys = ON which is per-connection and may not
+        // be set on every pooled connection.
+        sqlx::query(
+            "DELETE FROM webhook_response_actions WHERE delivery_id IN \
+             (SELECT id FROM webhook_deliveries WHERE webhook_id = ?)",
+        )
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+        sqlx::query("DELETE FROM webhook_deliveries WHERE webhook_id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
         let result = sqlx::query("DELETE FROM webhooks WHERE id = ?")
             .bind(id)
             .execute(&self.pool)
