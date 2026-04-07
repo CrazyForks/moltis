@@ -248,12 +248,16 @@ fn enforce_tool_result_context_budget(
 /// Error patterns that indicate the context window has been exceeded.
 const CONTEXT_WINDOW_PATTERNS: &[&str] = &[
     "context_length_exceeded",
+    "context_window_exceeded",
+    "context_window_exceeded",
     "max_tokens",
     "too many tokens",
     "request too large",
     "maximum context length",
     "context window",
     "token limit",
+    "input too long",
+    "input_too_long",
     "content_too_large",
     "request_too_large",
 ];
@@ -6116,6 +6120,25 @@ mod tests {
         assert!(is_rate_limit_error("rate_limit_exceeded"));
         assert!(!is_rate_limit_error("HTTP 500 Internal Server Error"));
         assert!(!is_rate_limit_error("insufficient_quota"));
+    }
+
+    #[test]
+    fn test_is_context_window_error() {
+        // Existing patterns
+        assert!(is_context_window_error("context_length_exceeded: max tokens 200000"));
+        assert!(is_context_window_error("request too large"));
+        assert!(is_context_window_error("maximum context length exceeded"));
+        // New Z.AI / provider-specific patterns
+        assert!(is_context_window_error("model_context_window_exceeded"));
+        assert!(is_context_window_error("context_window_exceeded"));
+        assert!(is_context_window_error("input_too_long"));
+        assert!(is_context_window_error("input too long"));
+        // Case insensitive
+        assert!(is_context_window_error("Model_Context_Window_Exceeded"));
+        assert!(is_context_window_error("INPUT_TOO_LONG"));
+        // Negative cases
+        assert!(!is_context_window_error("connection reset by peer"));
+        assert!(!is_context_window_error("invalid API key"));
     }
 
     #[test]
