@@ -1299,17 +1299,17 @@ pub async fn prepare_gateway(
                                 profile.and_then(|p| p.parse_delivery_key(&headers, &body));
 
                             // Check event filter.
-                            if let Some(ref et) = event_type {
-                                if !webhook.event_filter.accepts(et) {
-                                    return (
-                                        StatusCode::OK,
-                                        Json(serde_json::json!({
-                                            "status": "filtered",
-                                            "eventType": et,
-                                        })),
-                                    )
-                                        .into_response();
-                                }
+                            if let Some(ref et) = event_type
+                                && !webhook.event_filter.accepts(et)
+                            {
+                                return (
+                                    StatusCode::OK,
+                                    Json(serde_json::json!({
+                                        "status": "filtered",
+                                        "eventType": et,
+                                    })),
+                                )
+                                    .into_response();
                             }
 
                             // Check rate limit.
@@ -1428,14 +1428,14 @@ pub async fn prepare_gateway(
                             }
 
                             // Queue for async processing.
-                            if let Some(tx) = gw.webhook_worker_tx.get() {
-                                if let Err(e) = tx.send(delivery_id).await {
-                                    tracing::error!(
-                                        delivery_id,
-                                        error = %e,
-                                        "failed to queue webhook delivery for processing"
-                                    );
-                                }
+                            if let Some(tx) = gw.webhook_worker_tx.get()
+                                && let Err(e) = tx.send(delivery_id).await
+                            {
+                                tracing::error!(
+                                    delivery_id,
+                                    error = %e,
+                                    "failed to queue webhook delivery for processing"
+                                );
                             }
 
                             (

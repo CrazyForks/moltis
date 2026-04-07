@@ -1,16 +1,11 @@
 use std::{
-    collections::HashMap,
     path::{Component, Path, PathBuf},
     sync::Arc,
-    time::Duration,
 };
 
 use tracing::warn;
 
-use {
-    moltis_config::VoiceSttProvider,
-    moltis_protocol::{ErrorShape, error_codes},
-};
+use moltis_protocol::{ErrorShape, error_codes};
 
 use crate::{
     broadcast::{BroadcastOpts, broadcast},
@@ -2474,7 +2469,7 @@ pub(super) fn register(reg: &mut MethodRegistry) {
                                     )),
                                 ];
                                 let result = tokio::time::timeout(
-                                    Duration::from_secs(3),
+                                    std::time::Duration::from_secs(3),
                                     provider.complete(&messages, &[]),
                                 )
                                 .await;
@@ -4153,7 +4148,8 @@ pub(super) fn register(reg: &mut MethodRegistry) {
                                 // Auto-enable both TTS and STT with ElevenLabs
                                 cfg.voice.tts.provider = "elevenlabs".to_string();
                                 cfg.voice.tts.enabled = true;
-                                cfg.voice.stt.provider = Some(VoiceSttProvider::ElevenLabs);
+                                cfg.voice.stt.provider =
+                                    Some(moltis_config::VoiceSttProvider::ElevenLabs);
                                 cfg.voice.stt.enabled = true;
                             },
                             "openai" | "openai-tts" => {
@@ -4171,25 +4167,29 @@ pub(super) fn register(reg: &mut MethodRegistry) {
                                 // Auto-enable both TTS and STT with Google
                                 cfg.voice.tts.provider = "google".to_string();
                                 cfg.voice.tts.enabled = true;
-                                cfg.voice.stt.provider = Some(VoiceSttProvider::Google);
+                                cfg.voice.stt.provider =
+                                    Some(moltis_config::VoiceSttProvider::Google);
                                 cfg.voice.stt.enabled = true;
                             },
                             // STT providers
                             "whisper" => {
                                 cfg.voice.stt.whisper.api_key =
                                     Some(Secret::new(api_key.to_string()));
-                                cfg.voice.stt.provider = Some(VoiceSttProvider::Whisper);
+                                cfg.voice.stt.provider =
+                                    Some(moltis_config::VoiceSttProvider::Whisper);
                                 cfg.voice.stt.enabled = true;
                             },
                             "groq" => {
                                 cfg.voice.stt.groq.api_key = Some(Secret::new(api_key.to_string()));
-                                cfg.voice.stt.provider = Some(VoiceSttProvider::Groq);
+                                cfg.voice.stt.provider =
+                                    Some(moltis_config::VoiceSttProvider::Groq);
                                 cfg.voice.stt.enabled = true;
                             },
                             "deepgram" => {
                                 cfg.voice.stt.deepgram.api_key =
                                     Some(Secret::new(api_key.to_string()));
-                                cfg.voice.stt.provider = Some(VoiceSttProvider::Deepgram);
+                                cfg.voice.stt.provider =
+                                    Some(moltis_config::VoiceSttProvider::Deepgram);
                                 cfg.voice.stt.enabled = true;
                             },
                             "google" => {
@@ -4199,7 +4199,8 @@ pub(super) fn register(reg: &mut MethodRegistry) {
                                 cfg.voice.tts.google.api_key =
                                     Some(Secret::new(api_key.to_string()));
                                 // Auto-enable both STT and TTS with Google
-                                cfg.voice.stt.provider = Some(VoiceSttProvider::Google);
+                                cfg.voice.stt.provider =
+                                    Some(moltis_config::VoiceSttProvider::Google);
                                 cfg.voice.stt.enabled = true;
                                 cfg.voice.tts.provider = "google".to_string();
                                 cfg.voice.tts.enabled = true;
@@ -4207,7 +4208,8 @@ pub(super) fn register(reg: &mut MethodRegistry) {
                             "mistral" => {
                                 cfg.voice.stt.mistral.api_key =
                                     Some(Secret::new(api_key.to_string()));
-                                cfg.voice.stt.provider = Some(VoiceSttProvider::Mistral);
+                                cfg.voice.stt.provider =
+                                    Some(moltis_config::VoiceSttProvider::Mistral);
                                 cfg.voice.stt.enabled = true;
                             },
                             "elevenlabs-stt" => {
@@ -4217,7 +4219,8 @@ pub(super) fn register(reg: &mut MethodRegistry) {
                                 cfg.voice.tts.elevenlabs.api_key =
                                     Some(Secret::new(api_key.to_string()));
                                 // Auto-enable both STT and TTS with ElevenLabs
-                                cfg.voice.stt.provider = Some(VoiceSttProvider::ElevenLabs);
+                                cfg.voice.stt.provider =
+                                    Some(moltis_config::VoiceSttProvider::ElevenLabs);
                                 cfg.voice.stt.enabled = true;
                                 cfg.voice.tts.provider = "elevenlabs".to_string();
                                 cfg.voice.tts.enabled = true;
@@ -4538,7 +4541,7 @@ pub(super) fn register(reg: &mut MethodRegistry) {
                             .command
                             .clone()
                             .unwrap_or_else(|| "qmd".into()),
-                        collections: HashMap::new(),
+                        collections: std::collections::HashMap::new(),
                         max_results: config.memory.qmd.max_results.unwrap_or(10),
                         timeout_ms: config.memory.qmd.timeout_ms.unwrap_or(30_000),
                         work_dir: moltis_config::data_dir(),
