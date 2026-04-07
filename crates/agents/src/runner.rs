@@ -6125,7 +6125,9 @@ mod tests {
     #[test]
     fn test_is_context_window_error() {
         // Existing patterns
-        assert!(is_context_window_error("context_length_exceeded: max tokens 200000"));
+        assert!(is_context_window_error(
+            "context_length_exceeded: max tokens 200000"
+        ));
         assert!(is_context_window_error("request too large"));
         assert!(is_context_window_error("maximum context length exceeded"));
         // New Z.AI / provider-specific patterns
