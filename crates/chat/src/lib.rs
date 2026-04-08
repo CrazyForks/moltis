@@ -2048,12 +2048,12 @@ impl ModelService for LiveModelService {
         let limiter = Arc::new(Semaphore::new(max_parallel));
         let provider_limiter = Arc::new(ProbeProviderLimiter::new(max_parallel_per_provider));
         let rate_limiter = Arc::new(ProbeRateLimiter::default());
-        let mut tasks = futures::stream::FuturesUnordered::new();
+        let mut tasks = tokio::task::JoinSet::new();
         for (model_id, display_name, provider_name, provider) in checks {
             let limiter = Arc::clone(&limiter);
             let provider_limiter = Arc::clone(&provider_limiter);
             let rate_limiter = Arc::clone(&rate_limiter);
-            tasks.push(tokio::spawn(run_single_probe(
+            tasks.spawn(run_single_probe(
                 model_id,
                 display_name,
                 provider_name,
@@ -2061,7 +2061,7 @@ impl ModelService for LiveModelService {
                 limiter,
                 provider_limiter,
                 rate_limiter,
-            )));
+            ));
         }
 
         let mut results = Vec::with_capacity(total);
@@ -2080,10 +2080,11 @@ impl ModelService for LiveModelService {
             let joined = tokio::select! {
                 biased;
                 () = cancel_token.cancelled() => {
+                    tasks.abort_all();
                     cancelled = true;
                     break;
                 }
-                next = tasks.next() => match next {
+                next = tasks.join_next() => match next {
                     Some(joined) => joined,
                     None => break,
                 },

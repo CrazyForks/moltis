@@ -62,6 +62,7 @@ function handleModelsUpdatedEvent(payload) {
 	}
 	if (payload.phase === "cancelled") {
 		detectingModels.value = false;
+		detectError.value = t("providers:detectionCancelled");
 		if (payload.summary) {
 			detectSummary.value = payload.summary;
 			detectProgress.value = progressFromPayload(payload.summary);
@@ -158,8 +159,11 @@ async function runDetectAllModels() {
 	}
 }
 
-function cancelDetection() {
-	sendRpc("models.cancel_detect", {});
+async function cancelDetection() {
+	var res = await sendRpc("models.cancel_detect", {});
+	if (!res?.ok) {
+		detectError.value = res?.error?.message || t("providers:modelDetectionFailed");
+	}
 }
 
 function groupProviderRows(models, metaMap) {
