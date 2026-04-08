@@ -869,22 +869,24 @@ pub async fn prepare_gateway(
                     let teams_plugin = Arc::clone(&teams_plugin_for_webhook);
                     let gw_state = Arc::clone(&state_for_teams_webhook);
                     async move {
-                        // JWT pre-validation: check Authorization header before
-                        // running the shared-secret verifier pipeline.
-                        if let Some(auth_header) = headers.get("authorization") {
-                            let jwt_validator = {
-                                let plugin = teams_plugin.read().await;
-                                plugin.jwt_validator(&account_id)
-                            };
-                            if let Some(validator) = jwt_validator {
-                                let header_str = auth_header.to_str().unwrap_or("");
-                                if !validator.validate(header_str).await {
-                                    return (
-                                        StatusCode::UNAUTHORIZED,
-                                        Json(serde_json::json!({ "ok": false, "error": "invalid JWT" })),
-                                    )
-                                        .into_response();
-                                }
+                        // JWT pre-validation: if a JWT validator is configured,
+                        // the Authorization header is mandatory and must be valid.
+                        // A missing header is treated as an auth failure (not skipped).
+                        let jwt_validator = {
+                            let plugin = teams_plugin.read().await;
+                            plugin.jwt_validator(&account_id)
+                        };
+                        if let Some(validator) = jwt_validator {
+                            let header_str = headers
+                                .get("authorization")
+                                .and_then(|v| v.to_str().ok())
+                                .unwrap_or("");
+                            if !validator.validate(header_str).await {
+                                return (
+                                    StatusCode::UNAUTHORIZED,
+                                    Json(serde_json::json!({ "ok": false, "error": "invalid JWT" })),
+                                )
+                                    .into_response();
                             }
                         }
 

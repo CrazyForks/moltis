@@ -230,17 +230,13 @@ pub async fn search_messages(
     let top = limit.clamp(1, 50);
 
     let mut url = format!(
-        "{GRAPH_API_BASE}/chats/{}/messages?$search=\"{}\"%20&$top={top}",
+        "{GRAPH_API_BASE}/chats/{}/messages?$search=\"{sanitized}\"&$top={top}",
         urlencoding::encode(chat_id),
-        urlencoding::encode(&sanitized),
     );
 
     if let Some(user) = from_user {
         let escaped = user.replace('\'', "''");
-        url.push_str(&format!(
-            "&$filter=from/user/displayName eq '{}'",
-            urlencoding::encode(&escaped)
-        ));
+        url.push_str(&format!("&$filter=from/user/displayName eq '{escaped}'"));
     }
 
     let resp = http

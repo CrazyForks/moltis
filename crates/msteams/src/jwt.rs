@@ -178,11 +178,17 @@ impl BotFrameworkJwtValidator {
             }
         }
 
-        // Fetch new JWKS.
+        // Fetch new JWKS. On failure, fall back to stale cache if available
+        // so that a transient outage doesn't reject all legitimate requests.
         let jwks = match self.fetch_jwks(url).await {
             Ok(keys) => keys,
             Err(e) => {
-                warn!("Teams JWT: failed to fetch JWKS from {url}: {e}");
+                let guard = cache.read().await;
+                if let Some(stale) = guard.as_ref() {
+                    warn!("Teams JWT: JWKS refresh failed, using stale cache: {e}");
+                    return Some(Arc::new(stale.keys.clone()));
+                }
+                warn!("Teams JWT: failed to fetch JWKS from {url} (no cache): {e}");
                 return None;
             },
         };

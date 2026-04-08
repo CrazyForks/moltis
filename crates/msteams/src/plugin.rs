@@ -116,12 +116,13 @@ impl MsTeamsPlugin {
 
     /// Acquire an authenticated token for Graph API calls on behalf of the given account.
     ///
-    /// Returns `(http_client, token)`. The token is cached and refreshed automatically.
+    /// Uses the `https://graph.microsoft.com/.default` scope (separate from the
+    /// Bot Framework token which is scoped to `api.botframework.com`).
     pub async fn graph_client(
         &self,
         account_id: &str,
     ) -> anyhow::Result<(reqwest::Client, secrecy::Secret<String>)> {
-        let (http, config, token_cache) = {
+        let (http, config, graph_cache) = {
             let accounts = self.accounts.read().unwrap_or_else(|e| e.into_inner());
             let state = accounts
                 .get(account_id)
@@ -129,10 +130,10 @@ impl MsTeamsPlugin {
             (
                 state.http.clone(),
                 state.config.clone(),
-                Arc::clone(&state.token_cache),
+                Arc::clone(&state.graph_token_cache),
             )
         };
-        let token = get_access_token(&http, &config, &token_cache).await?;
+        let token = crate::auth::get_graph_token(&http, &config, &graph_cache).await?;
         Ok((http, token))
     }
 
@@ -644,6 +645,7 @@ impl ChannelPlugin for MsTeamsPlugin {
             event_sink: self.event_sink.clone(),
             http,
             token_cache: Arc::new(tokio::sync::Mutex::new(None)),
+            graph_token_cache: Arc::new(tokio::sync::Mutex::new(None)),
             service_urls: Arc::new(RwLock::new(HashMap::new())),
             jwt_validator,
             welcomed_conversations: Arc::new(RwLock::new(HashSet::new())),

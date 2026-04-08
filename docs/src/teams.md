@@ -263,6 +263,12 @@ prompt_starters = ["What can you do?", "Help me write an email", "Summarize this
 Set `welcome_card = false` to disable. Set `group_welcome_card = true` to also
 send a text welcome when the bot is added to a group chat.
 
+```admonish note
+Welcome card tracking is in-memory and resets when the gateway restarts. After
+a restart, the bot may re-send welcome cards to conversations that already
+received one. This is a known limitation.
+```
+
 ## Interactive Messages
 
 The bot supports Adaptive Cards for interactive button menus. When an agent

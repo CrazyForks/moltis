@@ -21,7 +21,10 @@ pub struct AccountState {
     pub message_log: Option<Arc<dyn MessageLog>>,
     pub event_sink: Option<Arc<dyn ChannelEventSink>>,
     pub http: Client,
+    /// Bot Framework token cache (audience: api.botframework.com).
     pub token_cache: Arc<Mutex<Option<CachedAccessToken>>>,
+    /// Microsoft Graph token cache (audience: graph.microsoft.com).
+    pub graph_token_cache: Arc<Mutex<Option<CachedAccessToken>>>,
     pub service_urls: Arc<RwLock<HashMap<String, String>>>,
     /// JWT validator for Bot Framework token verification.
     pub jwt_validator: Option<Arc<BotFrameworkJwtValidator>>,

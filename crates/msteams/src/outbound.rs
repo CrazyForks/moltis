@@ -209,12 +209,10 @@ impl MsTeamsOutbound {
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
-            debug!(
-                account_id,
-                activity_id,
-                %status,
-                "Teams activity update failed: {body}"
-            );
+            return Err(ChannelError::external(
+                "Teams activity update failed",
+                std::io::Error::other(format!("{status}: {body}")),
+            ));
         }
 
         Ok(())
