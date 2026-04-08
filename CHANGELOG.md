@@ -19,6 +19,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [20260408.01] - 2026-04-08
+### Added
+- [agents] Auto-continue when model stops mid-task + max iterations UX
+- [config] Make auto-continue tool-call threshold configurable
+
+
+### Fixed
+- Address PR review — translatable continue message, document tool-call threshold
+- Guard auto-continue against min_tool_calls=0 usize tautology
+- [minimax] Restore system prompts and null tool args
+- [providers] Discover live anthropic models
+- [providers] Mark anthropic recommendations globally
+
 ## [20260407.01] - 2026-04-07
 ### Added
 - [webhooks] Add generic webhook ingress for triggering AI agents
