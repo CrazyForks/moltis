@@ -2374,6 +2374,105 @@ mod tests {
         assert_eq!(usage.output_tokens, 3);
     }
 
+    /// Regression test for <https://github.com/moltis-org/moltis/issues/597>.
+    ///
+    /// Simulates a realistic LM Studio SSE stream with:
+    /// - An initial role-only chunk (no reasoning/content)
+    /// - Multiple `reasoning_content` chunks (long thinking phase)
+    /// - Transition to `content` chunks (visible answer)
+    /// - Full LM Studio metadata fields (`id`, `object`, `model`, `created`)
+    /// - Final usage + `[DONE]` frame
+    ///
+    /// Verifies that all `ReasoningDelta` events are emitted before any `Delta`
+    /// events, that the accumulated text matches, and that usage propagates.
+    #[tokio::test]
+    async fn lmstudio_realistic_reasoning_stream_with_metadata() {
+        // Realistic LM Studio SSE format: initial role-only chunk, then
+        // reasoning_content chunks, then content chunks, then usage + DONE.
+        let sse = concat!(
+            // Initial chunk: role assignment, no content or reasoning.
+            "data: {\"id\":\"chatcmpl-abc123\",\"object\":\"chat.completion.chunk\",\"created\":1712600000,\"model\":\"qwen3.5-27b\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\n",
+            // Reasoning phase: multiple reasoning_content chunks.
+            "data: {\"id\":\"chatcmpl-abc123\",\"object\":\"chat.completion.chunk\",\"created\":1712600000,\"model\":\"qwen3.5-27b\",\"choices\":[{\"index\":0,\"delta\":{\"reasoning_content\":\"The user\"},\"finish_reason\":null}]}\n\n",
+            "data: {\"id\":\"chatcmpl-abc123\",\"object\":\"chat.completion.chunk\",\"created\":1712600000,\"model\":\"qwen3.5-27b\",\"choices\":[{\"index\":0,\"delta\":{\"reasoning_content\":\" is asking\"},\"finish_reason\":null}]}\n\n",
+            "data: {\"id\":\"chatcmpl-abc123\",\"object\":\"chat.completion.chunk\",\"created\":1712600000,\"model\":\"qwen3.5-27b\",\"choices\":[{\"index\":0,\"delta\":{\"reasoning_content\":\" about the\"},\"finish_reason\":null}]}\n\n",
+            "data: {\"id\":\"chatcmpl-abc123\",\"object\":\"chat.completion.chunk\",\"created\":1712600000,\"model\":\"qwen3.5-27b\",\"choices\":[{\"index\":0,\"delta\":{\"reasoning_content\":\" capital of Italy.\"},\"finish_reason\":null}]}\n\n",
+            // Content phase: visible answer.
+            "data: {\"id\":\"chatcmpl-abc123\",\"object\":\"chat.completion.chunk\",\"created\":1712600000,\"model\":\"qwen3.5-27b\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Рим\"},\"finish_reason\":null}]}\n\n",
+            "data: {\"id\":\"chatcmpl-abc123\",\"object\":\"chat.completion.chunk\",\"created\":1712600000,\"model\":\"qwen3.5-27b\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\" (Rome)\"},\"finish_reason\":null}]}\n\n",
+            // Finish + usage.
+            "data: {\"id\":\"chatcmpl-abc123\",\"object\":\"chat.completion.chunk\",\"created\":1712600000,\"model\":\"qwen3.5-27b\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
+            "data: {\"id\":\"chatcmpl-abc123\",\"object\":\"chat.completion.chunk\",\"created\":1712600000,\"model\":\"qwen3.5-27b\",\"choices\":[],\"usage\":{\"prompt_tokens\":42,\"completion_tokens\":18}}\n\n",
+            "data: [DONE]\n\n",
+        );
+        let (base_url, _) = start_sse_mock(sse.to_string()).await;
+        let provider = OpenAiProvider::new_with_name(
+            Secret::new("lmstudio".to_string()),
+            "qwen3.5-27b".to_string(),
+            base_url,
+            "lmstudio".to_string(),
+        );
+
+        // Use stream_with_tools (agent loop path) to match production usage.
+        let mut stream =
+            provider.stream_with_tools(vec![ChatMessage::user("Какая столица Италии?")], vec![]);
+        let mut events = Vec::new();
+        while let Some(event) = stream.next().await {
+            events.push(event);
+        }
+
+        // Collect reasoning and visible deltas.
+        let reasoning: Vec<&str> = events
+            .iter()
+            .filter_map(|e| match e {
+                StreamEvent::ReasoningDelta(t) => Some(t.as_str()),
+                _ => None,
+            })
+            .collect();
+        let visible: Vec<&str> = events
+            .iter()
+            .filter_map(|e| match e {
+                StreamEvent::Delta(t) => Some(t.as_str()),
+                _ => None,
+            })
+            .collect();
+
+        // All reasoning chunks must be present.
+        assert_eq!(reasoning, vec![
+            "The user",
+            " is asking",
+            " about the",
+            " capital of Italy."
+        ]);
+        // All visible content chunks must be present.
+        assert_eq!(visible, vec!["Рим", " (Rome)"]);
+
+        // Reasoning must arrive before visible text.
+        let first_reasoning = events
+            .iter()
+            .position(|e| matches!(e, StreamEvent::ReasoningDelta(_)))
+            .expect("stream should include ReasoningDelta");
+        let first_visible = events
+            .iter()
+            .position(|e| matches!(e, StreamEvent::Delta(_)))
+            .expect("stream should include Delta");
+        assert!(
+            first_reasoning < first_visible,
+            "reasoning events must arrive before visible deltas"
+        );
+
+        // Done event with usage.
+        let done = events
+            .iter()
+            .find_map(|e| match e {
+                StreamEvent::Done(u) => Some(u),
+                _ => None,
+            })
+            .expect("stream must emit Done");
+        assert_eq!(done.input_tokens, 42);
+        assert_eq!(done.output_tokens, 18);
+    }
+
     #[tokio::test]
     async fn lmstudio_reasoning_field_alias_stream_emits_reasoning_before_answer() {
         let sse = concat!(
