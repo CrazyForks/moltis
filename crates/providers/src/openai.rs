@@ -2220,6 +2220,100 @@ mod tests {
         assert_eq!(usage.output_tokens, 61);
     }
 
+    #[tokio::test]
+    async fn lmstudio_reasoning_content_stream_emits_reasoning_and_visible_deltas() {
+        let sse = concat!(
+            "data: {\"choices\":[{\"delta\":{\"role\":\"assistant\",\"reasoning_content\":\"Thinking\"},\"finish_reason\":null}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\" process\"},\"finish_reason\":null}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"content\":\"Rome\"},\"finish_reason\":null}]}\n\n",
+            "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":12,\"completion_tokens\":3}}\n\n",
+            "data: [DONE]\n\n",
+        );
+        let (base_url, _) = start_sse_mock(sse.to_string()).await;
+        let provider = OpenAiProvider::new_with_name(
+            Secret::new("lmstudio".to_string()),
+            "qwen3.5-27b".to_string(),
+            base_url,
+            "lmstudio".to_string(),
+        );
+
+        crate::contract::stream_surfaces_reasoning_separately(&provider)
+            .await
+            .expect("LM Studio reasoning stream should satisfy provider contract");
+
+        let mut stream = provider.stream(vec![ChatMessage::user("What is the capital of Italy?")]);
+        let mut reasoning_deltas = Vec::new();
+        let mut visible_deltas = Vec::new();
+        let mut final_usage: Option<Usage> = None;
+
+        while let Some(event) = stream.next().await {
+            match event {
+                StreamEvent::ReasoningDelta(delta) => reasoning_deltas.push(delta),
+                StreamEvent::Delta(delta) => visible_deltas.push(delta),
+                StreamEvent::Done(usage) => final_usage = Some(usage),
+                _ => {},
+            }
+        }
+
+        assert_eq!(reasoning_deltas, vec!["Thinking", " process"]);
+        assert_eq!(visible_deltas, vec!["Rome"]);
+        let usage = final_usage.expect("stream should emit Done");
+        assert_eq!(usage.input_tokens, 12);
+        assert_eq!(usage.output_tokens, 3);
+    }
+
+    #[tokio::test]
+    async fn lmstudio_reasoning_field_alias_stream_emits_reasoning_before_answer() {
+        let sse = concat!(
+            "data: {\"choices\":[{\"delta\":{\"reasoning\":\"Plan:\"},\"finish_reason\":null}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"reasoning\":\" compare capitals\"},\"finish_reason\":null}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"content\":\"Rome\"},\"finish_reason\":null}]}\n\n",
+            "data: [DONE]\n\n",
+        );
+        let (base_url, _) = start_sse_mock(sse.to_string()).await;
+        let provider = OpenAiProvider::new_with_name(
+            Secret::new("lmstudio".to_string()),
+            "gemma-4".to_string(),
+            base_url,
+            "lmstudio".to_string(),
+        );
+
+        let mut stream = provider.stream(vec![ChatMessage::user("Answer briefly")]);
+        let mut events = Vec::new();
+
+        while let Some(event) = stream.next().await {
+            events.push(event);
+        }
+
+        let reasoning: Vec<_> = events
+            .iter()
+            .filter_map(|event| match event {
+                StreamEvent::ReasoningDelta(delta) => Some(delta.as_str()),
+                _ => None,
+            })
+            .collect();
+        let visible: Vec<_> = events
+            .iter()
+            .filter_map(|event| match event {
+                StreamEvent::Delta(delta) => Some(delta.as_str()),
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(reasoning, vec!["Plan:", " compare capitals"]);
+        assert_eq!(visible, vec!["Rome"]);
+
+        let first_reasoning = events
+            .iter()
+            .position(|event| matches!(event, StreamEvent::ReasoningDelta(_)))
+            .expect("stream should include reasoning");
+        let first_visible = events
+            .iter()
+            .position(|event| matches!(event, StreamEvent::Delta(_)))
+            .expect("stream should include visible text");
+        assert!(first_reasoning < first_visible);
+    }
+
     // ── Regression: stream_with_tools must send tools in the API body ────
 
     #[tokio::test]
