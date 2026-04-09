@@ -202,21 +202,11 @@ async fn multi_turn_tool_use() {
 
 // ── Probe & streaming ────────────────────────────────────────────────────────
 
-/// OpenAI's probe uses `max_completion_tokens: 1` which GPT-5 models reject
-/// with a 400 error. Use streaming instead to validate reachability.
 #[tokio::test]
 #[ignore]
-async fn probe_via_streaming() {
+async fn probe_succeeds() {
     let p = make_provider(TEST_MODEL);
-    let mut stream = p.stream(vec![ChatMessage::user("ping")]);
-    while let Some(event) = stream.next().await {
-        match event {
-            StreamEvent::Delta(_) | StreamEvent::Done(_) => return,
-            StreamEvent::Error(err) => panic!("probe failed: {err}"),
-            _ => {},
-        }
-    }
-    panic!("stream ended without output");
+    p.probe().await.expect("probe should succeed");
 }
 
 #[tokio::test]
@@ -245,7 +235,6 @@ async fn stream_emits_delta_and_done() {
 
 // ── Model catalog ────────────────────────────────────────────────────────────
 
-/// Uses streaming instead of probe — GPT-5 models reject `max_completion_tokens: 1`.
 #[tokio::test]
 #[ignore]
 async fn catalog_models_are_live() {
@@ -254,23 +243,9 @@ async fn catalog_models_are_live() {
 
     for &model_id in KNOWN_MODELS {
         let p = make_provider(model_id);
-        let mut stream = p.stream(vec![ChatMessage::user("ping")]);
-        let mut ok = false;
-        while let Some(event) = stream.next().await {
-            match event {
-                StreamEvent::Delta(_) | StreamEvent::Done(_) => {
-                    ok = true;
-                    break;
-                },
-                StreamEvent::Error(err) => {
-                    dead.push((model_id, err));
-                    break;
-                },
-                _ => {},
-            }
-        }
-        if ok {
-            alive.push(model_id);
+        match p.probe().await {
+            Ok(()) => alive.push(model_id),
+            Err(e) => dead.push((model_id, e.to_string())),
         }
     }
 

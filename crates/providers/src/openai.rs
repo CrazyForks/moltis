@@ -538,7 +538,9 @@ impl OpenAiProvider {
             || capability.starts_with("o3")
             || capability.starts_with("o4");
         if uses_max_completion_tokens {
-            body["max_completion_tokens"] = serde_json::json!(1);
+            // GPT-5 and reasoning models need a higher minimum output cap.
+            // Values below ~10 can trigger 400 errors on some models.
+            body["max_completion_tokens"] = serde_json::json!(16);
         } else {
             body["max_tokens"] = serde_json::json!(1);
         }
@@ -2367,7 +2369,7 @@ mod tests {
         let reqs = captured.lock().unwrap();
         assert_eq!(reqs.len(), 1);
         let body = reqs[0].body.as_ref().expect("request should have a body");
-        assert_eq!(body["max_completion_tokens"], 1);
+        assert_eq!(body["max_completion_tokens"], 16);
         assert!(body.get("max_tokens").is_none());
     }
 
