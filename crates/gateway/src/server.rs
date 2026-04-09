@@ -4224,7 +4224,10 @@ fn warn_on_workspace_prompt_file_truncation() {
         let Ok(content) = std::fs::read_to_string(&path) else {
             continue;
         };
-        let char_count = content.chars().count();
+        let Some(normalized) = moltis_config::normalize_workspace_markdown_content(&content) else {
+            continue;
+        };
+        let char_count = normalized.chars().count();
         if char_count <= limit_chars {
             continue;
         }

@@ -253,7 +253,8 @@ fn workspace_prompt_file_status(
     let relative_path = Path::new(file_name);
     let (path, source) = resolve_agent_file_target(agent_id, relative_path)?;
     let content = std::fs::read_to_string(&path).ok()?;
-    let original_chars = content.chars().count();
+    let normalized = moltis_config::normalize_workspace_markdown_content(&content)?;
+    let original_chars = normalized.chars().count();
     let size_bytes = std::fs::metadata(&path).ok().map(|meta| meta.len());
     Some(WorkspacePromptFileStatusResponse {
         path: file_name.to_string(),
