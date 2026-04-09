@@ -54,12 +54,8 @@ sudo snap install moltis
 ### AppImage
 
 ```bash
-# Download the AppImage for your architecture from:
-# https://github.com/moltis-org/moltis/releases/latest
-chmod +x moltis-*.AppImage
-
-# Run
-./moltis-*.AppImage
+# Install the latest AppImage
+curl -fsSL https://www.moltis.org/install.sh | sh -s -- --method=appimage
 ```
 
 ## Docker
