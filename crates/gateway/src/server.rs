@@ -3528,6 +3528,10 @@ pub async fn prepare_gateway_core(
             });
         });
         let mut exec_tool = moltis_tools::exec::ExecTool::default()
+            .with_default_timeout(std::time::Duration::from_secs(
+                config.tools.exec.default_timeout_secs,
+            ))
+            .with_max_output_bytes(config.tools.exec.max_output_bytes)
             .with_approval(Arc::clone(&approval_manager), broadcaster)
             .with_sandbox_router(Arc::clone(&sandbox_router))
             .with_env_provider(Arc::clone(&env_provider))
