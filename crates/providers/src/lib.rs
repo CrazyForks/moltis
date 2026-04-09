@@ -1611,7 +1611,9 @@ impl ProviderRegistry {
                     display_name: source.display_name(&model.id, &model.display_name),
                     created_at: model.created_at,
                     recommended: model.recommended,
-                    capabilities: model.capabilities.unwrap_or_else(|| ModelCapabilities::infer(&model.id)),
+                    capabilities: model
+                        .capabilities
+                        .unwrap_or_else(|| ModelCapabilities::infer(&model.id)),
                 },
                 provider,
             );
@@ -1652,7 +1654,9 @@ impl ProviderRegistry {
         let new_entries: Vec<(ModelInfo, Arc<dyn LlmProvider>)> = next_models
             .into_iter()
             .map(|model| {
-                let caps = model.capabilities.unwrap_or_else(|| ModelCapabilities::infer(&model.id));
+                let caps = model
+                    .capabilities
+                    .unwrap_or_else(|| ModelCapabilities::infer(&model.id));
                 (
                     ModelInfo {
                         id: model.id.clone(),
@@ -1713,7 +1717,9 @@ impl ProviderRegistry {
         let mut added = 0usize;
 
         for model in models {
-            let caps = model.capabilities.unwrap_or_else(|| ModelCapabilities::infer(&model.id));
+            let caps = model
+                .capabilities
+                .unwrap_or_else(|| ModelCapabilities::infer(&model.id));
             let (model_id, display_name, created_at, recommended) = (
                 model.id,
                 model.display_name,
@@ -1761,7 +1767,9 @@ impl ProviderRegistry {
         let new_entries: Vec<(ModelInfo, Arc<dyn LlmProvider>)> = models
             .into_iter()
             .map(|model| {
-                let caps = model.capabilities.unwrap_or_else(|| ModelCapabilities::infer(&model.id));
+                let caps = model
+                    .capabilities
+                    .unwrap_or_else(|| ModelCapabilities::infer(&model.id));
                 let provider = Arc::new(
                     anthropic::AnthropicProvider::with_alias(
                         key.clone(),
@@ -2218,7 +2226,9 @@ impl ProviderRegistry {
                         display_name: model.display_name.clone(),
                         created_at: model.created_at,
                         recommended: model.recommended,
-                        capabilities: model.capabilities.unwrap_or_else(|| ModelCapabilities::infer(&model.id)),
+                        capabilities: model
+                            .capabilities
+                            .unwrap_or_else(|| ModelCapabilities::infer(&model.id)),
                     },
                     provider,
                 );
@@ -2313,7 +2323,9 @@ impl ProviderRegistry {
                         display_name: model.display_name.clone(),
                         created_at: model.created_at,
                         recommended: model.recommended,
-                        capabilities: model.capabilities.unwrap_or_else(|| ModelCapabilities::infer(&model.id)),
+                        capabilities: model
+                            .capabilities
+                            .unwrap_or_else(|| ModelCapabilities::infer(&model.id)),
                     },
                     Arc::new(oai),
                 );
@@ -2365,7 +2377,9 @@ impl ProviderRegistry {
                         display_name: model.display_name.clone(),
                         created_at: model.created_at,
                         recommended: model.recommended,
-                        capabilities: model.capabilities.unwrap_or_else(|| ModelCapabilities::infer(&model.id)),
+                        capabilities: model
+                            .capabilities
+                            .unwrap_or_else(|| ModelCapabilities::infer(&model.id)),
                     },
                     Arc::new(oai),
                 );
@@ -2635,7 +2649,9 @@ impl ProviderRegistry {
         };
         let models = merge_preferred_and_discovered_models(preferred, discovered);
         for model in models {
-            let caps = model.capabilities.unwrap_or_else(|| ModelCapabilities::infer(&model.id));
+            let caps = model
+                .capabilities
+                .unwrap_or_else(|| ModelCapabilities::infer(&model.id));
             let (model_id, display_name, created_at, recommended) = (
                 model.id,
                 model.display_name,
@@ -2811,7 +2827,9 @@ impl ProviderRegistry {
             let models = merge_preferred_and_discovered_models(preferred, discovered);
 
             for model in models {
-                let caps = model.capabilities.unwrap_or_else(|| ModelCapabilities::infer(&model.id));
+                let caps = model
+                    .capabilities
+                    .unwrap_or_else(|| ModelCapabilities::infer(&model.id));
                 let (model_id, display_name, created_at, recommended) = (
                     model.id,
                     model.display_name,
@@ -2946,7 +2964,9 @@ impl ProviderRegistry {
             };
 
             for model in models {
-                let caps = model.capabilities.unwrap_or_else(|| ModelCapabilities::infer(&model.id));
+                let caps = model
+                    .capabilities
+                    .unwrap_or_else(|| ModelCapabilities::infer(&model.id));
                 let (model_id, display_name, created_at, recommended) = (
                     model.id,
                     model.display_name,
@@ -3047,7 +3067,9 @@ impl ProviderRegistry {
 
             let custom_tool_mode = entry.tool_mode;
             for model in models {
-                let caps = model.capabilities.unwrap_or_else(|| ModelCapabilities::infer(&model.id));
+                let caps = model
+                    .capabilities
+                    .unwrap_or_else(|| ModelCapabilities::infer(&model.id));
                 let (model_id, display_name, created_at, recommended) = (
                     model.id,
                     model.display_name,
@@ -3161,7 +3183,10 @@ impl ProviderRegistry {
                         display_name: format!("{} ({label} reasoning)", m.display_name),
                         created_at: m.created_at,
                         recommended: false,
-                        capabilities: ModelCapabilities { reasoning: true, ..m.capabilities },
+                        capabilities: ModelCapabilities {
+                            reasoning: true,
+                            ..m.capabilities
+                        },
                     });
                 }
             }

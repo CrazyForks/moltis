@@ -334,6 +334,11 @@ pub fn user_path() -> PathBuf {
     data_dir().join("USER.md")
 }
 
+/// Path to workspace boot context markdown.
+pub fn boot_path() -> PathBuf {
+    data_dir().join("BOOT.md")
+}
+
 /// Path to workspace tool-guidance markdown.
 pub fn tools_path() -> PathBuf {
     data_dir().join("TOOLS.md")
@@ -552,6 +557,17 @@ pub fn load_agents_md() -> Option<String> {
 pub fn load_agents_md_for_agent(agent_id: &str) -> Option<String> {
     let agent_path = agent_workspace_dir(agent_id).join("AGENTS.md");
     load_workspace_markdown(agent_path).or_else(load_agents_md)
+}
+
+/// Load BOOT.md from the workspace root (`data_dir`) if present and non-empty.
+pub fn load_boot_md() -> Option<String> {
+    load_workspace_markdown(boot_path())
+}
+
+/// Load BOOT.md for a specific agent, falling back to the root file.
+pub fn load_boot_md_for_agent(agent_id: &str) -> Option<String> {
+    let agent_path = agent_workspace_dir(agent_id).join("BOOT.md");
+    load_workspace_markdown(agent_path).or_else(load_boot_md)
 }
 
 /// Load TOOLS.md from the workspace root (`data_dir`) if present and non-empty.
@@ -1659,6 +1675,43 @@ name = "Rex"
 
         save_user(&UserProfile::default()).expect("save empty user");
         assert!(!path.exists());
+
+        clear_data_dir();
+    }
+
+    #[test]
+    fn load_boot_md_reads_trimmed_content() {
+        let _guard = DATA_DIR_TEST_LOCK.lock().unwrap();
+        let dir = tempfile::tempdir().expect("tempdir");
+        set_data_dir(dir.path().to_path_buf());
+
+        std::fs::write(dir.path().join("BOOT.md"), "\n  Run startup checks.  \n").unwrap();
+        assert_eq!(load_boot_md().as_deref(), Some("Run startup checks."));
+
+        clear_data_dir();
+    }
+
+    #[test]
+    fn load_boot_md_for_agent_falls_back_to_root() {
+        let _guard = DATA_DIR_TEST_LOCK.lock().unwrap();
+        let dir = tempfile::tempdir().expect("tempdir");
+        set_data_dir(dir.path().to_path_buf());
+
+        std::fs::write(dir.path().join("BOOT.md"), "Root boot context").unwrap();
+        // No agent-specific file — should fall back to root.
+        assert_eq!(
+            load_boot_md_for_agent("test-agent").as_deref(),
+            Some("Root boot context")
+        );
+
+        // Agent-specific file overrides root.
+        let agent_dir = dir.path().join("agents").join("test-agent");
+        std::fs::create_dir_all(&agent_dir).unwrap();
+        std::fs::write(agent_dir.join("BOOT.md"), "Agent-specific boot").unwrap();
+        assert_eq!(
+            load_boot_md_for_agent("test-agent").as_deref(),
+            Some("Agent-specific boot")
+        );
 
         clear_data_dir();
     }

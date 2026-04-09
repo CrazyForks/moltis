@@ -348,16 +348,18 @@ moltis hooks info my-hook
 
 Moltis includes several built-in hooks:
 
-### boot-md
-
-Reads `BOOT.md` from the workspace on `GatewayStart` and injects it into the agent context.
-
-`BOOT.md` is intended for short, explicit startup tasks (health checks, reminders,
-"send one startup message", etc.). If the file is missing or empty, nothing is injected.
-
 ## Workspace Context Files
 
 Moltis supports several workspace markdown files in `data_dir`.
+
+### BOOT.md
+
+`BOOT.md` is loaded per session and injected into the system prompt as startup context.
+
+Best use is for short, explicit startup tasks (health checks, reminders,
+"send one startup message", etc.). If the file is missing or empty, nothing is injected.
+
+Agent-specific overrides are supported: place `BOOT.md` in `agents/<id>/BOOT.md`.
 
 ### TOOLS.md
 

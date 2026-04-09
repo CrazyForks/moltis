@@ -217,6 +217,7 @@ pub fn build_system_prompt(
         None,
         None,
         None,
+        None,
     )
 }
 
@@ -229,6 +230,7 @@ pub fn build_system_prompt_with_session_runtime(
     identity: Option<&AgentIdentity>,
     user: Option<&UserProfile>,
     soul_text: Option<&str>,
+    boot_text: Option<&str>,
     agents_text: Option<&str>,
     tools_text: Option<&str>,
     runtime_context: Option<&PromptRuntimeContext>,
@@ -242,6 +244,7 @@ pub fn build_system_prompt_with_session_runtime(
         identity,
         user,
         soul_text,
+        boot_text,
         agents_text,
         tools_text,
         runtime_context,
@@ -260,6 +263,7 @@ pub fn build_system_prompt_with_session_runtime_details(
     identity: Option<&AgentIdentity>,
     user: Option<&UserProfile>,
     soul_text: Option<&str>,
+    boot_text: Option<&str>,
     agents_text: Option<&str>,
     tools_text: Option<&str>,
     runtime_context: Option<&PromptRuntimeContext>,
@@ -274,6 +278,7 @@ pub fn build_system_prompt_with_session_runtime_details(
         identity,
         user,
         soul_text,
+        boot_text,
         agents_text,
         tools_text,
         runtime_context,
@@ -289,6 +294,7 @@ pub fn build_system_prompt_minimal_runtime(
     identity: Option<&AgentIdentity>,
     user: Option<&UserProfile>,
     soul_text: Option<&str>,
+    boot_text: Option<&str>,
     agents_text: Option<&str>,
     tools_text: Option<&str>,
     runtime_context: Option<&PromptRuntimeContext>,
@@ -299,6 +305,7 @@ pub fn build_system_prompt_minimal_runtime(
         identity,
         user,
         soul_text,
+        boot_text,
         agents_text,
         tools_text,
         runtime_context,
@@ -314,6 +321,7 @@ pub fn build_system_prompt_minimal_runtime_details(
     identity: Option<&AgentIdentity>,
     user: Option<&UserProfile>,
     soul_text: Option<&str>,
+    boot_text: Option<&str>,
     agents_text: Option<&str>,
     tools_text: Option<&str>,
     runtime_context: Option<&PromptRuntimeContext>,
@@ -328,6 +336,7 @@ pub fn build_system_prompt_minimal_runtime_details(
         identity,
         user,
         soul_text,
+        boot_text,
         agents_text,
         tools_text,
         runtime_context,
@@ -485,6 +494,7 @@ fn build_system_prompt_full(
     identity: Option<&AgentIdentity>,
     user: Option<&UserProfile>,
     soul_text: Option<&str>,
+    boot_text: Option<&str>,
     agents_text: Option<&str>,
     tools_text: Option<&str>,
     runtime_context: Option<&PromptRuntimeContext>,
@@ -504,6 +514,7 @@ fn build_system_prompt_full(
     });
 
     append_identity_and_user_sections(&mut prompt, identity, user, soul_text);
+    append_boot_section(&mut prompt, boot_text);
     append_project_context(&mut prompt, project_context);
     append_runtime_section(&mut prompt, runtime_context, include_tools);
     append_skills_section(&mut prompt, include_tools, skills);
@@ -552,6 +563,21 @@ fn append_identity_and_user_sections(
     if identity.is_some() || user.is_some() {
         prompt.push('\n');
     }
+}
+
+fn append_boot_section(prompt: &mut String, boot_text: Option<&str>) {
+    let Some(text) = boot_text else {
+        return;
+    };
+    prompt.push_str("## Startup Context (BOOT.md)\n\n");
+    append_truncated_text_block(
+        prompt,
+        "BOOT.md",
+        text,
+        DEFAULT_WORKSPACE_FILE_MAX_CHARS,
+        "\n*(BOOT.md truncated for prompt size.)*\n",
+    );
+    prompt.push_str("\n\n");
 }
 
 fn append_project_context(prompt: &mut String, project_context: Option<&str>) {
@@ -1051,7 +1077,7 @@ mod tests {
             ..Default::default()
         }];
         let prompt = build_system_prompt_with_session_runtime(
-            &tools, true, None, &skills, None, None, None, None, None, None, None,
+            &tools, true, None, &skills, None, None, None, None, None, None, None, None,
         );
         assert!(prompt.contains("<available_skills>"));
         assert!(prompt.contains("commit"));
@@ -1065,6 +1091,7 @@ mod tests {
             true,
             None,
             &[],
+            None,
             None,
             None,
             None,
@@ -1101,6 +1128,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         );
         assert!(prompt.contains("Your name is Momo 🦜."));
         assert!(prompt.contains("Your theme: cheerful parrot."));
@@ -1129,6 +1157,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         );
         assert!(prompt.contains("## Soul"));
         assert!(prompt.contains("loyal companion who loves fetch"));
@@ -1143,6 +1172,7 @@ mod tests {
             true,
             None,
             &[],
+            None,
             None,
             None,
             None,
@@ -1167,6 +1197,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             Some("Follow workspace agent instructions."),
             Some("Prefer read-only tools first."),
             None,
@@ -1187,6 +1218,7 @@ mod tests {
             true,
             None,
             &[],
+            None,
             None,
             None,
             None,
@@ -1268,6 +1300,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             Some(&runtime),
             None,
         );
@@ -1328,6 +1361,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             Some(&runtime),
             None,
         );
@@ -1358,6 +1392,7 @@ mod tests {
             true,
             None,
             &[],
+            None,
             None,
             None,
             None,
@@ -1404,6 +1439,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             Some(&runtime),
             None,
         );
@@ -1431,6 +1467,7 @@ mod tests {
             true,
             None,
             &[],
+            None,
             None,
             None,
             None,
@@ -1471,6 +1508,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             Some(&runtime),
             None,
         );
@@ -1506,6 +1544,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             Some(&runtime),
             None,
         );
@@ -1525,6 +1564,7 @@ mod tests {
         };
 
         let prompt = build_system_prompt_minimal_runtime(
+            None,
             None,
             None,
             None,
@@ -1556,8 +1596,9 @@ mod tests {
 
     #[test]
     fn test_silent_replies_not_in_minimal_prompt() {
-        let prompt =
-            build_system_prompt_minimal_runtime(None, None, None, None, None, None, None, None);
+        let prompt = build_system_prompt_minimal_runtime(
+            None, None, None, None, None, None, None, None, None,
+        );
         assert!(!prompt.contains("## Silent Replies"));
     }
 
@@ -1576,6 +1617,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             Some(memory),
         );
         assert!(prompt.contains("## Long-Term Memory"));
@@ -1584,6 +1626,29 @@ mod tests {
         // Memory content should include the "already know" hint so models
         // don't ignore it when tool searches return empty.
         assert!(prompt.contains("information above is what you already know"));
+    }
+
+    #[test]
+    fn test_boot_text_injected_into_prompt() {
+        let tools = ToolRegistry::new();
+        let boot = "Run health check on startup.\n- Verify API key configured";
+        let prompt = build_system_prompt_with_session_runtime(
+            &tools,
+            true,
+            None,
+            &[],
+            None,
+            None,
+            None,
+            Some(boot),
+            None,
+            None,
+            None,
+            None,
+        );
+        assert!(prompt.contains("## Startup Context (BOOT.md)"));
+        assert!(prompt.contains("Run health check on startup."));
+        assert!(prompt.contains("Verify API key configured"));
     }
 
     #[test]
@@ -1596,6 +1661,7 @@ mod tests {
             true,
             None,
             &[],
+            None,
             None,
             None,
             None,
@@ -1625,6 +1691,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         );
         assert!(!prompt.contains("## Long-Term Memory"));
     }
@@ -1633,6 +1700,7 @@ mod tests {
     fn test_memory_text_in_minimal_prompt() {
         let memory = "## Notes\n- Important fact";
         let prompt = build_system_prompt_minimal_runtime(
+            None,
             None,
             None,
             None,
@@ -1691,6 +1759,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         );
         assert!(prompt.contains("## Long-Term Memory"));
         assert!(prompt.contains("MUST call `memory_save`"));
@@ -1711,6 +1780,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         );
         assert!(!prompt.contains("memory_save"));
     }
@@ -1724,6 +1794,7 @@ mod tests {
             true,
             None,
             &[],
+            None,
             None,
             None,
             None,
@@ -1756,6 +1827,7 @@ mod tests {
             true,
             None,
             &[],
+            None,
             None,
             None,
             None,

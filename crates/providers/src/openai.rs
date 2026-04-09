@@ -685,7 +685,9 @@ impl OpenAiProvider {
         if !self.requires_top_level_system_prompt() {
             return;
         }
-        let Some(messages) = body.get_mut("messages").and_then(serde_json::Value::as_array_mut)
+        let Some(messages) = body
+            .get_mut("messages")
+            .and_then(serde_json::Value::as_array_mut)
         else {
             return;
         };
