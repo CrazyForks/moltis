@@ -5064,7 +5064,9 @@ impl ChatService for LiveChatService {
         let system_prompt_chars = system_prompt.len();
 
         // Compute workspace file truncation metadata.
-        let ws_limit = runtime_context.workspace_file_max_chars.unwrap_or(50_000);
+        let ws_limit = runtime_context
+            .workspace_file_max_chars
+            .unwrap_or_else(|| moltis_config::ChatConfig::default().workspace_file_max_chars);
         let workspace_files: Vec<Value> = [
             ("AGENTS.md", persona.agents_text.as_deref()),
             ("TOOLS.md", persona.tools_text.as_deref()),
