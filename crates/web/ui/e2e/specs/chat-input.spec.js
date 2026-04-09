@@ -6,6 +6,14 @@ function isRetryableRpcError(message) {
 	return message.includes("WebSocket not connected") || message.includes("WebSocket disconnected");
 }
 
+function isNoProvidersConfiguredResponse(response) {
+	return (
+		response?.error?.code === "UNAVAILABLE" ||
+		response?.error?.message?.includes("no LLM providers configured") ||
+		response?.error?.message?.includes("chat not configured")
+	);
+}
+
 async function sendRpcFromPage(page, method, params) {
 	let lastResponse = null;
 	for (let attempt = 0; attempt < 30; attempt++) {
@@ -169,11 +177,7 @@ async function openFullContextWithRetry(page) {
 		}
 		if (result === "failed") {
 			const fullContextRpc = await sendRpcFromPage(page, "chat.full_context", {});
-			const noProvidersConfigured =
-				fullContextRpc?.error?.code === "UNAVAILABLE" ||
-				fullContextRpc?.error?.message?.includes("no LLM providers configured") ||
-				fullContextRpc?.error?.message?.includes("chat not configured");
-			if (noProvidersConfigured) {
+			if (isNoProvidersConfiguredResponse(fullContextRpc)) {
 				return null;
 			}
 		}
@@ -235,6 +239,9 @@ test.describe("Chat input and slash commands", () => {
 			expect(setResponse?.ok).toBe(true);
 
 			const fullContextRpc = await sendRpcFromPage(page, "chat.full_context", {});
+			if (isNoProvidersConfiguredResponse(fullContextRpc)) {
+				return;
+			}
 			expect(fullContextRpc?.ok).toBe(true);
 			expect(fullContextRpc.payload?.truncated).toBe(true);
 			expect(Array.isArray(fullContextRpc.payload?.workspaceFiles)).toBe(true);
