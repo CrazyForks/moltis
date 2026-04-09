@@ -11386,12 +11386,13 @@ mod tests {
 
         let result = service.list().await.unwrap();
         let arr = result.as_array().unwrap();
-        // 3 base models + 3 reasoning variants for claude-opus-4-5 = 6
-        assert_eq!(arr.len(), 6);
+        // 3 base models + 3 reasoning variants for claude-opus-4-5
+        // + 3 reasoning variants for gemini-3-flash = 9
+        assert_eq!(arr.len(), 9);
 
         let result = service.list_all().await.unwrap();
         let arr = result.as_array().unwrap();
-        assert_eq!(arr.len(), 6);
+        assert_eq!(arr.len(), 9);
 
         // Verify reasoning variants are present with correct display names.
         let ids: Vec<&str> = arr.iter().filter_map(|m| m["id"].as_str()).collect();
