@@ -129,6 +129,9 @@ pub struct PromptRuntimeContext {
     pub host: PromptHostRuntimeContext,
     pub sandbox: Option<PromptSandboxRuntimeContext>,
     pub nodes: Option<PromptNodesRuntimeContext>,
+    /// Per-file character budget for `AGENTS.md` / `TOOLS.md`.
+    /// `None` falls back to [`DEFAULT_WORKSPACE_FILE_MAX_CHARS`].
+    pub workspace_file_max_chars: Option<usize>,
 }
 
 /// Suffix appended to the system prompt when the user's reply medium is voice.
@@ -266,9 +269,10 @@ const MEMORY_BOOTSTRAP_MAX_CHARS: usize = 8_000;
 /// Maximum number of characters from project context files (`CLAUDE.md`,
 /// project docs, etc.) injected into the prompt.
 const PROJECT_CONTEXT_MAX_CHARS: usize = 8_000;
-/// Maximum number of characters from each workspace file (`AGENTS.md`,
-/// `TOOLS.md`) injected into the prompt.
-const WORKSPACE_FILE_MAX_CHARS: usize = 6_000;
+/// Default maximum number of characters from each workspace file (`AGENTS.md`,
+/// `TOOLS.md`) injected into the prompt.  Configurable via
+/// `[chat] workspace_file_max_chars` in `moltis.toml`.
+const DEFAULT_WORKSPACE_FILE_MAX_CHARS: usize = 50_000;
 const EXEC_ROUTING_GUIDANCE_SANDBOX: &str = "Execution routing:\n\
 - `exec` runs inside sandbox when `Sandbox(exec): enabled=true`.\n\
 - When sandbox is disabled, `exec` runs on the host and may require approval.\n\
@@ -404,7 +408,10 @@ fn build_system_prompt_full(
     append_project_context(&mut prompt, project_context);
     append_runtime_section(&mut prompt, runtime_context, include_tools);
     append_skills_section(&mut prompt, include_tools, skills);
-    append_workspace_files_section(&mut prompt, agents_text, tools_text);
+    let ws_max = runtime_context
+        .and_then(|ctx| ctx.workspace_file_max_chars)
+        .unwrap_or(DEFAULT_WORKSPACE_FILE_MAX_CHARS);
+    append_workspace_files_section(&mut prompt, agents_text, tools_text, ws_max);
     append_memory_section(&mut prompt, memory_text, &tool_schemas);
     let model_id = runtime_context.and_then(|ctx| ctx.host.model.as_deref());
     append_available_tools_section(&mut prompt, native_tools, &tool_schemas);
@@ -571,6 +578,7 @@ fn append_workspace_files_section(
     prompt: &mut String,
     agents_text: Option<&str>,
     tools_text: Option<&str>,
+    max_chars: usize,
 ) {
     if agents_text.is_none() && tools_text.is_none() {
         return;
@@ -579,22 +587,40 @@ fn append_workspace_files_section(
     prompt.push_str("## Workspace Files\n\n");
     if let Some(agents_md) = agents_text {
         prompt.push_str("### AGENTS.md (workspace)\n\n");
+        let original_chars = agents_md.chars().count();
         append_truncated_text_block(
             prompt,
             agents_md,
-            WORKSPACE_FILE_MAX_CHARS,
+            max_chars,
             "\n*(AGENTS.md truncated for prompt size.)*\n",
         );
+        if original_chars > max_chars {
+            tracing::warn!(
+                file = "AGENTS.md",
+                original_chars,
+                limit = max_chars,
+                "workspace file truncated for prompt size"
+            );
+        }
         prompt.push_str("\n\n");
     }
     if let Some(tools_md) = tools_text {
         prompt.push_str("### TOOLS.md (workspace)\n\n");
+        let original_chars = tools_md.chars().count();
         append_truncated_text_block(
             prompt,
             tools_md,
-            WORKSPACE_FILE_MAX_CHARS,
+            max_chars,
             "\n*(TOOLS.md truncated for prompt size.)*\n",
         );
+        if original_chars > max_chars {
+            tracing::warn!(
+                file = "TOOLS.md",
+                original_chars,
+                limit = max_chars,
+                "workspace file truncated for prompt size"
+            );
+        }
         prompt.push_str("\n\n");
     }
 }
@@ -1067,6 +1093,7 @@ mod tests {
                 session_override: Some(true),
             }),
             nodes: None,
+            workspace_file_max_chars: None,
         };
 
         let prompt = build_system_prompt_with_session_runtime(
@@ -1127,6 +1154,7 @@ mod tests {
                 ..Default::default()
             }),
             nodes: None,
+            workspace_file_max_chars: None,
         };
 
         let prompt = build_system_prompt_with_session_runtime(
@@ -1162,6 +1190,7 @@ mod tests {
             },
             sandbox: None,
             nodes: None,
+            workspace_file_max_chars: None,
         };
 
         let prompt = build_system_prompt_with_session_runtime(
@@ -1203,6 +1232,7 @@ mod tests {
             },
             sandbox: None,
             nodes: None,
+            workspace_file_max_chars: None,
         };
 
         let prompt = build_system_prompt_with_session_runtime(
@@ -1235,6 +1265,7 @@ mod tests {
             },
             sandbox: None,
             nodes: None,
+            workspace_file_max_chars: None,
         };
 
         let prompt = build_system_prompt_with_session_runtime(
@@ -1270,6 +1301,7 @@ mod tests {
             },
             sandbox: None,
             nodes: None,
+            workspace_file_max_chars: None,
         };
 
         let prompt = build_system_prompt_with_session_runtime(
@@ -1305,6 +1337,7 @@ mod tests {
             },
             sandbox: None,
             nodes: None,
+            workspace_file_max_chars: None,
         };
 
         let prompt = build_system_prompt_with_session_runtime(
@@ -1333,6 +1366,7 @@ mod tests {
             },
             sandbox: None,
             nodes: None,
+            workspace_file_max_chars: None,
         };
 
         let prompt = build_system_prompt_minimal_runtime(
@@ -1560,6 +1594,7 @@ mod tests {
             },
             sandbox: None,
             nodes: None,
+            workspace_file_max_chars: None,
         };
 
         let prompt = build_system_prompt_with_session_runtime(
@@ -1592,6 +1627,7 @@ mod tests {
             },
             sandbox: None,
             nodes: None,
+            workspace_file_max_chars: None,
         };
 
         let msg = runtime_datetime_message(Some(&runtime));
@@ -1610,6 +1646,7 @@ mod tests {
             },
             sandbox: None,
             nodes: None,
+            workspace_file_max_chars: None,
         };
 
         let msg = runtime_datetime_message(Some(&runtime));
@@ -1622,6 +1659,7 @@ mod tests {
             host: PromptHostRuntimeContext::default(),
             sandbox: None,
             nodes: None,
+            workspace_file_max_chars: None,
         };
 
         assert!(runtime_datetime_message(Some(&runtime)).is_none());
@@ -1768,5 +1806,107 @@ mod tests {
         // Should include tool call guidance
         assert!(prompt.contains("## How to call tools"));
         assert!(prompt.contains("```tool_call"));
+    }
+
+    // ── Workspace file truncation ──────────────────────────────────────
+
+    #[test]
+    fn workspace_text_within_limit_is_not_truncated() {
+        let tools = ToolRegistry::new();
+        let short_text = "a".repeat(100);
+        let prompt = build_system_prompt_with_session_runtime(
+            &tools,
+            true,
+            None,
+            &[],
+            None,
+            None,
+            None,
+            Some(&short_text),
+            None,
+            None,
+            None,
+        );
+        assert!(prompt.contains(&short_text));
+        assert!(!prompt.contains("truncated for prompt size"));
+    }
+
+    #[test]
+    fn workspace_text_exceeding_limit_is_truncated() {
+        let tools = ToolRegistry::new();
+        let long_text = "x".repeat(200);
+        let runtime = PromptRuntimeContext {
+            host: PromptHostRuntimeContext::default(),
+            sandbox: None,
+            nodes: None,
+            workspace_file_max_chars: Some(50),
+        };
+        let prompt = build_system_prompt_with_session_runtime(
+            &tools,
+            true,
+            None,
+            &[],
+            None,
+            None,
+            None,
+            Some(&long_text),
+            None,
+            Some(&runtime),
+            None,
+        );
+        assert!(prompt.contains("AGENTS.md truncated for prompt size"));
+        // Should contain at most 50 'x' chars + "..." (the truncation marker)
+        assert!(!prompt.contains(&"x".repeat(51)));
+    }
+
+    #[test]
+    fn workspace_file_limit_from_runtime_context_is_respected() {
+        let tools = ToolRegistry::new();
+        let text = "z".repeat(300);
+        // Small limit via runtime context.
+        let runtime = PromptRuntimeContext {
+            host: PromptHostRuntimeContext::default(),
+            sandbox: None,
+            nodes: None,
+            workspace_file_max_chars: Some(100),
+        };
+        let prompt = build_system_prompt_with_session_runtime(
+            &tools,
+            true,
+            None,
+            &[],
+            None,
+            None,
+            None,
+            None,
+            Some(&text), // TOOLS.md
+            Some(&runtime),
+            None,
+        );
+        assert!(prompt.contains("TOOLS.md truncated for prompt size"));
+        assert!(!prompt.contains(&"z".repeat(101)));
+
+        // Large limit — no truncation.
+        let runtime_large = PromptRuntimeContext {
+            host: PromptHostRuntimeContext::default(),
+            sandbox: None,
+            nodes: None,
+            workspace_file_max_chars: Some(500),
+        };
+        let prompt2 = build_system_prompt_with_session_runtime(
+            &tools,
+            true,
+            None,
+            &[],
+            None,
+            None,
+            None,
+            None,
+            Some(&text),
+            Some(&runtime_large),
+            None,
+        );
+        assert!(!prompt2.contains("truncated for prompt size"));
+        assert!(prompt2.contains(&text));
     }
 }

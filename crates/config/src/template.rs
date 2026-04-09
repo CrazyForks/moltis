@@ -203,6 +203,7 @@ message_queue_mode = "followup"   # Default: process queued messages one-by-one 
                                   #   "collect"  - Buffer messages, concatenate as single message
 # priority_models = ["claude-opus-4-5", "gpt-5.2", "gemini-3-flash"]  # Optional: models to pin first in selectors
 # allowed_models = ["gpt 5.2"]  # Legacy field (currently ignored).
+# workspace_file_max_chars = 50000  # Max chars from AGENTS.md / TOOLS.md (default: 50000)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SPAWN PRESETS (OPTIONAL)

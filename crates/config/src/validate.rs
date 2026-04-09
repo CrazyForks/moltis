@@ -395,6 +395,7 @@ fn build_schema_map() -> KnownKeys {
                 ("message_queue_mode", Leaf),
                 ("priority_models", Leaf),
                 ("allowed_models", Leaf),
+                ("workspace_file_max_chars", Leaf),
             ])),
         ),
         (

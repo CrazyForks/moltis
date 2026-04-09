@@ -1238,10 +1238,16 @@ async fn build_prompt_runtime_context(
         })
     };
 
+    let workspace_file_max_chars = {
+        let cfg = moltis_config::discover_and_load();
+        Some(cfg.chat.workspace_file_max_chars)
+    };
+
     PromptRuntimeContext {
         host: host_ctx,
         sandbox: sandbox_ctx,
         nodes: nodes_ctx,
+        workspace_file_max_chars,
     }
 }
 
@@ -5057,6 +5063,25 @@ impl ChatService for LiveChatService {
 
         let system_prompt_chars = system_prompt.len();
 
+        // Compute workspace file truncation metadata.
+        let ws_limit = runtime_context.workspace_file_max_chars.unwrap_or(50_000);
+        let workspace_files: Vec<Value> = [
+            ("AGENTS.md", persona.agents_text.as_deref()),
+            ("TOOLS.md", persona.tools_text.as_deref()),
+        ]
+        .into_iter()
+        .filter_map(|(name, text)| {
+            let text = text?;
+            let chars = text.chars().count();
+            Some(serde_json::json!({
+                "file": name,
+                "chars": chars,
+                "limit": ws_limit,
+                "truncated": chars > ws_limit,
+            }))
+        })
+        .collect();
+
         // Keep raw assistant outputs (including provider/model/token metadata)
         // so the UI can show a debug view of what the LLM actually returned.
         let llm_outputs: Vec<Value> = history
@@ -5084,6 +5109,7 @@ impl ChatService for LiveChatService {
             "messageCount": message_count,
             "systemPromptChars": system_prompt_chars,
             "totalChars": total_chars,
+            "workspaceFiles": workspace_files,
         }))
     }
 

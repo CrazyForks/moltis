@@ -1503,10 +1503,18 @@ pub struct ChatConfig {
     /// live discovery), so this field is currently ignored.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub allowed_models: Vec<String>,
+    /// Maximum number of characters from each workspace file (`AGENTS.md`,
+    /// `TOOLS.md`) injected into the system prompt. Default: 50 000.
+    #[serde(default = "default_workspace_file_max_chars")]
+    pub workspace_file_max_chars: usize,
 }
 
 fn default_message_queue_mode() -> MessageQueueMode {
     MessageQueueMode::Followup
+}
+
+fn default_workspace_file_max_chars() -> usize {
+    50_000
 }
 
 impl Default for ChatConfig {
@@ -1515,6 +1523,7 @@ impl Default for ChatConfig {
             message_queue_mode: default_message_queue_mode(),
             priority_models: Vec::new(),
             allowed_models: Vec::new(),
+            workspace_file_max_chars: default_workspace_file_max_chars(),
         }
     }
 }
