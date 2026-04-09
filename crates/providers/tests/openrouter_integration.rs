@@ -12,7 +12,7 @@ use {
     futures::StreamExt,
     moltis_agents::model::{ChatMessage, LlmProvider, StreamEvent, ToolCall},
     moltis_providers::openai::OpenAiProvider,
-    secrecy::Secret,
+    secrecy::{ExposeSecret, Secret},
 };
 
 const BASE_URL: &str = "https://openrouter.ai/api/v1";
@@ -229,11 +229,11 @@ async fn stream_emits_delta_and_done() {
 #[tokio::test]
 #[ignore]
 async fn detect_models_via_api() {
-    let key = std::env::var("OPENROUTER_API_KEY").expect("OPENROUTER_API_KEY must be set");
+    let key = api_key();
     let client = reqwest::Client::new();
     let resp = client
         .get(format!("{BASE_URL}/models"))
-        .header("Authorization", format!("Bearer {key}"))
+        .header("Authorization", format!("Bearer {}", key.expose_secret()))
         .send()
         .await
         .expect("HTTP request should succeed");

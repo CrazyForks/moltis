@@ -11,7 +11,7 @@ use {
     futures::StreamExt,
     moltis_agents::model::{ChatMessage, LlmProvider, StreamEvent, ToolCall},
     moltis_providers::openai::OpenAiProvider,
-    secrecy::Secret,
+    secrecy::{ExposeSecret, Secret},
 };
 
 const BASE_URL: &str = "https://api.z.ai/api/paas/v4";
@@ -259,11 +259,11 @@ async fn catalog_models_are_live() {
 #[tokio::test]
 #[ignore]
 async fn detect_new_models_via_api() {
-    let key = std::env::var("Z_API_KEY").expect("Z_API_KEY must be set");
+    let key = api_key();
     let client = reqwest::Client::new();
     let resp = client
         .get(format!("{BASE_URL}/models"))
-        .header("Authorization", format!("Bearer {key}"))
+        .header("Authorization", format!("Bearer {}", key.expose_secret()))
         .send()
         .await
         .expect("HTTP request should succeed");

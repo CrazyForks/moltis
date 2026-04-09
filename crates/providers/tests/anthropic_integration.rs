@@ -14,7 +14,7 @@ use {
     futures::StreamExt,
     moltis_agents::model::{ChatMessage, LlmProvider, StreamEvent, ToolCall},
     moltis_providers::anthropic::AnthropicProvider,
-    secrecy::Secret,
+    secrecy::{ExposeSecret, Secret},
 };
 
 const ANTHROPIC_BASE_URL: &str = "https://api.anthropic.com";
@@ -276,12 +276,12 @@ async fn catalog_models_are_live() {
 #[tokio::test]
 #[ignore]
 async fn detect_new_models_via_api() {
-    let key = std::env::var("ANTHROPIC_API_KEY").expect("ANTHROPIC_API_KEY must be set");
+    let key = api_key();
 
     let client = reqwest::Client::new();
     let resp = client
         .get(format!("{ANTHROPIC_BASE_URL}/v1/models"))
-        .header("x-api-key", &key)
+        .header("x-api-key", key.expose_secret())
         .header("anthropic-version", "2023-06-01")
         .send()
         .await
