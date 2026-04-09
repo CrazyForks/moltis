@@ -167,10 +167,10 @@ pub async fn stream_surfaces_reasoning_separately(
         event_index += 1;
     }
 
-    let first_reasoning_index =
-        first_reasoning_index.expect("stream should emit at least one ReasoningDelta");
-    let first_visible_index =
-        first_visible_index.expect("stream should emit at least one visible Delta");
+    let first_reasoning_index = first_reasoning_index
+        .ok_or_else(|| anyhow::anyhow!("stream should emit at least one ReasoningDelta"))?;
+    let first_visible_index = first_visible_index
+        .ok_or_else(|| anyhow::anyhow!("stream should emit at least one visible Delta"))?;
     assert!(
         first_reasoning_index < first_visible_index,
         "reasoning should arrive before visible text"
