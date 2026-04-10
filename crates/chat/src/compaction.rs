@@ -170,9 +170,10 @@ pub fn get_compact_continuation_message(summary: &str, recent_messages_preserved
 pub fn format_compact_summary(summary: &str) -> String {
     let without_analysis = strip_tag_block(summary, "analysis");
     let formatted = if let Some(content) = extract_tag_block(&without_analysis, "summary") {
-        without_analysis.replace(
+        without_analysis.replacen(
             &format!("<summary>{content}</summary>"),
             &format!("Summary:\n{}", content.trim()),
+            1,
         )
     } else {
         without_analysis
@@ -480,18 +481,16 @@ fn collect_key_files(messages: &[Value]) -> Vec<String> {
                 texts.push(text);
             }
             // Additionally check tool_calls arguments for file paths.
-            if let Some(args) = m
-                .get("tool_calls")
-                .and_then(Value::as_array)
-                .and_then(|calls| {
-                    calls
-                        .first()
-                        .and_then(|c| c.get("function"))
+            if let Some(calls) = m.get("tool_calls").and_then(Value::as_array) {
+                for call in calls {
+                    if let Some(args) = call
+                        .get("function")
                         .and_then(|f| f.get("arguments"))
                         .and_then(Value::as_str)
-                })
-            {
-                texts.push(args);
+                    {
+                        texts.push(args);
+                    }
+                }
             }
             texts
                 .into_iter()
@@ -581,7 +580,10 @@ fn extract_file_candidates(content: &str) -> Vec<String> {
         .split_whitespace()
         .filter_map(|token| {
             let candidate = token.trim_matches(|c: char| {
-                matches!(c, ',' | '.' | ':' | ';' | ')' | '(' | '"' | '\'' | '`')
+                matches!(
+                    c,
+                    ',' | '.' | ':' | ';' | ')' | '(' | '"' | '\'' | '`' | '{' | '}'
+                )
             });
             if candidate.contains('/') && has_interesting_extension(candidate) {
                 Some(candidate.to_string())
@@ -670,17 +672,17 @@ fn extract_tag_block(content: &str, tag: &str) -> Option<String> {
 fn strip_tag_block(content: &str, tag: &str) -> String {
     let start_marker = format!("<{tag}>");
     let end_marker = format!("</{tag}>");
-    if let (Some(start_idx), Some(end_idx_rel)) =
-        (content.find(&start_marker), content.find(&end_marker))
-    {
-        let end_idx = end_idx_rel + end_marker.len();
-        let mut stripped = String::with_capacity(content.len());
-        stripped.push_str(&content[..start_idx]);
-        stripped.push_str(&content[end_idx..]);
-        stripped
-    } else {
-        content.to_string()
+    if let Some(start_idx) = content.find(&start_marker) {
+        let after_start = start_idx + start_marker.len();
+        if let Some(end_rel) = content[after_start..].find(&end_marker) {
+            let end_idx = after_start + end_rel + end_marker.len();
+            let mut stripped = String::with_capacity(content.len());
+            stripped.push_str(&content[..start_idx]);
+            stripped.push_str(&content[end_idx..]);
+            return stripped;
+        }
     }
+    content.to_string()
 }
 
 #[cfg(test)]
@@ -889,6 +891,42 @@ mod tests {
         assert!(files.contains(&"docs/README.md".to_string()));
     }
 
+    #[test]
+    fn collect_key_files_multiple_tool_calls() {
+        // Assistant with multiple simultaneous tool calls — all args should be scanned.
+        let messages = vec![json!({
+            "role": "assistant",
+            "content": "reading files",
+            "tool_calls": [
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {
+                        "name": "read_file",
+                        "arguments": "{\"path\": \"src/main.rs\"}"
+                    }
+                },
+                {
+                    "id": "call_2",
+                    "type": "function",
+                    "function": {
+                        "name": "read_file",
+                        "arguments": "{\"path\": \"lib/core.ts\"}"
+                    }
+                }
+            ]
+        })];
+        let files = collect_key_files(&messages);
+        assert!(
+            files.contains(&"src/main.rs".to_string()),
+            "first tool call file should be found"
+        );
+        assert!(
+            files.contains(&"lib/core.ts".to_string()),
+            "second tool call file should be found"
+        );
+    }
+
     // ── helper unit tests ────────────────────────────────────────────
 
     #[test]
@@ -923,6 +961,25 @@ mod tests {
     fn strip_tag_block_removes() {
         let text = "before <analysis>junk</analysis> after";
         assert_eq!(strip_tag_block(text, "analysis"), "before  after");
+    }
+
+    #[test]
+    fn strip_tag_block_anchors_after_start() {
+        // Malformed input with end marker before start marker.
+        let text = "before </analysis> middle <analysis>junk</analysis> after";
+        let result = strip_tag_block(text, "analysis");
+        assert!(
+            result.contains("before </analysis> middle"),
+            "content before start marker should be preserved"
+        );
+        assert!(
+            !result.contains("junk"),
+            "content inside tag block should be stripped"
+        );
+        assert!(
+            result.contains("after"),
+            "content after end marker should be preserved"
+        );
     }
 
     #[test]
