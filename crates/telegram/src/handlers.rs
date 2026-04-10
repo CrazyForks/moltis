@@ -1489,6 +1489,8 @@ pub(crate) const VOICE_REPLY_DOWNLOAD_FAILED: &str =
     "I couldn't download your voice message. Please try again.";
 pub(crate) const VOICE_REPLY_UNAVAILABLE: &str =
     "I received your voice message but voice processing is not available right now.";
+pub(crate) const VOICE_REPLY_STT_SETUP_HINT: &str =
+    "I can't understand voice, you did not configure it, please visit Settings -> Voice";
 
 /// Handle a voice/audio message: download, transcribe, and build the body
 /// for downstream dispatch.
@@ -1551,12 +1553,7 @@ async fn handle_voice_message(
             return Some((caption, Vec::new(), None));
         }
         if let Err(e) = outbound
-            .send_text(
-                account_id,
-                &reply_target,
-                "I can't understand voice, you did not configure it, please visit Settings -> Voice",
-                None,
-            )
+            .send_text(account_id, &reply_target, VOICE_REPLY_STT_SETUP_HINT, None)
             .await
         {
             warn!(account_id, "failed to send STT setup hint: {e}");
@@ -2151,6 +2148,10 @@ mod tests {
         text: String,
         media_types: Vec<String>,
         sizes: Vec<usize>,
+    }
+
+    fn escaped_telegram_reply_text(text: &str) -> String {
+        text.replace('>', "&gt;")
     }
 
     impl MockSink {
@@ -2794,9 +2795,7 @@ mod tests {
                     if let CapturedTelegramRequest::SendMessage(body) = request {
                         body.chat_id == 42
                             && body.parse_mode.as_deref() == Some("HTML")
-                            && body
-                                .text
-                                .contains("I can't understand voice, you did not configure it")
+                            && body.text == escaped_telegram_reply_text(VOICE_REPLY_STT_SETUP_HINT)
                     } else {
                         false
                     }
@@ -3245,9 +3244,7 @@ mod tests {
         assert_eq!(result.dispatch_calls, 0);
         assert!(
             result.sent_messages.iter().any(|m| {
-                m.chat_id == 42
-                    && m.text
-                        .contains("I can't understand voice, you did not configure it")
+                m.chat_id == 42 && m.text == escaped_telegram_reply_text(VOICE_REPLY_STT_SETUP_HINT)
             }),
             "expected STT setup hint, got: {:?}",
             result.sent_messages
@@ -3269,10 +3266,10 @@ mod tests {
             "summarize this anyway".to_string()
         ]);
         assert!(
-            result.sent_messages.iter().all(|m| {
-                m.text
-                    != "I can't understand voice, you did not configure it, please visit Settings -> Voice"
-            }),
+            result
+                .sent_messages
+                .iter()
+                .all(|m| { m.text != escaped_telegram_reply_text(VOICE_REPLY_STT_SETUP_HINT) }),
             "setup hint should not be sent when caption is present: {:?}",
             result.sent_messages
         );
