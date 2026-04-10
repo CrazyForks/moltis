@@ -28,8 +28,8 @@ pub fn generate_skills_prompt(skills: &[SkillMetadata]) -> String {
     out.push_str(
         "To activate a skill, call the `read_skill` tool with its name \
          (e.g. `read_skill(name=\"<skill-name>\")`). To load a sidecar file \
-         inside a skill directory (references/, templates/, scripts/), pass \
-         the `file_path` argument as well \
+         inside a skill directory (references/, templates/, assets/, scripts/), \
+         pass the `file_path` argument as well \
          (e.g. `read_skill(name=\"<skill-name>\", file_path=\"references/api.md\")`).\n\n",
     );
     out
@@ -44,6 +44,28 @@ mod tests {
     #[test]
     fn test_empty_skills_produces_empty_string() {
         assert_eq!(generate_skills_prompt(&[]), "");
+    }
+
+    #[test]
+    fn test_activation_instruction_mentions_all_sidecar_dirs() {
+        // Must keep parity with `SIDECAR_SUBDIRS` in
+        // `crates/tools/src/skill_tools.rs`. Without `assets/` in the
+        // activation instruction, models following the system prompt would
+        // never know to ask for agentskills.io-standard sidecars.
+        let skills = vec![SkillMetadata {
+            name: "demo".into(),
+            description: "demo".into(),
+            path: PathBuf::from("/a"),
+            source: Some(SkillSource::Personal),
+            ..Default::default()
+        }];
+        let prompt = generate_skills_prompt(&skills);
+        for dir in ["references/", "templates/", "assets/", "scripts/"] {
+            assert!(
+                prompt.contains(dir),
+                "activation instruction should mention {dir}: {prompt}"
+            );
+        }
     }
 
     #[test]
@@ -86,12 +108,14 @@ mod tests {
             !prompt.contains("SKILL.md"),
             "prompt should no longer mention SKILL.md: {prompt}"
         );
-        // The <skill> element must not carry a path= attribute. (The
+        // The <skill> element must not carry a path= attribute. The
         // activation instruction still mentions `file_path=` for sidecar
-        // reads, which is fine — we're checking the element itself.)
+        // reads (which is fine — it's not a `<skill path="...">` attribute),
+        // so we check for the exact quote-path-quote sequence that would
+        // appear on a `<skill>` element.
         assert!(
-            !prompt.contains("<skill ") || !prompt.contains("\" path=\""),
-            "prompt should not include a path= attribute on the <skill> element"
+            !prompt.contains("\" path=\""),
+            "prompt should not include a path= attribute on the <skill> element: {prompt}"
         );
     }
 

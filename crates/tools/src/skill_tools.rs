@@ -436,12 +436,18 @@ async fn read_primary(
     // Plugin skills can be backed by a single `.md` file rather than a
     // directory containing SKILL.md (see `prompt_gen.rs`). Handle both shapes.
     let (loaded_meta, body, linked_files, effective_dir) = if is_plugin && meta.path.is_file() {
-        let body = tokio::fs::read_to_string(&meta.path).await.map_err(|e| {
+        let raw = tokio::fs::read_to_string(&meta.path).await.map_err(|e| {
             Error::message(format!(
                 "failed to read plugin skill '{name}' at {}: {e}",
                 meta.path.display()
             ))
         })?;
+        // Strip any optional YAML frontmatter so the model sees clean
+        // markdown — without this, plugin-backed skills that follow the
+        // SKILL.md format return `---\nname: ...\n---` noise in the body.
+        // Mirrors what `load_skill_from_path` does for directory-backed
+        // skills via `parse::parse_skill`.
+        let body = moltis_skills::parse::strip_optional_frontmatter(&raw).to_string();
         let effective_dir = meta
             .path
             .parent()
@@ -541,6 +547,27 @@ async fn read_primary(
 /// that do exist under this skill.
 async fn read_sidecar(name: &str, skill_dir: &Path, rel: &str) -> anyhow::Result<Value> {
     let relative = normalize_relative_skill_file_path(rel)?;
+
+    // Reject a symlinked skill directory to stay consistent with
+    // `write_sidecar_files`. Without this, a symlinked skill root
+    // (e.g. `~/.moltis/skills/malicious -> /etc`) would pass the later
+    // canonical-prefix check because `canonicalize` resolves the symlink
+    // and the subsequent `starts_with` comparison succeeds against the
+    // resolved target.
+    match tokio::fs::symlink_metadata(skill_dir).await {
+        Ok(meta) if meta.file_type().is_symlink() => {
+            return Err(
+                Error::message(format!("skill '{name}' directory must not be a symlink")).into(),
+            );
+        },
+        Ok(_) => {},
+        Err(e) => {
+            return Err(Error::message(format!(
+                "skill directory not accessible for '{name}': {e}"
+            ))
+            .into());
+        },
+    }
 
     let canonical_skill_dir = tokio::fs::canonicalize(skill_dir)
         .await
@@ -2449,5 +2476,154 @@ mod tests {
         let result = tool.execute(json!({})).await;
         let err = result.expect_err("missing 'name' must error");
         assert!(format!("{err}").contains("name"));
+    }
+
+    #[tokio::test]
+    async fn test_read_skill_plugin_md_strips_frontmatter_from_body() {
+        // Plugin-backed skills are single .md files rather than a SKILL.md
+        // inside a directory. They may still begin with a YAML frontmatter
+        // block (Claude Code's plugin SKILL.md format); the read path must
+        // strip it so the model doesn't see `---\nname:` noise in `body`.
+        let tmp = tempfile::tempdir().unwrap();
+        let plugin_dir = tmp.path().join("plugin-root");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        let plugin_md = plugin_dir.join("demo-plugin.md");
+        std::fs::write(
+            &plugin_md,
+            "---\nname: demo-plugin\ndescription: ignored\n---\n\n# Plugin body\n\nHello.\n",
+        )
+        .unwrap();
+
+        let discoverer: Arc<dyn SkillDiscoverer> = Arc::new(StaticDiscoverer::new(vec![
+            moltis_skills::types::SkillMetadata {
+                name: "demo-plugin".into(),
+                description: "stub description".into(),
+                path: plugin_md.clone(),
+                source: Some(SkillSource::Plugin),
+                ..Default::default()
+            },
+        ]));
+        let tool = ReadSkillTool::new(discoverer);
+
+        let result = tool
+            .execute(json!({ "name": "demo-plugin" }))
+            .await
+            .unwrap();
+        let body = result["body"].as_str().unwrap();
+        assert!(
+            !body.contains("---"),
+            "plugin body must not contain the YAML frontmatter fence: {body:?}"
+        );
+        assert!(!body.contains("name: demo-plugin"));
+        assert!(body.contains("# Plugin body"));
+        assert!(body.contains("Hello."));
+    }
+
+    #[tokio::test]
+    async fn test_read_skill_plugin_md_without_frontmatter_is_returned_verbatim() {
+        let tmp = tempfile::tempdir().unwrap();
+        let plugin_dir = tmp.path().join("plugin-root");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        let plugin_md = plugin_dir.join("plain-plugin.md");
+        std::fs::write(&plugin_md, "# Plain plugin body\n\nNo frontmatter.\n").unwrap();
+
+        let discoverer: Arc<dyn SkillDiscoverer> = Arc::new(StaticDiscoverer::new(vec![
+            moltis_skills::types::SkillMetadata {
+                name: "plain-plugin".into(),
+                description: "no frontmatter".into(),
+                path: plugin_md,
+                source: Some(SkillSource::Plugin),
+                ..Default::default()
+            },
+        ]));
+        let tool = ReadSkillTool::new(discoverer);
+        let result = tool
+            .execute(json!({ "name": "plain-plugin" }))
+            .await
+            .unwrap();
+        assert_eq!(
+            result["body"].as_str().unwrap(),
+            "# Plain plugin body\n\nNo frontmatter.\n"
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_read_skill_sidecar_rejects_symlinked_skill_directory() {
+        // Parity with `write_sidecar_files`: a symlinked skill root must be
+        // rejected so `canonicalize` can't silently follow the symlink to a
+        // file outside the skills tree.
+        use std::os::unix::fs::symlink;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+
+        // Seed a real skill outside the skills tree.
+        std::fs::create_dir_all(outside.path().join("real-skill/references")).unwrap();
+        std::fs::write(
+            outside.path().join("real-skill/SKILL.md"),
+            "---\nname: evil\ndescription: trap\n---\n# evil body\n",
+        )
+        .unwrap();
+        std::fs::write(
+            outside.path().join("real-skill/references/secret.md"),
+            "top secret\n",
+        )
+        .unwrap();
+
+        // Symlink from the skills tree into the real skill directory.
+        std::fs::create_dir_all(tmp.path().join("skills")).unwrap();
+        symlink(
+            outside.path().join("real-skill"),
+            tmp.path().join("skills/evil"),
+        )
+        .unwrap();
+
+        // Construct a discoverer that returns the symlinked path verbatim
+        // (this mirrors what a real-world discoverer would do if someone
+        // symlinked a skill into place).
+        let discoverer: Arc<dyn SkillDiscoverer> = Arc::new(StaticDiscoverer::new(vec![
+            moltis_skills::types::SkillMetadata {
+                name: "evil".into(),
+                description: "trap".into(),
+                path: tmp.path().join("skills/evil"),
+                source: Some(SkillSource::Personal),
+                ..Default::default()
+            },
+        ]));
+        let tool = ReadSkillTool::new(discoverer);
+
+        let result = tool
+            .execute(json!({
+                "name": "evil",
+                "file_path": "references/secret.md"
+            }))
+            .await;
+        let err = result.expect_err("symlinked skill directory must be rejected on read");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("symlink"),
+            "error must mention symlink rejection: {msg}"
+        );
+    }
+
+    /// Test-only `SkillDiscoverer` that returns a fixed snapshot. Lets the
+    /// plugin/symlink tests construct scenarios that don't match the
+    /// `FsSkillDiscoverer`'s directory-walking assumptions.
+    struct StaticDiscoverer {
+        skills: Vec<moltis_skills::types::SkillMetadata>,
+    }
+
+    impl StaticDiscoverer {
+        fn new(skills: Vec<moltis_skills::types::SkillMetadata>) -> Self {
+            Self { skills }
+        }
+    }
+
+    #[async_trait]
+    impl SkillDiscoverer for StaticDiscoverer {
+        async fn discover(&self) -> anyhow::Result<Vec<moltis_skills::types::SkillMetadata>> {
+            Ok(self.skills.clone())
+        }
     }
 }
