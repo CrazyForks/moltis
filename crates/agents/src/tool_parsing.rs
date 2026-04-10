@@ -378,7 +378,8 @@ fn collect_invoke_blocks(text: &str, blocks: &mut Vec<ParsedBlock>) {
 ///   bare-JSON parser (and the merge step de-overlaps so we don't double-count);
 /// - the extracted tool name is empty or contains non-identifier characters —
 ///   prevents stray prose like "<tool_call>maybe</tool_call>" from matching;
-/// - a `<tool_call>` has no closing `</tool_call>` — gracefully skip.
+/// - a `<tool_call>` has no closing `</tool_call>` — stop parsing because no
+///   later complete block can be recovered from the remaining suffix.
 fn collect_zhipu_blocks(text: &str, blocks: &mut Vec<ParsedBlock>) {
     let open = "<tool_call>";
     let close = "</tool_call>";
@@ -1041,6 +1042,30 @@ between
     #[test]
     fn zhipu_empty_arg_key_skipped() {
         let text = r#"<tool_call>exec<arg_key>   </arg_key><arg_value>ls</arg_value></tool_call>"#;
+        let (calls, remaining) = parse_tool_calls_from_text(text);
+        assert!(calls.is_empty());
+        assert_eq!(remaining.as_deref(), Some(text));
+    }
+
+    #[test]
+    fn zhipu_missing_arg_key_close_skipped() {
+        let text = r#"<tool_call>exec<arg_key>command<arg_value>ls</arg_value></tool_call>"#;
+        let (calls, remaining) = parse_tool_calls_from_text(text);
+        assert!(calls.is_empty());
+        assert_eq!(remaining.as_deref(), Some(text));
+    }
+
+    #[test]
+    fn zhipu_missing_arg_value_open_skipped() {
+        let text = r#"<tool_call>exec<arg_key>command</arg_key>ls</tool_call>"#;
+        let (calls, remaining) = parse_tool_calls_from_text(text);
+        assert!(calls.is_empty());
+        assert_eq!(remaining.as_deref(), Some(text));
+    }
+
+    #[test]
+    fn zhipu_missing_arg_value_close_skipped() {
+        let text = r#"<tool_call>exec<arg_key>command</arg_key><arg_value>ls</tool_call>"#;
         let (calls, remaining) = parse_tool_calls_from_text(text);
         assert!(calls.is_empty());
         assert_eq!(remaining.as_deref(), Some(text));
