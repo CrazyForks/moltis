@@ -449,6 +449,8 @@ pub struct BrowserConfig {
     /// Default: "127.0.0.1". Set to e.g. "host.docker.internal" when
     /// Moltis runs inside Docker alongside a sibling browser container.
     pub container_host: String,
+    /// Browserless API compatibility mode (`v1` or `v2`).
+    pub browserless_api_version: String,
 }
 
 fn default_sandbox_image() -> String {
@@ -481,6 +483,7 @@ impl Default for BrowserConfig {
             persist_profile: true,
             profile_dir: None,
             container_host: "127.0.0.1".to_string(),
+            browserless_api_version: "v1".to_string(),
         }
     }
 }
@@ -524,6 +527,7 @@ impl From<&moltis_config::schema::BrowserConfig> for BrowserConfig {
             persist_profile: cfg.persist_profile,
             profile_dir: cfg.profile_dir.clone(),
             container_host: cfg.container_host.clone(),
+            browserless_api_version: cfg.browserless_api_version.clone(),
         }
     }
 }

@@ -1854,6 +1854,11 @@ pub struct BrowserConfig {
     /// Moltis can reach the sibling browser container via the host's port mapping.
     #[serde(default = "default_container_host")]
     pub container_host: String,
+    /// Browserless API compatibility mode for websocket endpoints.
+    /// - "v1" (default): connect to the base websocket URL.
+    /// - "v2": try Browserless v2 paths (`/chrome`, `/chromium`) when needed.
+    #[serde(default = "default_browserless_api_version")]
+    pub browserless_api_version: String,
 }
 
 fn default_sandbox_image() -> String {
@@ -1870,6 +1875,10 @@ const fn default_persist_profile() -> bool {
 
 fn default_container_host() -> String {
     "127.0.0.1".to_string()
+}
+
+fn default_browserless_api_version() -> String {
+    "v1".to_string()
 }
 
 impl Default for BrowserConfig {
@@ -1893,6 +1902,7 @@ impl Default for BrowserConfig {
             persist_profile: default_persist_profile(),
             profile_dir: None,
             container_host: default_container_host(),
+            browserless_api_version: default_browserless_api_version(),
         }
     }
 }

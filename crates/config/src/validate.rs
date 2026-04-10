@@ -247,6 +247,7 @@ fn build_schema_map() -> KnownKeys {
             ("persist_profile", Leaf),
             ("profile_dir", Leaf),
             ("container_host", Leaf),
+            ("browserless_api_version", Leaf),
         ]))
     };
 
@@ -1540,6 +1541,20 @@ fn check_semantic_warnings(config: &MoltisConfig, diagnostics: &mut Vec<Diagnost
             category: "invalid-value",
             path: "tools.browser.profile_dir".into(),
             message: "profile_dir should be an absolute path".into(),
+        });
+    }
+
+    let valid_browserless_versions = ["v1", "v2"];
+    if !valid_browserless_versions.contains(&config.tools.browser.browserless_api_version.as_str()) {
+        diagnostics.push(Diagnostic {
+            severity: Severity::Warning,
+            category: "unknown-field",
+            path: "tools.browser.browserless_api_version".into(),
+            message: format!(
+                "unknown browserless_api_version \"{}\"; expected one of: {}",
+                config.tools.browser.browserless_api_version,
+                valid_browserless_versions.join(", ")
+            ),
         });
     }
 
