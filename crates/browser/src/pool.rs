@@ -885,29 +885,26 @@ mod tests {
     #[test]
     fn websocket_candidates_v1_uses_base_url_only() {
         let candidates = websocket_connect_candidates("ws://browser-host.local:45029/", "v1");
-        assert_eq!(candidates, vec!["ws://browser-host.local:45029/".to_string()]);
+        assert_eq!(candidates, vec![
+            "ws://browser-host.local:45029/".to_string()
+        ]);
     }
 
     #[test]
     fn websocket_candidates_v2_adds_browser_paths_for_root() {
         let candidates = websocket_connect_candidates("ws://browser-host.local:45029/", "v2");
-        assert_eq!(
-            candidates,
-            vec![
-                "ws://browser-host.local:45029/".to_string(),
-                "ws://browser-host.local:45029/chrome".to_string(),
-                "ws://browser-host.local:45029/chromium".to_string()
-            ]
-        );
+        assert_eq!(candidates, vec![
+            "ws://browser-host.local:45029/".to_string(),
+            "ws://browser-host.local:45029/chrome".to_string(),
+            "ws://browser-host.local:45029/chromium".to_string()
+        ]);
     }
 
     #[test]
     fn websocket_candidates_v2_keeps_explicit_path() {
-        let candidates =
-            websocket_connect_candidates("ws://browser-host.local:45029/chrome", "v2");
-        assert_eq!(
-            candidates,
-            vec!["ws://browser-host.local:45029/chrome".to_string()]
-        );
+        let candidates = websocket_connect_candidates("ws://browser-host.local:45029/chrome", "v2");
+        assert_eq!(candidates, vec![
+            "ws://browser-host.local:45029/chrome".to_string()
+        ]);
     }
 }

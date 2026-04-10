@@ -1545,7 +1545,8 @@ fn check_semantic_warnings(config: &MoltisConfig, diagnostics: &mut Vec<Diagnost
     }
 
     let valid_browserless_versions = ["v1", "v2"];
-    if !valid_browserless_versions.contains(&config.tools.browser.browserless_api_version.as_str()) {
+    if !valid_browserless_versions.contains(&config.tools.browser.browserless_api_version.as_str())
+    {
         diagnostics.push(Diagnostic {
             severity: Severity::Warning,
             category: "unknown-field",
