@@ -48,6 +48,8 @@ use {
     moltis_tools::policy::{ToolPolicy, profile_tools},
 };
 
+mod compaction;
+
 pub mod chat_error;
 pub mod error;
 pub mod runtime;
@@ -829,6 +831,157 @@ fn capped_tool_result_payload(result: &Value, max_len: usize) -> Value {
         }
     }
     capped
+}
+
+/// Maximum total characters for a compaction summary.
+const SUMMARY_MAX_CHARS: usize = 1_200;
+/// Maximum number of lines in a compaction summary (excluding omission notice).
+const SUMMARY_MAX_LINES: usize = 24;
+/// Maximum characters per line in a compaction summary.
+const SUMMARY_MAX_LINE_CHARS: usize = 160;
+
+/// Compress a compaction summary to fit within budget constraints.
+///
+/// Enforces: max 1,200 chars total, max 24 lines, max 160 chars per line.
+/// Deduplicates lines (case-insensitive), preserves headers and bullets,
+/// and appends an omission notice when lines are dropped.
+#[must_use]
+fn compress_summary(text: &str) -> String {
+    let text = text.trim();
+    if text.is_empty() {
+        return String::new();
+    }
+
+    let lines: Vec<&str> = text.lines().collect();
+    if lines.is_empty() {
+        return String::new();
+    }
+
+    // Step 1: deduplicate lines (case-insensitive, keep first occurrence).
+    let mut seen = HashSet::new();
+    let mut deduped: Vec<String> = Vec::with_capacity(lines.len());
+    for line in lines {
+        let key = line.trim().to_ascii_lowercase();
+        if seen.insert(key) {
+            deduped.push(if line.len() <= SUMMARY_MAX_LINE_CHARS {
+                line.to_string()
+            } else {
+                // Step 2: truncate individual lines exceeding 160 chars.
+                line[..line.floor_char_boundary(SUMMARY_MAX_LINE_CHARS)].to_string()
+            });
+        }
+    }
+    drop(seen);
+
+    // Step 3: check if already within budget.
+    let joined = deduped.join("\n");
+    if deduped.len() <= SUMMARY_MAX_LINES && joined.len() <= SUMMARY_MAX_CHARS {
+        return joined;
+    }
+
+    // Step 4: priority-based line dropping.
+    // Headers (starting with #) get highest priority, then bullets (- * •), then rest.
+    fn is_header(line: &str) -> bool {
+        line.trim_start().starts_with('#')
+    }
+    fn is_bullet(line: &str) -> bool {
+        let trimmed = line.trim_start();
+        trimmed.starts_with("- ") || trimmed.starts_with("* ") || trimmed.starts_with("• ")
+    }
+
+    let mut headers: Vec<String> = Vec::new();
+    let mut bullet_lines: Vec<String> = Vec::new();
+    let mut other_lines: Vec<String> = Vec::new();
+
+    for line in deduped {
+        if is_header(&line) {
+            headers.push(line);
+        } else if is_bullet(&line) {
+            bullet_lines.push(line);
+        } else {
+            other_lines.push(line);
+        }
+    }
+
+    // Build ordered candidate list: bullets first, then others.
+    // Headers are always kept.
+    let mut candidates: Vec<String> = Vec::new();
+    candidates.extend(bullet_lines);
+    candidates.extend(other_lines);
+
+    let header_count = headers.len();
+
+    // Check if keeping all candidates fits.
+    if header_count + candidates.len() <= SUMMARY_MAX_LINES {
+        let total_len = headers.iter().chain(candidates.iter()).fold(0, |acc, l| {
+            acc + l.len() + 1 // +1 for newline
+        })
+        // fold overcounts by 1 (N newlines vs N-1 for join); subtract to correct.
+        .saturating_sub(1);
+        if total_len <= SUMMARY_MAX_CHARS {
+            let mut result = headers;
+            result.extend(candidates);
+            return result.join("\n");
+        }
+    }
+
+    // Need to drop lines from the end of candidates.
+    // Account for omission notice in budget.
+    fn make_notice(n: usize) -> String {
+        format!("[... {n} lines omitted for brevity]")
+    }
+
+    for drop_count in 1..=candidates.len() {
+        let keep_count = candidates.len() - drop_count;
+        let line_count = header_count + keep_count + 1; // +1 for omission notice
+        if line_count > SUMMARY_MAX_LINES {
+            continue;
+        }
+
+        let notice = make_notice(drop_count);
+        let kept_candidates = &candidates[..keep_count];
+        let total_len = headers
+            .iter()
+            .chain(kept_candidates.iter())
+            .fold(0, |acc, l| acc + l.len() + 1)
+            // fold overcounts by 1 (N newlines vs N-1 for join); subtract to correct.
+            .saturating_sub(1)
+            + notice.len()
+            + 1; // +1 for newline before notice
+
+        if total_len <= SUMMARY_MAX_CHARS {
+            let mut result = headers;
+            result.extend(kept_candidates.iter().cloned());
+            result.push(notice);
+            return result.join("\n");
+        }
+    }
+
+    // Edge case: even dropping all candidates, headers alone are too long.
+    // Force-truncate headers from the end.
+    let all_dropped_count = candidates.len();
+    let mut result: Vec<String> = Vec::new();
+    let mut header_drop_count = 0usize;
+    // Pre-compute budget assuming 0 header drops; notice rebuilt after loop with actual count.
+    let mut char_budget =
+        SUMMARY_MAX_CHARS.saturating_sub(make_notice(all_dropped_count).len() + 1);
+    for line in &headers {
+        let needed = line.len()
+            + if result.is_empty() {
+                0
+            } else {
+                1
+            };
+        if needed > char_budget || result.len() + 1 >= SUMMARY_MAX_LINES {
+            header_drop_count += 1;
+            continue;
+        }
+        char_budget -= needed;
+        result.push(line.clone());
+    }
+    let notice = make_notice(all_dropped_count + header_drop_count);
+    result.push(notice);
+    result.join("\n")
 }
 
 fn shell_reply_text_from_exec_result(result: &Value) -> String {
@@ -4495,51 +4648,21 @@ impl ChatService for LiveChatService {
             }
         }
 
-        // Build a summary prompt from the conversation using structured messages.
-        // We pass the typed ChatMessage objects directly so role boundaries are
-        // maintained via the API's message structure, preventing prompt injection
-        // where user content could mimic role prefixes in concatenated text.
-        let mut summary_messages = vec![ChatMessage::system(
-            "You are a conversation summarizer. The messages that follow are a conversation you must summarize. Preserve all key facts, decisions, and context. After the conversation, you will receive a final instruction.",
-        )];
-        summary_messages.extend(values_to_chat_messages(&history));
-        summary_messages.push(ChatMessage::user(
-            "Summarize the conversation above into a concise form. Output only the summary, no preamble.",
-        ));
+        // Deterministic compaction: extract summary without LLM calls.
+        // Adapted from claw-code (ultraworkers/claw-code, MIT).
+        let existing = compaction::extract_existing_compacted_summary(&history);
+        let start = usize::from(existing.is_some());
+        let new_summary = compaction::summarize_messages(&history[start..]);
+        let merged = compaction::merge_compact_summaries(existing.as_deref(), &new_summary);
 
-        // Use the session's model if available, otherwise fall back to the model
-        // from the last assistant message, then to the first registered provider.
-        let provider = self
-            .resolve_provider(&session_key, &history)
-            .await
-            .map_err(ServiceError::message)?;
-
-        info!(session = %session_key, messages = history.len(), "chat.compact: summarizing");
-
-        let mut stream = provider.stream(summary_messages);
-        let mut summary = String::new();
-        while let Some(event) = stream.next().await {
-            match event {
-                StreamEvent::Delta(delta) => summary.push_str(&delta),
-                StreamEvent::Done(_) => break,
-                StreamEvent::Error(e) => {
-                    return Err(format!("compact summarization failed: {e}").into());
-                },
-                // Tool events not expected in summarization stream.
-                StreamEvent::ToolCallStart { .. }
-                | StreamEvent::ToolCallArgumentsDelta { .. }
-                | StreamEvent::ToolCallComplete { .. }
-                // Provider raw payloads are debug metadata, not summary text.
-                | StreamEvent::ProviderRaw(_)
-                // Ignore provider reasoning blocks; summary body should only
-                // include final answer text.
-                | StreamEvent::ReasoningDelta(_) => {},
-            }
-        }
+        // Enforce summary budget discipline: max 1,200 chars, 24 lines, 160 chars/line.
+        let summary = compress_summary(&merged);
 
         if summary.is_empty() {
             return Err("compact produced empty summary".into());
         }
+
+        info!(session = %session_key, messages = history.len(), "chat.compact: deterministic summary");
 
         // Replace history with a single user message containing the summary.
         // Using the user role (not assistant) avoids breaking providers like
@@ -6783,7 +6906,7 @@ async fn run_with_tools(
             .await;
 
             // Inline compaction: summarize history, replace in store.
-            match compact_session(store, session_key, &provider_ref).await {
+            match compact_session(store, session_key).await {
                 Ok(()) => {
                     broadcast(
                         state,
@@ -7037,11 +7160,7 @@ async fn run_with_tools(
 ///
 /// This is a standalone helper so `run_with_tools` can call it without
 /// requiring `&self` on `LiveChatService`.
-async fn compact_session(
-    store: &Arc<SessionStore>,
-    session_key: &str,
-    provider: &Arc<dyn moltis_agents::model::LlmProvider>,
-) -> error::Result<()> {
+async fn compact_session(store: &Arc<SessionStore>, session_key: &str) -> error::Result<()> {
     let history = store
         .read(session_key)
         .await
@@ -7050,39 +7169,15 @@ async fn compact_session(
         return Err(error::Error::message("nothing to compact"));
     }
 
-    // Use structured ChatMessage objects so role boundaries are maintained via
-    // the API's message structure, preventing prompt injection where user content
-    // could mimic role prefixes in concatenated text.
-    let mut summary_messages = vec![ChatMessage::system(
-        "You are a conversation summarizer. The messages that follow are a conversation you must summarize. Preserve all key facts, decisions, and context. After the conversation, you will receive a final instruction.",
-    )];
-    summary_messages.extend(values_to_chat_messages(&history));
-    summary_messages.push(ChatMessage::user(
-        "Summarize the conversation above into a concise form. Output only the summary, no preamble.",
-    ));
+    // Deterministic compaction: extract summary without LLM calls.
+    // Adapted from claw-code (ultraworkers/claw-code, MIT).
+    let existing = compaction::extract_existing_compacted_summary(&history);
+    let start = usize::from(existing.is_some());
+    let new_summary = compaction::summarize_messages(&history[start..]);
+    let merged = compaction::merge_compact_summaries(existing.as_deref(), &new_summary);
 
-    let mut stream = provider.stream(summary_messages);
-    let mut summary = String::new();
-    while let Some(event) = stream.next().await {
-        match event {
-            StreamEvent::Delta(delta) => summary.push_str(&delta),
-            StreamEvent::Done(_) => break,
-            StreamEvent::Error(e) => {
-                return Err(error::Error::message(format!(
-                    "compact summarization failed: {e}"
-                )));
-            },
-            // Tool events not expected in summarization stream.
-            StreamEvent::ToolCallStart { .. }
-            | StreamEvent::ToolCallArgumentsDelta { .. }
-            | StreamEvent::ToolCallComplete { .. }
-            // Provider raw payloads are debug metadata, not summary text.
-            | StreamEvent::ProviderRaw(_)
-            // Ignore provider reasoning blocks; summary body should only
-            // include final answer text.
-            | StreamEvent::ReasoningDelta(_) => {},
-        }
-    }
+    // Enforce summary budget discipline: max 1,200 chars, 24 lines, 160 chars/line.
+    let summary = compress_summary(&merged);
 
     if summary.is_empty() {
         return Err(error::Error::message("compact produced empty summary"));
@@ -7110,7 +7205,6 @@ async fn compact_session(
 
     Ok(())
 }
-
 // ── Streaming mode (no tools) ───────────────────────────────────────────────
 
 const STREAM_RETRYABLE_SERVER_PATTERNS: &[&str] = &[
@@ -10253,7 +10347,7 @@ mod tests {
             history[0]
                 .get("content")
                 .and_then(Value::as_str)
-                .is_some_and(|content| content.starts_with("[Conversation Summary]\n\nsummary"))
+                .is_some_and(|content| content.starts_with("[Conversation Summary]\n\n"))
         );
         assert_eq!(history[1].get("role").and_then(Value::as_str), Some("user"));
         assert_eq!(
@@ -10297,10 +10391,7 @@ mod tests {
             .await
             .expect("seed assistant msg");
 
-        let provider: Arc<dyn LlmProvider> = Arc::new(AutoCompactRegressionProvider {
-            context_window: 100,
-        });
-        compact_session(&store, session_key, &provider)
+        compact_session(&store, session_key)
             .await
             .expect("compact_session should succeed");
 
@@ -13074,6 +13165,126 @@ mod tests {
         assert!(
             err.contains("timed out"),
             "error should mention timeout: {err}"
+        );
+    }
+
+    // ── compress_summary tests ──────────────────────────────────────────────
+
+    #[test]
+    fn compress_summary_under_budget_returns_unchanged() {
+        let input = "# Summary\n\n- Key point one\n- Key point two\nDone.";
+        let result = compress_summary(input);
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn compress_summary_over_char_limit() {
+        let mut lines = vec!["# Summary".to_string()];
+        for i in 0..30 {
+            lines.push(format!(
+                "- This is line {i} with some padding text to make it longer than usual"
+            ));
+        }
+        let input = lines.join("\n");
+        assert!(input.len() > 1_200, "input should exceed 1200 chars");
+
+        let result = compress_summary(&input);
+        assert!(
+            result.len() <= 1_200,
+            "result must be <= 1200 chars, got {}",
+            result.len()
+        );
+        assert!(
+            result.contains("lines omitted"),
+            "should have omission notice"
+        );
+    }
+
+    #[test]
+    fn compress_summary_over_line_count() {
+        let mut lines = vec!["# Summary".to_string()];
+        for i in 0..40 {
+            lines.push(format!("Line {i}"));
+        }
+        let input = lines.join("\n");
+
+        let result = compress_summary(&input);
+        let result_lines: Vec<&str> = result.lines().collect();
+        assert!(
+            result_lines.len() <= 25,
+            "result should be <= 25 lines (24 + notice), got {}",
+            result_lines.len()
+        );
+        assert!(result.contains("lines omitted"));
+    }
+
+    #[test]
+    fn compress_summary_long_line_truncation() {
+        let long_line: String = "x".repeat(200);
+        let input = format!("Header\n{long_line}");
+        let result = compress_summary(&input);
+
+        let result_lines: Vec<&str> = result.lines().collect();
+        assert_eq!(result_lines.len(), 2);
+        // The long line should be truncated to 160 chars.
+        assert!(
+            result_lines[1].len() <= 160,
+            "long line should be <= 160 chars, got {}",
+            result_lines[1].len()
+        );
+    }
+
+    #[test]
+    fn compress_summary_deduplication() {
+        let input = "Alpha\nalpha\nBeta\nBETA\nGamma";
+        let result = compress_summary(input);
+        // Case-insensitive dedup: should keep first occurrence of each.
+        let result_lines: Vec<&str> = result.lines().collect();
+        assert_eq!(result_lines, vec!["Alpha", "Beta", "Gamma"]);
+    }
+
+    #[test]
+    fn compress_summary_header_preservation() {
+        let mut lines = vec!["# Section One".to_string()];
+        for i in 0..30 {
+            lines.push(format!(
+                "Body line {i} with enough text to fill up space here"
+            ));
+        }
+        lines.push("## Section Two".to_string());
+        for i in 0..10 {
+            lines.push(format!("- Bullet {i} important"));
+        }
+        let input = lines.join("\n");
+
+        let result = compress_summary(&input);
+        assert!(
+            result.contains("# Section One"),
+            "headers should be preserved"
+        );
+        assert!(
+            result.contains("## Section Two"),
+            "second header should be preserved"
+        );
+        assert!(result.contains("lines omitted"));
+    }
+
+    #[test]
+    fn compress_summary_empty_input() {
+        assert_eq!(compress_summary(""), "");
+        assert_eq!(compress_summary("   "), "");
+    }
+
+    #[test]
+    fn compress_summary_single_very_long_line() {
+        let long_line = "a".repeat(2_000);
+        let result = compress_summary(&long_line);
+
+        // Should be truncated to 160 chars.
+        assert!(
+            result.len() <= 160,
+            "single long line should be truncated, got {} chars",
+            result.len()
         );
     }
 }
