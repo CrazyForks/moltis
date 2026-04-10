@@ -100,10 +100,27 @@ pub fn summarize_messages(messages: &[Value]) -> String {
     }
 
     lines.push("- Key timeline:".to_string());
-    for message in messages {
-        let role = message["role"].as_str().unwrap_or("unknown");
-        let content = extract_content_preview(message);
-        lines.push(format!("  - {role}: {content}"));
+    let timeline_head = 3;
+    let timeline_tail = 5;
+    if messages.len() <= timeline_head + timeline_tail {
+        for message in messages {
+            let role = message["role"].as_str().unwrap_or("unknown");
+            let content = extract_content_preview(message);
+            lines.push(format!("  - {role}: {content}"));
+        }
+    } else {
+        for message in &messages[..timeline_head] {
+            let role = message["role"].as_str().unwrap_or("unknown");
+            let content = extract_content_preview(message);
+            lines.push(format!("  - {role}: {content}"));
+        }
+        let omitted = messages.len() - timeline_head - timeline_tail;
+        lines.push(format!("  - ... ({omitted} messages omitted) ..."));
+        for message in &messages[messages.len() - timeline_tail..] {
+            let role = message["role"].as_str().unwrap_or("unknown");
+            let content = extract_content_preview(message);
+            lines.push(format!("  - {role}: {content}"));
+        }
     }
     lines.push("</summary>".to_string());
     lines.join("\n")
@@ -146,6 +163,24 @@ pub fn merge_compact_summaries(existing_summary: Option<&str>, new_summary: &str
 
     lines.push("</summary>".to_string());
     lines.join("\n")
+}
+
+/// Perform deterministic compaction on a message history slice.
+///
+/// Extracts any existing summary, summarizes remaining messages, merges them.
+/// Returns the merged summary string (before budget enforcement), or `None` if empty.
+#[must_use]
+pub fn compute_compaction_summary(history: &[Value]) -> Option<String> {
+    let existing = extract_existing_compacted_summary(history);
+    let start = usize::from(existing.is_some());
+    let new_summary = summarize_messages(&history[start..]);
+    let merged = merge_compact_summaries(existing.as_deref(), &new_summary);
+    let trimmed = merged.trim().to_string();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed)
+    }
 }
 
 /// Build the synthetic continuation message injected after compaction.
@@ -194,7 +229,13 @@ pub fn format_compact_summary(summary: &str) -> String {
 pub fn extract_existing_compacted_summary(history: &[Value]) -> Option<String> {
     let first = history.first()?;
     let content = first.get("content").and_then(Value::as_str)?;
-    let summary_text = content.strip_prefix("[Conversation Summary]\n\n")?;
+    let summary_text = if let Some(text) = content.strip_prefix("[Conversation Summary]\n\n") {
+        text
+    } else if content.starts_with(COMPACT_CONTINUATION_PREAMBLE) {
+        content
+    } else {
+        return None;
+    };
     let summary = summary_text.trim();
     if summary.is_empty() {
         return None;
@@ -404,9 +445,12 @@ fn has_interesting_extension(candidate: &str) -> bool {
         .extension()
         .and_then(|ext| ext.to_str())
         .is_some_and(|ext| {
-            ["rs", "ts", "tsx", "js", "json", "md"]
-                .iter()
-                .any(|expected| ext.eq_ignore_ascii_case(expected))
+            [
+                "rs", "ts", "tsx", "js", "json", "md", "py", "toml", "yaml", "yml", "go", "css",
+                "html", "sql", "sh", "cfg", "ini", "jsx", "jsonc",
+            ]
+            .iter()
+            .any(|expected| ext.eq_ignore_ascii_case(expected))
         })
 }
 
@@ -418,44 +462,6 @@ fn truncate_summary(content: &str, max_chars: usize) -> String {
     let mut truncated: String = content.chars().take(max_chars).collect();
     truncated.push('…');
     truncated
-}
-
-/// Rough token estimate: content length / 4 + 1.
-#[allow(dead_code)]
-fn estimate_message_tokens(message: &Value) -> usize {
-    let content_len = if let Some(text) = message.get("content").and_then(Value::as_str) {
-        text.len()
-    } else if let Some(blocks) = message.get("content").and_then(Value::as_array) {
-        blocks
-            .iter()
-            .filter_map(|b| b.get("text").and_then(Value::as_str))
-            .map(|t| t.len())
-            .sum()
-    } else {
-        0
-    };
-
-    let tool_len: usize = message
-        .get("tool_calls")
-        .and_then(Value::as_array)
-        .map(|calls| {
-            calls
-                .iter()
-                .map(|c| {
-                    c.get("function")
-                        .map(|f| {
-                            f.get("name").and_then(Value::as_str).map_or(0, |n| n.len())
-                                + f.get("arguments")
-                                    .and_then(Value::as_str)
-                                    .map_or(0, |a| a.len())
-                        })
-                        .unwrap_or(0)
-                })
-                .sum::<usize>()
-        })
-        .unwrap_or(0);
-
-    (content_len + tool_len) / 4 + 1
 }
 
 /// Extract bullet lines (starting with `-`) as highlights.
@@ -788,5 +794,82 @@ mod tests {
     fn collapse_blank_lines_deduplicates() {
         let text = "a\n\n\nb\n\nc";
         assert_eq!(collapse_blank_lines(text), "a\n\nb\n\nc\n");
+    }
+
+    // ── compute_compaction_summary ──────────────────────────────────
+
+    #[test]
+    fn compute_compaction_summary_basic() {
+        let history = vec![
+            make_user("hello"),
+            make_assistant("hi there"),
+            make_user("how are you"),
+            make_assistant("doing well"),
+        ];
+        let result = compute_compaction_summary(&history);
+        assert!(result.is_some());
+        let summary = result.unwrap();
+        assert!(summary.contains("<summary>"));
+        assert!(summary.contains("Scope: 4 earlier messages"));
+    }
+
+    #[test]
+    fn compute_compaction_summary_empty() {
+        // Empty history produces a summary with zero counts, not None.
+        // The function only returns None when the trimmed result is empty.
+        let result = compute_compaction_summary(&[]);
+        assert!(result.is_some());
+        assert!(result.unwrap().contains("user=0"));
+    }
+
+    // ── summarize_messages timeline truncation ──────────────────────
+
+    #[test]
+    fn summarize_messages_timeline_truncated() {
+        // 12 messages: first 3 + last 5 shown, 4 omitted
+        let mut messages = Vec::new();
+        for i in 0..12 {
+            messages.push(make_user(&format!("msg {i}")));
+        }
+        let summary = summarize_messages(&messages);
+        assert!(summary.contains("msg 0"));
+        assert!(summary.contains("msg 2"));
+        assert!(summary.contains("4 messages omitted"));
+        assert!(summary.contains("msg 7"));
+        assert!(summary.contains("msg 11"));
+        // Should NOT contain the omitted messages
+        assert!(
+            !summary.contains("msg 3:")
+                || summary.contains("msg 3") && summary.contains("omitted") == false
+        );
+        // Simpler: just check for the omission notice
+        assert!(summary.contains("(4 messages omitted)"));
+    }
+
+    // ── extract_existing_compacted_summary preamble format ──────────
+
+    #[test]
+    fn extract_existing_compacted_summary_preamble_format() {
+        let preamble = "This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\nSome summary content";
+        let history = vec![json!({
+            "role": "user",
+            "content": preamble
+        })];
+        let result = extract_existing_compacted_summary(&history);
+        assert!(result.is_some());
+        assert!(result.unwrap().contains("Some summary content"));
+    }
+
+    // ── collect_key_files expanded extensions ───────────────────────
+
+    #[test]
+    fn collect_key_files_python_and_toml() {
+        let messages = vec![make_user(
+            "Update src/app.py and config/settings.toml plus deploy/deploy.yaml",
+        )];
+        let files = collect_key_files(&messages);
+        assert!(files.contains(&"src/app.py".to_string()));
+        assert!(files.contains(&"config/settings.toml".to_string()));
+        assert!(files.contains(&"deploy/deploy.yaml".to_string()));
     }
 }

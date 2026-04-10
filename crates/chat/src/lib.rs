@@ -903,11 +903,12 @@ fn compress_summary(text: &str) -> String {
         }
     }
 
-    // Build ordered candidate list: bullets first, then others.
+    // Build ordered candidate list: other lines first, then bullets.
+    // Lines are dropped from the end, so bullets (higher signal) survive longer.
     // Headers are always kept.
     let mut candidates: Vec<String> = Vec::new();
-    candidates.extend(bullet_lines);
     candidates.extend(other_lines);
+    candidates.extend(bullet_lines);
 
     let header_count = headers.len();
 
@@ -4650,17 +4651,11 @@ impl ChatService for LiveChatService {
 
         // Deterministic compaction: extract summary without LLM calls.
         // Adapted from claw-code (ultraworkers/claw-code, MIT).
-        let existing = compaction::extract_existing_compacted_summary(&history);
-        let start = usize::from(existing.is_some());
-        let new_summary = compaction::summarize_messages(&history[start..]);
-        let merged = compaction::merge_compact_summaries(existing.as_deref(), &new_summary);
-
-        // Enforce summary budget discipline: max 1,200 chars, 24 lines, 160 chars/line.
-        let summary = compress_summary(&merged);
-
-        if summary.is_empty() {
-            return Err("compact produced empty summary".into());
-        }
+        let merged = compaction::compute_compaction_summary(&history);
+        let summary = match merged {
+            Some(s) => compress_summary(&s),
+            None => return Err("compact produced empty summary".into()),
+        };
 
         info!(session = %session_key, messages = history.len(), "chat.compact: deterministic summary");
 
@@ -4671,7 +4666,10 @@ impl ChatService for LiveChatService {
         // providers using the Responses API (which promotes system messages to
         // instructions).
         let compacted_msg = PersistedMessage::User {
-            content: MessageContent::Text(format!("[Conversation Summary]\n\n{summary}")),
+            content: MessageContent::Text(format!(
+                "[Conversation Summary]\n\n{}",
+                compaction::get_compact_continuation_message(&summary, true)
+            )),
             created_at: Some(now_ms()),
             audio: None,
             channel: None,
@@ -7171,17 +7169,11 @@ async fn compact_session(store: &Arc<SessionStore>, session_key: &str) -> error:
 
     // Deterministic compaction: extract summary without LLM calls.
     // Adapted from claw-code (ultraworkers/claw-code, MIT).
-    let existing = compaction::extract_existing_compacted_summary(&history);
-    let start = usize::from(existing.is_some());
-    let new_summary = compaction::summarize_messages(&history[start..]);
-    let merged = compaction::merge_compact_summaries(existing.as_deref(), &new_summary);
-
-    // Enforce summary budget discipline: max 1,200 chars, 24 lines, 160 chars/line.
-    let summary = compress_summary(&merged);
-
-    if summary.is_empty() {
-        return Err(error::Error::message("compact produced empty summary"));
-    }
+    let merged = compaction::compute_compaction_summary(&history);
+    let summary = match merged {
+        Some(s) => compress_summary(&s),
+        None => return Err(error::Error::message("compact produced empty summary")),
+    };
 
     // Use user role so strict providers (e.g. llama.cpp) don't reject the
     // history for having an assistant message without a preceding user message.
@@ -7189,7 +7181,10 @@ async fn compact_session(store: &Arc<SessionStore>, session_key: &str) -> error:
     // providers using the Responses API (system messages get promoted to
     // instructions and disappear from turns).
     let compacted_msg = PersistedMessage::User {
-        content: MessageContent::Text(format!("[Conversation Summary]\n\n{summary}")),
+        content: MessageContent::Text(format!(
+            "[Conversation Summary]\n\n{}",
+            compaction::get_compact_continuation_message(&summary, true)
+        )),
         created_at: Some(now_ms()),
         audio: None,
         channel: None,
