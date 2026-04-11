@@ -262,10 +262,10 @@ pub fn compress_summary(text: &str) -> String {
         }
     }
 
-    // Candidates ordered for dropping: other first (dropped first), then bullets.
+    // Candidates ordered for dropping: other at the tail (dropped first), bullets kept longer.
     let mut candidates: Vec<String> = Vec::new();
-    candidates.extend(other);
     candidates.extend(bullets);
+    candidates.extend(other);
 
     let header_count = headers.len();
 
@@ -1182,6 +1182,48 @@ mod tests {
             "second header should be preserved"
         );
         assert!(result.contains("lines omitted"));
+    }
+
+    #[test]
+    fn compress_summary_priority_drops_other_before_bullets() {
+        // Build input that exceeds line budget with both bullets and plain lines.
+        let mut lines = vec![String::new()];
+        for i in 0..20 {
+            lines.push(format!("Plain body line number {i} with filler text"));
+        }
+        for i in 0..10 {
+            lines.push(format!("- Important bullet point {i}"));
+        }
+        let input = lines.join("\n");
+
+        let result = compress_summary(&input);
+
+        // Count retained bullets vs plain lines.
+        let retained_bullets: Vec<_> = result
+            .lines()
+            .filter(|l| l.trim_start().starts_with('-'))
+            .collect();
+        let retained_plain: Vec<_> = result
+            .lines()
+            .filter(|l| {
+                let t = l.trim_start();
+                !t.is_empty()
+                    && !t.starts_with('#')
+                    && !t.starts_with('-')
+                    && !t.starts_with("[")
+            })
+            .collect();
+
+        // All 10 bullets must survive since they have higher priority.
+        assert_eq!(
+            retained_bullets.len(), 10,
+            "all bullets should be retained when there are fewer bullets than budget space"
+        );
+        // Some plain lines must be dropped (only 23 slots for 30 non-header lines).
+        assert!(
+            retained_plain.len() < 20,
+            "some plain lines should be dropped to fit budget"
+        );
     }
 
     #[test]
