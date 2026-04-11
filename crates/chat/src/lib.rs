@@ -49,6 +49,7 @@ use {
 };
 
 mod compaction;
+mod compaction_run;
 
 pub mod chat_error;
 pub mod error;
@@ -4497,34 +4498,43 @@ impl ChatService for LiveChatService {
             }
         }
 
-        // Deterministic compaction: extract summary without LLM calls.
-        // Adapted from claw-code (ultraworkers/claw-code, MIT).
-        let merged = compaction::compute_compaction_summary(&history);
-        let summary = match merged {
-            Some(s) => compaction::compress_summary(&s),
-            None => return Err("compact produced empty summary".into()),
-        };
+        // Resolve the session persona so we can pick up the compaction config
+        // and provide a provider to LLM-backed compaction modes. Agent-scoped
+        // config falls back through `load_prompt_persona_for_agent`'s default
+        // path, so this is safe even when the session has no custom preset.
+        let persona = load_prompt_persona_for_agent(&session_agent_id);
+        let compaction_config = &persona.config.chat.compaction;
 
-        info!(session = %session_key, messages = history.len(), "chat.compact: deterministic summary");
+        // LLM-backed modes need a resolved provider. Deterministic mode
+        // ignores it, so resolution failures are only fatal for the other
+        // modes — and `run_compaction` returns a clear ProviderRequired
+        // error in that case.
+        let provider_arc = self.resolve_provider(&session_key, &history).await.ok();
 
-        // Replace history with a single user message containing the summary.
-        // Using the user role (not assistant) avoids breaking providers like
-        // llama.cpp that require every assistant message to follow a user message,
-        // and ensures the summary stays in the conversation turn array for
-        // providers using the Responses API (which promotes system messages to
-        // instructions).
-        let compacted_msg = PersistedMessage::User {
-            content: MessageContent::Text(format!(
-                "[Conversation Summary]\n\n{}",
-                compaction::get_compact_continuation_message(&summary, false)
-            )),
-            created_at: Some(now_ms()),
-            audio: None,
-            channel: None,
-            seq: None,
-            run_id: None,
-        };
-        let compacted = vec![compacted_msg.to_value()];
+        let compacted =
+            compaction_run::run_compaction(&history, compaction_config, provider_arc.as_deref())
+                .await
+                .map_err(|e| ServiceError::message(e.to_string()))?;
+
+        // Keep a plain-text copy of the summary so the memory-file snapshot
+        // below can still record what we compacted to.
+        let summary_for_memory = compacted
+            .first()
+            .and_then(|msg| msg.get("content"))
+            .and_then(Value::as_str)
+            .map(|raw| {
+                raw.strip_prefix("[Conversation Summary]\n\n")
+                    .unwrap_or(raw)
+                    .to_string()
+            })
+            .unwrap_or_default();
+
+        info!(
+            session = %session_key,
+            mode = ?compaction_config.mode,
+            messages = history.len(),
+            "chat.compact: strategy dispatched"
+        );
 
         self.session_store
             .replace_history(&session_key, compacted.clone())
@@ -4546,7 +4556,7 @@ impl ChatService for LiveChatService {
                 let filename = format!("compaction-{}-{ts}.md", session_key);
                 let path = memory_dir.join(&filename);
                 let content = format!(
-                    "# Compaction Summary\n\n- **Session**: {session_key}\n- **Timestamp**: {ts}\n\n{summary}"
+                    "# Compaction Summary\n\n- **Session**: {session_key}\n- **Timestamp**: {ts}\n\n{summary_for_memory}"
                 );
                 if let Err(e) = tokio::fs::write(&path, &content).await {
                     warn!(error = %e, "compact: failed to write memory file");
@@ -4565,7 +4575,7 @@ impl ChatService for LiveChatService {
         if let Some(ref hooks) = self.hook_registry {
             let payload = moltis_common::hooks::HookPayload::AfterCompaction {
                 session_key: session_key.clone(),
-                summary_len: summary.len(),
+                summary_len: summary_for_memory.len(),
             };
             if let Err(e) = hooks.dispatch(&payload).await {
                 warn!(session = %session_key, error = %e, "AfterCompaction hook failed");
@@ -6751,8 +6761,17 @@ async fn run_with_tools(
             )
             .await;
 
-            // Inline compaction: summarize history, replace in store.
-            match compact_session(store, session_key).await {
+            // Inline compaction: run the configured strategy, replace in store.
+            // Forward the session provider so LLM-backed modes (llm_replace
+            // / structured) have a client to summarise with.
+            match compact_session(
+                store,
+                session_key,
+                &persona.config.chat.compaction,
+                Some(&*provider_ref),
+            )
+            .await
+            {
                 Ok(()) => {
                     broadcast(
                         state,
@@ -7006,40 +7025,31 @@ async fn run_with_tools(
 ///
 /// This is a standalone helper so `run_with_tools` can call it without
 /// requiring `&self` on `LiveChatService`.
-async fn compact_session(store: &Arc<SessionStore>, session_key: &str) -> error::Result<()> {
+/// Compact a session using the configured [`moltis_config::CompactionMode`].
+///
+/// Thin wrapper around [`compaction_run::run_compaction`] that owns the
+/// session-store read/write pair. `provider` is forwarded to LLM-backed
+/// modes; `None` is accepted for deterministic compaction but causes
+/// `llm_replace` / `structured` to return a [`ProviderRequired`] error.
+///
+/// This is a standalone helper so `run_with_tools` can call it without
+/// requiring `&self` on `LiveChatService`.
+///
+/// [`ProviderRequired`]: compaction_run::CompactionRunError::ProviderRequired
+async fn compact_session(
+    store: &Arc<SessionStore>,
+    session_key: &str,
+    config: &moltis_config::CompactionConfig,
+    provider: Option<&dyn moltis_agents::model::LlmProvider>,
+) -> error::Result<()> {
     let history = store
         .read(session_key)
         .await
         .map_err(|source| error::Error::external("failed to read session history", source))?;
-    if history.is_empty() {
-        return Err(error::Error::message("nothing to compact"));
-    }
 
-    // Deterministic compaction: extract summary without LLM calls.
-    // Adapted from claw-code (ultraworkers/claw-code, MIT).
-    let merged = compaction::compute_compaction_summary(&history);
-    let summary = match merged {
-        Some(s) => compaction::compress_summary(&s),
-        None => return Err(error::Error::message("compact produced empty summary")),
-    };
-
-    // Use user role so strict providers (e.g. llama.cpp) don't reject the
-    // history for having an assistant message without a preceding user message.
-    // User role also keeps the summary in the conversation turn array for
-    // providers using the Responses API (system messages get promoted to
-    // instructions and disappear from turns).
-    let compacted_msg = PersistedMessage::User {
-        content: MessageContent::Text(format!(
-            "[Conversation Summary]\n\n{}",
-            compaction::get_compact_continuation_message(&summary, false)
-        )),
-        created_at: Some(now_ms()),
-        audio: None,
-        channel: None,
-        seq: None,
-        run_id: None,
-    };
-    let compacted = vec![compacted_msg.to_value()];
+    let compacted = compaction_run::run_compaction(&history, config, provider)
+        .await
+        .map_err(|e| error::Error::message(e.to_string()))?;
 
     store
         .replace_history(session_key, compacted)
@@ -10234,7 +10244,8 @@ mod tests {
             .await
             .expect("seed assistant msg");
 
-        compact_session(&store, session_key)
+        let compaction_config = moltis_config::CompactionConfig::default();
+        compact_session(&store, session_key, &compaction_config, None)
             .await
             .expect("compact_session should succeed");
 

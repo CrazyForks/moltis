@@ -205,6 +205,54 @@ message_queue_mode = "followup"   # Default: process queued messages one-by-one 
 # priority_models = ["claude-opus-4-5", "gpt-5.2", "gemini-3-flash"]  # Optional: models to pin first in selectors
 # allowed_models = ["gpt 5.2"]  # Legacy field (currently ignored).
 
+# ── Compaction ─────────────────────────────────────────────────────────────
+# Strategy used to shrink a session when its context window fills up, or when
+# a user invokes `/compact`. Four modes are available — pick the one that
+# matches your cost/fidelity trade-off. See docs/src/compaction.md for a full
+# comparison table and picking guide.
+#
+# Modes:
+#   "deterministic"        (default) Zero LLM calls. Replaces the entire
+#                          history with a single extracted summary message
+#                          (counts, tool names, file paths, recent user
+#                          requests, head+tail timeline). Fast, free, offline,
+#                          low fidelity. Best for short chat channels and
+#                          cost-sensitive deployments.
+#
+#   "recency_preserving"   NOT YET IMPLEMENTED (moltis-h0c). Zero LLM calls.
+#                          Keeps head (system prompt + first exchange) and
+#                          recent tail verbatim; prunes only bulky tool-result
+#                          content in the middle region. Mid fidelity, free.
+#
+#   "structured"           NOT YET IMPLEMENTED (moltis-aff). Head + LLM
+#                          structured summary + tail. Uses a
+#                          Goal / Progress / Decisions / Files / Next Steps
+#                          template (same convention as hermes-agent and
+#                          openclaw safeguard). Highest fidelity, costs
+#                          a summary LLM call per compaction. Falls back to
+#                          recency_preserving on LLM failure.
+#
+#   "llm_replace"          Replaces the entire history with a single
+#                          LLM-generated summary. Pre-PR-#653 behaviour.
+#                          Best for maximum token reduction when the session
+#                          provider is cheap and the tail isn't worth
+#                          preserving.
+#
+[chat.compaction]
+mode = "deterministic"              # "deterministic" | "recency_preserving" | "structured" | "llm_replace"
+# threshold_percent = 0.75          # Auto-compact when the session reaches this fraction of the model context window.
+                                    # Range: 0.10–0.95. Lower = more aggressive compaction.
+# protect_head = 3                  # Number of leading messages kept verbatim by recency/structured modes.
+# protect_tail_min = 20             # Floor for tail messages kept verbatim (recency/structured modes).
+# tail_budget_ratio = 0.20          # Size of the verbatim tail as a fraction of threshold_percent × context_window.
+                                    # Example: 200K context × 0.75 × 0.20 = 30K tokens of tail preserved.
+# tool_prune_char_threshold = 200   # Tool-result content longer than this is replaced with a placeholder
+                                    # when recency/structured modes prune the middle region.
+# summary_model = "openrouter/google/gemini-2.5-flash"  # Optional provider-qualified model ID used by
+                                                         # structured and llm_replace modes. When unset, the
+                                                         # session's primary model is used.
+# max_summary_tokens = 4096         # Max output tokens for the summary LLM call (0 = provider default).
+
 # ══════════════════════════════════════════════════════════════════════════════
 # SPAWN PRESETS (OPTIONAL)
 # ══════════════════════════════════════════════════════════════════════════════

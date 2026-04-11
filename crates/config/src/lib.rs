@@ -40,11 +40,11 @@ pub use {
     },
     schema::{
         AgentIdentity, AgentPreset, AgentsConfig, AuthConfig, CacheRetention, CalDavAccountConfig,
-        CalDavConfig, ChatConfig, GeoLocation, MemoryScope, MessageQueueMode, MoltisConfig,
-        NgrokConfig, PresetMemoryConfig, PresetToolPolicy, ResolvedIdentity,
-        SessionAccessPolicyConfig, Timezone, ToolMode, ToolRegistryMode, UserProfile, VoiceConfig,
-        VoiceElevenLabsConfig, VoiceOpenAiConfig, VoiceSttConfig, VoiceSttProvider, VoiceTtsConfig,
-        VoiceWhisperConfig, WireApi,
+        CalDavConfig, ChatConfig, CompactionConfig, CompactionMode, GeoLocation, MemoryScope,
+        MessageQueueMode, MoltisConfig, NgrokConfig, PresetMemoryConfig, PresetToolPolicy,
+        ResolvedIdentity, SessionAccessPolicyConfig, Timezone, ToolMode, ToolRegistryMode,
+        UserProfile, VoiceConfig, VoiceElevenLabsConfig, VoiceOpenAiConfig, VoiceSttConfig,
+        VoiceSttProvider, VoiceTtsConfig, VoiceWhisperConfig, WireApi,
     },
     validate::{Diagnostic, Severity, ValidationResult},
 };
