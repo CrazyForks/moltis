@@ -257,10 +257,13 @@ mode = "deterministic"              # "deterministic" | "recency_preserving" | "
                                     # Example: 200K context × 0.75 × 0.20 = 30K tokens of tail preserved.
 # tool_prune_char_threshold = 200   # Tool-result content longer than this is replaced with a placeholder
                                     # when recency/structured modes prune the middle region.
-# summary_model = "openrouter/google/gemini-2.5-flash"  # Optional provider-qualified model ID used by
-                                                         # structured and llm_replace modes. When unset, the
-                                                         # session's primary model is used.
-# max_summary_tokens = 4096         # Max output tokens for the summary LLM call (0 = provider default).
+# summary_model = "openrouter/google/gemini-2.5-flash"  # RESERVED — auxiliary-model subsystem not yet wired
+                                                         # (tracked by beads issue moltis-8me). Setting this
+                                                         # today emits a one-shot runtime WARN and has no
+                                                         # effect on the structured / llm_replace strategies,
+                                                         # which still use the session's primary provider.
+# max_summary_tokens = 4096         # RESERVED — see summary_model above. Default is 4096 but the value
+                                    # is not yet applied to the streaming summary call.
 # show_settings_hint = true         # Append "Change chat.compaction.mode in moltis.toml…" to every
                                     # compaction notice (web UI card + channel messages). Default: true.
                                     # Set to false once you know the setting exists to hide the repetitive

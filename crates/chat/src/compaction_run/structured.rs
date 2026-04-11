@@ -107,15 +107,91 @@ fn iterative_instructions(previous_summary: &str) -> String {
     )
 }
 
-/// Extract a previous-compaction summary body from the first message of a
-/// history slice, if it looks like one.
-fn extract_previous_summary(history: &[Value]) -> Option<&str> {
-    let first = history.first()?;
-    if first.get("role").and_then(Value::as_str) != Some("user") {
-        return None;
+/// Default value of `max_summary_tokens` the user can leave untouched.
+/// Mirrors `default_compaction_max_summary_tokens` in `moltis_config::schema`
+/// so we can detect when the user has explicitly set something different.
+const DEFAULT_MAX_SUMMARY_TOKENS: u32 = 4_096;
+
+/// State shared across runs so the "summary_model is not wired yet"
+/// warning is emitted at most once per configuration, not on every
+/// compaction. Without this guard a long session that compacts ten
+/// times would spam the log ten times with the same notice.
+#[allow(clippy::type_complexity)]
+static WARNED_UNUSED_AUXILIARY_CONFIG: std::sync::OnceLock<
+    std::sync::Mutex<Option<(Option<String>, u32)>>,
+> = std::sync::OnceLock::new();
+
+/// Emit a one-shot runtime WARN when the user has set `summary_model`
+/// or a non-default `max_summary_tokens` but the `structured` strategy
+/// doesn't wire them yet.
+///
+/// The auxiliary-model subsystem is tracked by beads issue `moltis-8me`.
+/// Until that ships, `structured` always uses the session's primary
+/// provider regardless of these fields. Users who configured a cheap
+/// auxiliary model (e.g. "openrouter/google/gemini-2.5-flash") would
+/// otherwise silently fall through to the frontier model they use for
+/// coding, with a nasty billing surprise. The warning names the exact
+/// fields and the tracking issue so operators can either disable the
+/// config or wait for the feature to land.
+///
+/// The one-shot guard is keyed on the (model, max_tokens) tuple so
+/// mid-session config reloads that change the values re-emit the
+/// warning.
+fn warn_if_unused_auxiliary_model_config(config: &CompactionConfig) {
+    let model_set = config.summary_model.is_some();
+    let tokens_overridden = config.max_summary_tokens != DEFAULT_MAX_SUMMARY_TOKENS;
+    if !(model_set || tokens_overridden) {
+        return;
     }
-    let content = first.get("content").and_then(Value::as_str)?;
-    content.strip_prefix("[Conversation Summary]\n\n")
+
+    let state = WARNED_UNUSED_AUXILIARY_CONFIG.get_or_init(Default::default);
+    let key = (config.summary_model.clone(), config.max_summary_tokens);
+    let mut guard = match state.lock() {
+        Ok(g) => g,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    if guard.as_ref() == Some(&key) {
+        return;
+    }
+    *guard = Some(key);
+    drop(guard);
+
+    tracing::warn!(
+        summary_model = ?config.summary_model,
+        max_summary_tokens = config.max_summary_tokens,
+        "chat.compact: chat.compaction.summary_model / max_summary_tokens are reserved \
+         for the auxiliary-model subsystem (beads issue moltis-8me) and have no effect \
+         on the structured strategy yet — the session's primary provider will be used"
+    );
+}
+
+/// Extract the body of the most recent previous-compaction summary in
+/// `history`, if any exists.
+///
+/// Scans the entire history **in reverse** so iterative re-compaction
+/// picks up the newest summary regardless of where it lives. Structured
+/// mode splices the new summary at `head_end`, not index 0, so an older
+/// check that looked only at `history[0]` never fired for
+/// `structured → structured` chains (Greptile P2 on commit 0531913b).
+///
+/// Only matches user messages whose content starts with
+/// `[Conversation Summary]\n\n` — the prefix produced by every mode
+/// that wraps its output via [`build_summary_message`]. Recency-
+/// preserving's `[Conversation Compacted]` middle markers are
+/// intentionally ignored: they're not summaries, just elision notices,
+/// and feeding them back into the LLM as "previous summary" context
+/// would confuse the re-compaction prompt.
+///
+/// [`build_summary_message`]: super::shared::build_summary_message
+fn extract_previous_summary(history: &[Value]) -> Option<&str> {
+    history.iter().rev().find_map(|msg| {
+        if msg.get("role").and_then(Value::as_str) != Some("user") {
+            return None;
+        }
+        msg.get("content")
+            .and_then(Value::as_str)?
+            .strip_prefix("[Conversation Summary]\n\n")
+    })
 }
 
 /// Run the structured LLM-summary strategy against `history`.
@@ -131,6 +207,13 @@ pub(super) async fn run(
     context_window: u32,
     provider: &dyn LlmProvider,
 ) -> Result<CompactionOutcome, CompactionRunError> {
+    // Warn once if the user configured `summary_model` or a non-default
+    // `max_summary_tokens`: those fields are reserved for the auxiliary
+    // model subsystem tracked by beads issue moltis-8me and will not
+    // affect this run. The warning points at the tracking issue so users
+    // aren't misled by the field appearing in the config template.
+    warn_if_unused_auxiliary_model_config(config);
+
     let bounds = compute_boundaries(history, config, context_window);
     let HeadTailBounds {
         head_end,
@@ -162,10 +245,13 @@ pub(super) async fn run(
         });
     }
 
-    // Detect re-compaction: if the first head message is a previous
-    // compaction summary, include it in the prompt so the model can update
-    // sections instead of re-summarising from scratch.
-    let previous_summary = extract_previous_summary(&history[..head_end]);
+    // Detect re-compaction: if any message in the history looks like a
+    // previous compaction summary, include it in the prompt so the model
+    // can update sections instead of re-summarising from scratch.
+    // Scanning the full history (not just the head) is critical for
+    // `structured → structured` chains where the previous summary lives
+    // at `head_end`, inside the middle region we're about to re-summarise.
+    let previous_summary = extract_previous_summary(history);
 
     // Build the structured prompt. System message frames the task, middle
     // messages are passed via ChatMessage so role boundaries are preserved
@@ -209,6 +295,9 @@ pub(super) async fn run(
 
     // `config.max_summary_tokens` / `config.summary_model` aren't wired
     // into the provider stream yet — tracked by beads issue moltis-8me.
+    // The warn-on-configured check runs at the top of this function so
+    // users don't silently get default behaviour when they expected a
+    // cheaper auxiliary model.
     let _ = config.max_summary_tokens;
     let _ = config.summary_model.as_deref();
 
@@ -476,5 +565,71 @@ mod tests {
 
         let empty: Vec<Value> = Vec::new();
         assert_eq!(extract_previous_summary(&empty), None);
+    }
+
+    #[test]
+    fn extract_previous_summary_finds_summary_in_middle_of_history() {
+        // After a prior structured compaction, the summary lives at
+        // `head_end` (not index 0). Regression test for Greptile P2 on
+        // commit 0531913b — `extract_previous_summary` used to scan
+        // only `history[..head_end]` and never find it, so iterative
+        // structured→structured re-compaction silently fell through to
+        // first-compaction mode.
+        let history = vec![
+            json!({"role": "user", "content": "first user turn"}),
+            json!({"role": "assistant", "content": "first assistant reply"}),
+            json!({"role": "user", "content": "second user turn"}),
+            json!({
+                "role": "user",
+                "content": "[Conversation Summary]\n\n## Goal\nprior goal body",
+            }),
+            json!({"role": "user", "content": "newer user turn"}),
+            json!({"role": "assistant", "content": "newer assistant reply"}),
+        ];
+        assert_eq!(
+            extract_previous_summary(&history),
+            Some("## Goal\nprior goal body"),
+            "should find the previous summary at index 3 even though protect_head=3"
+        );
+    }
+
+    #[test]
+    fn extract_previous_summary_picks_newest_when_multiple_exist() {
+        // Defensive: if multiple prior summaries somehow survive in the
+        // history (e.g. a user pasted an older one into a message), the
+        // reverse walk picks the most recent. This matches
+        // `compaction_run::extract_summary_body` for the memory-file
+        // snapshot.
+        let history = vec![
+            json!({
+                "role": "user",
+                "content": "[Conversation Summary]\n\n## Goal\nold body",
+            }),
+            json!({"role": "user", "content": "recent user turn"}),
+            json!({
+                "role": "user",
+                "content": "[Conversation Summary]\n\n## Goal\nnew body",
+            }),
+        ];
+        assert_eq!(
+            extract_previous_summary(&history),
+            Some("## Goal\nnew body")
+        );
+    }
+
+    #[test]
+    fn extract_previous_summary_ignores_conversation_compacted_markers() {
+        // `[Conversation Compacted]` is the recency_preserving middle
+        // marker, not a real summary. Feeding it back into the LLM as
+        // "previous summary" context would confuse the re-compaction
+        // prompt. Only `[Conversation Summary]` should match.
+        let history = vec![
+            json!({
+                "role": "user",
+                "content": "[Conversation Compacted]\n\n6 earlier messages elided",
+            }),
+            json!({"role": "user", "content": "recent user turn"}),
+        ];
+        assert_eq!(extract_previous_summary(&history), None);
     }
 }

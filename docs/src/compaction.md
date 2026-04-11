@@ -167,8 +167,8 @@ protect_head = 3                    # Head messages kept verbatim (recency/struc
 protect_tail_min = 20               # Minimum tail messages kept verbatim (recency/structured).
 tail_budget_ratio = 0.20            # Tail size as fraction of threshold_percent × context_window.
 tool_prune_char_threshold = 200     # Middle tool results longer than this get placeholder-replaced.
-summary_model = "openrouter/google/gemini-2.5-flash"   # Optional cheap summary model for LLM modes.
-max_summary_tokens = 4096           # Max output tokens for LLM summary.
+summary_model = "openrouter/google/gemini-2.5-flash"   # RESERVED — see note below.
+max_summary_tokens = 4096           # RESERVED — see note below.
 show_settings_hint = true           # Show "Change chat.compaction.mode in moltis.toml…" footer.
 ```
 
@@ -224,8 +224,17 @@ tail-budget math inside recency-preserving and structured modes.
 
 ### Picking a summary model
 
-The `summary_model` knob only applies to `structured` and `llm_replace`.
-It takes a provider-qualified model identifier understood by the provider
+> ⚠️ **`summary_model` / `max_summary_tokens` are reserved for a
+> follow-up** — beads issue **moltis-8me**. They're present in the
+> config schema so you can start setting them today, but the
+> `structured` and `llm_replace` strategies currently **ignore** them
+> and always use the session's primary provider. Setting either field
+> to a non-default value triggers a one-shot runtime WARN that names
+> the fields and the tracking issue so you're not billed for the wrong
+> model without warning.
+
+When the auxiliary-model subsystem lands, `summary_model` will take
+a provider-qualified model identifier understood by the provider
 registry (e.g. `"openrouter/google/gemini-2.5-flash"`,
 `"anthropic/claude-3-5-haiku-20241022"`). Leave it unset to reuse the
 session's primary model.
