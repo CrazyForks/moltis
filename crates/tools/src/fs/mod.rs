@@ -703,6 +703,57 @@ mod contract_tests {
     }
 
     #[tokio::test]
+    async fn sandbox_grep_via_registry_dispatches_through_bridge() {
+        use {
+            crate::{
+                exec::ExecResult,
+                fs::sandbox_bridge::test_helpers::MockSandbox,
+                sandbox::{Sandbox, SandboxConfig, SandboxRouter},
+            },
+            std::sync::Arc,
+        };
+
+        let mock = MockSandbox::new(vec![ExecResult {
+            stdout: "/data/lib.rs:3:fn alpha()\n/data/lib.rs:9:fn beta()\n".to_string(),
+            stderr: String::new(),
+            exit_code: 0,
+        }]);
+        let backend: Arc<dyn Sandbox> = mock.clone();
+        let router = Arc::new(SandboxRouter::with_backend(
+            SandboxConfig::default(),
+            backend,
+        ));
+        router.set_override("sandboxed", true).await;
+
+        let mut registry = ToolRegistry::new();
+        register_fs_tools(&mut registry, FsToolsContext {
+            sandbox_router: Some(router),
+            ..FsToolsContext::default()
+        });
+
+        let grep = registry.get("Grep").unwrap();
+        let value = grep
+            .execute(json!({
+                "pattern": "fn",
+                "path": "/data",
+                "output_mode": "content",
+                "type": "rust",
+                "_session_key": "sandboxed",
+            }))
+            .await
+            .unwrap();
+
+        assert_eq!(value["mode"], "content");
+        let matches = value["matches"].as_array().unwrap();
+        assert_eq!(matches.len(), 2);
+        assert_eq!(matches[0]["line"], 3);
+        let cmd = mock.last_command().unwrap();
+        assert!(cmd.contains("-n"));
+        // `type=rust` → `--include='*.rs'`.
+        assert!(cmd.contains("--include="));
+    }
+
+    #[tokio::test]
     async fn sandbox_write_via_registry_sends_base64_to_bridge() {
         use {
             crate::{

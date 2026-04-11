@@ -246,6 +246,143 @@ pub async fn sandbox_list_files(
         .collect())
 }
 
+/// Output-mode discriminator for [`sandbox_grep`].
+///
+/// Mirrors `grep::OutputMode` but kept in the bridge so the bridge
+/// doesn't need a downward dependency on the tool module.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SandboxGrepMode {
+    /// Return one row per matching line as `{path, line, match}`.
+    Content,
+    /// Return just the file paths that had at least one match.
+    FilesWithMatches,
+    /// Return `{path, count}` per file with a positive match count.
+    Count,
+}
+
+/// Options for [`sandbox_grep`]. Kept minimal — context lines and
+/// multiline mode are not wired because they require either complex
+/// output parsing or post-filtering, and can land in a follow-up.
+#[derive(Debug, Clone)]
+pub struct SandboxGrepOptions<'a> {
+    pub pattern: &'a str,
+    pub path: &'a str,
+    pub mode: SandboxGrepMode,
+    pub case_insensitive: bool,
+    /// Shell-level `--include=GLOB` filter. Caller is responsible for
+    /// mapping `type` → glob before calling.
+    pub include_glob: Option<&'a str>,
+}
+
+/// Run `grep` inside the sandbox and return a typed payload shaped
+/// like the host `GrepTool` response.
+pub async fn sandbox_grep(
+    backend: &Arc<dyn Sandbox>,
+    id: &SandboxId,
+    opts: SandboxGrepOptions<'_>,
+) -> Result<Value> {
+    let pattern_q = shell_single_quote(opts.pattern);
+    let path_q = shell_single_quote(opts.path);
+    let mut flags: Vec<&str> = vec!["-r", "-E"];
+    if opts.case_insensitive {
+        flags.push("-i");
+    }
+    match opts.mode {
+        SandboxGrepMode::Content => {
+            flags.push("-n");
+            flags.push("-H");
+        },
+        SandboxGrepMode::FilesWithMatches => {
+            flags.push("-l");
+        },
+        SandboxGrepMode::Count => {
+            flags.push("-c");
+            flags.push("-H");
+        },
+    }
+    let include_arg = opts
+        .include_glob
+        .map(|g| format!("--include={}", shell_single_quote(g)))
+        .unwrap_or_default();
+    let flags_str = flags.join(" ");
+    // grep exits 0 on match, 1 on no match, 2 on error. Treat 0 and 1
+    // as success so empty-result calls don't error.
+    let script = format!(
+        "grep {flags_str} {include_arg} -- {pattern_q} {path_q} 2>/dev/null; \
+         rc=$?; if [ $rc -eq 1 ]; then exit 0; else exit $rc; fi"
+    );
+    let result = backend.exec(id, &script, &default_opts()).await?;
+    if result.exit_code != 0 {
+        let detail = if result.stderr.trim().is_empty() {
+            format!("grep exited with code {}", result.exit_code)
+        } else {
+            result.stderr.trim().to_string()
+        };
+        return Err(Error::message(format!("sandbox grep failed: {detail}")));
+    }
+
+    let lines: Vec<&str> = result
+        .stdout
+        .lines()
+        .map(str::trim_end)
+        .filter(|l| !l.is_empty())
+        .collect();
+
+    match opts.mode {
+        SandboxGrepMode::FilesWithMatches => Ok(json!({
+            "mode": "files_with_matches",
+            "files": lines.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
+            "truncated": false,
+        })),
+        SandboxGrepMode::Count => {
+            let mut counts = Vec::new();
+            for line in &lines {
+                // Format: "path:count"
+                if let Some((path, count_str)) = line.rsplit_once(':')
+                    && let Ok(count) = count_str.parse::<usize>()
+                    && count > 0
+                {
+                    counts.push(json!({
+                        "path": path,
+                        "count": count,
+                    }));
+                }
+            }
+            Ok(json!({
+                "mode": "count",
+                "counts": counts,
+                "truncated": false,
+            }))
+        },
+        SandboxGrepMode::Content => {
+            let mut matches = Vec::new();
+            for line in &lines {
+                // Format: "path:lineno:text"
+                let mut parts = line.splitn(3, ':');
+                let (Some(path), Some(lineno_str), Some(text)) =
+                    (parts.next(), parts.next(), parts.next())
+                else {
+                    continue;
+                };
+                let Ok(lineno) = lineno_str.parse::<usize>() else {
+                    continue;
+                };
+                matches.push(json!({
+                    "path": path,
+                    "line": lineno,
+                    "match": text,
+                    "block": vec![format!("{lineno}:{text}")],
+                }));
+            }
+            Ok(json!({
+                "mode": "content",
+                "matches": matches,
+                "truncated": false,
+            }))
+        },
+    }
+}
+
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 #[cfg(test)]
 pub(crate) mod test_helpers {
@@ -433,6 +570,102 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(payload["kind"], "path_denied");
+    }
+
+    #[tokio::test]
+    async fn sandbox_grep_files_with_matches_parses_paths() {
+        let mock = MockSandbox::new(vec![ExecResult {
+            stdout: "/data/a.rs\n/data/b.rs\n".to_string(),
+            stderr: String::new(),
+            exit_code: 0,
+        }]);
+        let backend: Arc<dyn Sandbox> = mock.clone();
+        let value = sandbox_grep(&backend, &test_id(), SandboxGrepOptions {
+            pattern: "foo",
+            path: "/data",
+            mode: SandboxGrepMode::FilesWithMatches,
+            case_insensitive: false,
+            include_glob: None,
+        })
+        .await
+        .unwrap();
+        assert_eq!(value["mode"], "files_with_matches");
+        let files = value["files"].as_array().unwrap();
+        assert_eq!(files.len(), 2);
+        assert!(mock.last_command().unwrap().contains("-l"));
+    }
+
+    #[tokio::test]
+    async fn sandbox_grep_content_parses_line_numbers() {
+        let mock = MockSandbox::new(vec![ExecResult {
+            stdout: "/data/a.rs:3:fn alpha()\n/data/a.rs:7:fn beta()\n".to_string(),
+            stderr: String::new(),
+            exit_code: 0,
+        }]);
+        let backend: Arc<dyn Sandbox> = mock.clone();
+        let value = sandbox_grep(&backend, &test_id(), SandboxGrepOptions {
+            pattern: "fn",
+            path: "/data",
+            mode: SandboxGrepMode::Content,
+            case_insensitive: false,
+            include_glob: Some("*.rs"),
+        })
+        .await
+        .unwrap();
+        assert_eq!(value["mode"], "content");
+        let matches = value["matches"].as_array().unwrap();
+        assert_eq!(matches.len(), 2);
+        assert_eq!(matches[0]["line"], 3);
+        assert_eq!(matches[0]["match"], "fn alpha()");
+        let cmd = mock.last_command().unwrap();
+        assert!(cmd.contains("-n"));
+        assert!(cmd.contains("--include="));
+    }
+
+    #[tokio::test]
+    async fn sandbox_grep_count_filters_zero_matches() {
+        let mock = MockSandbox::new(vec![ExecResult {
+            stdout: "/data/a.rs:5\n/data/b.rs:0\n/data/c.rs:2\n".to_string(),
+            stderr: String::new(),
+            exit_code: 0,
+        }]);
+        let backend: Arc<dyn Sandbox> = mock;
+        let value = sandbox_grep(&backend, &test_id(), SandboxGrepOptions {
+            pattern: "foo",
+            path: "/data",
+            mode: SandboxGrepMode::Count,
+            case_insensitive: true,
+            include_glob: None,
+        })
+        .await
+        .unwrap();
+        let counts = value["counts"].as_array().unwrap();
+        assert_eq!(counts.len(), 2);
+        assert_eq!(counts[0]["path"], "/data/a.rs");
+        assert_eq!(counts[0]["count"], 5);
+        assert_eq!(counts[1]["path"], "/data/c.rs");
+        assert_eq!(counts[1]["count"], 2);
+    }
+
+    #[tokio::test]
+    async fn sandbox_grep_no_match_is_ok_empty() {
+        // grep exits 1 on no match — bridge script maps that to exit 0.
+        let mock = MockSandbox::new(vec![ExecResult {
+            stdout: String::new(),
+            stderr: String::new(),
+            exit_code: 0,
+        }]);
+        let backend: Arc<dyn Sandbox> = mock;
+        let value = sandbox_grep(&backend, &test_id(), SandboxGrepOptions {
+            pattern: "needle",
+            path: "/data",
+            mode: SandboxGrepMode::FilesWithMatches,
+            case_insensitive: false,
+            include_glob: None,
+        })
+        .await
+        .unwrap();
+        assert_eq!(value["files"].as_array().unwrap().len(), 0);
     }
 
     #[tokio::test]

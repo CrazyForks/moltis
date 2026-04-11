@@ -32,7 +32,10 @@ use moltis_metrics::{counter, labels, tools as tools_metrics};
 use crate::{
     Result,
     error::Error,
-    fs::shared::{FsPathPolicy, enforce_path_policy_deny_only, require_absolute},
+    fs::{
+        sandbox_bridge::{SandboxGrepMode, SandboxGrepOptions, ensure_sandbox, sandbox_grep},
+        shared::{FsPathPolicy, enforce_path_policy_deny_only, require_absolute, session_key_from},
+    },
     sandbox::SandboxRouter,
 };
 
@@ -88,10 +91,8 @@ pub struct GrepTool {
     path_policy: Option<FsPathPolicy>,
     /// Whether to respect `.gitignore` while walking. Default `true`.
     respect_gitignore: bool,
-    /// Sandbox routing for future phase 2b. Currently unused — Grep
-    /// sandbox routing requires parsing the container's `grep` output
-    /// across three different modes and is tracked in a follow-up bead.
-    #[allow(dead_code)]
+    /// When set and the session is sandboxed, dispatch through the
+    /// bridge's `sandbox_grep` helper instead of walking the host.
     sandbox_router: Option<Arc<SandboxRouter>>,
 }
 
@@ -133,8 +134,8 @@ impl GrepTool {
         self
     }
 
-    /// Attach a shared [`SandboxRouter`]. Currently a no-op — Grep
-    /// sandbox routing is tracked as a phase 2b follow-up bead.
+    /// Attach a shared [`SandboxRouter`]. Sandboxed sessions dispatch
+    /// through the bridge's `sandbox_grep` helper.
     #[must_use]
     pub fn with_sandbox_router(mut self, router: Arc<SandboxRouter>) -> Self {
         self.sandbox_router = Some(router);
@@ -353,6 +354,28 @@ fn apply_head_offset<T: Clone>(
     (capped.to_vec(), truncated)
 }
 
+/// Map a `type` filter to a single grep `--include` glob. Returns
+/// `None` when the type doesn't map to a simple one-extension glob —
+/// the caller then falls back to no include filter and grep scans
+/// everything.
+fn type_to_include_glob(ty: &str) -> Option<&'static str> {
+    match ty {
+        "rust" => Some("*.rs"),
+        "py" | "python" => Some("*.py"),
+        "go" => Some("*.go"),
+        "java" => Some("*.java"),
+        "md" => Some("*.md"),
+        "toml" => Some("*.toml"),
+        "json" => Some("*.json"),
+        "html" => Some("*.html"),
+        "css" => Some("*.css"),
+        "sh" => Some("*.sh"),
+        // js/ts/jsx/tsx/cpp/c would need multiple globs; skip here
+        // and let the sandbox path do a broader scan.
+        _ => None,
+    }
+}
+
 fn file_matches_type(path: &Path, ty: &str) -> bool {
     let Some(ext) = path.extension().and_then(|e| e.to_str()) else {
         return false;
@@ -527,6 +550,43 @@ impl AgentTool for GrepTool {
             .and_then(Value::as_u64)
             .map(|n| n as usize)
             .unwrap_or(0);
+
+        // Sandbox dispatch: shell grep into the container. Context
+        // lines, multiline mode, head_limit/offset are not honored on
+        // the sandbox path in this revision — they can land in a
+        // follow-up if demand materializes.
+        if let Some(ref router) = self.sandbox_router {
+            let session_key = session_key_from(&params).to_string();
+            if router.is_sandboxed(&session_key).await {
+                let (backend, id) = ensure_sandbox(router, &session_key).await?;
+                let path_str = path
+                    .to_str()
+                    .ok_or_else(|| Error::message("Grep 'path' contains invalid UTF-8"))?;
+                let mode = match output_mode {
+                    OutputMode::Content => SandboxGrepMode::Content,
+                    OutputMode::FilesWithMatches => SandboxGrepMode::FilesWithMatches,
+                    OutputMode::Count => SandboxGrepMode::Count,
+                };
+                // Map `type` to a grep --include glob. `glob` takes
+                // precedence when both are set.
+                let include_glob_owned: Option<String> =
+                    match params.get("glob").and_then(Value::as_str) {
+                        Some(g) => Some(g.to_string()),
+                        None => file_type
+                            .as_deref()
+                            .and_then(type_to_include_glob)
+                            .map(str::to_string),
+                    };
+                return Ok(sandbox_grep(&backend, &id, SandboxGrepOptions {
+                    pattern: &pattern,
+                    path: path_str,
+                    mode,
+                    case_insensitive,
+                    include_glob: include_glob_owned.as_deref(),
+                })
+                .await?);
+            }
+        }
 
         let opts = GrepOptions {
             pattern,
