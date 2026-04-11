@@ -1,4 +1,4 @@
-// ── Attribution ───────────────────────────────────────────��──────────
+// ── Attribution ──────────────────────────────────────────────────────
 // Deterministic compaction extraction adapted from claw-code (ultraworkers/claw-code).
 // Original source: rust/crates/runtime/src/compact.rs
 // License: MIT — Copyright (c) ultraworkers
@@ -127,9 +127,13 @@ pub fn merge_compact_summaries(existing_summary: Option<&str>, new_summary: &str
 /// Perform deterministic compaction on a message history slice.
 ///
 /// Extracts any existing summary, summarizes remaining messages, merges them.
-/// Returns the merged summary string (before budget enforcement), or `None` if empty.
+/// Returns the merged summary string (before budget enforcement), or `None`
+/// if the input history is empty or the result would be empty.
 #[must_use]
 pub fn compute_compaction_summary(history: &[Value]) -> Option<String> {
+    if history.is_empty() {
+        return None;
+    }
     let existing = extract_existing_compacted_summary(history);
     let start = usize::from(existing.is_some());
     let new_summary = summarize_messages(&history[start..]);
@@ -201,9 +205,19 @@ pub fn extract_existing_compacted_summary(history: &[Value]) -> Option<String> {
                 .starts_with(COMPACT_CONTINUATION_PREAMBLE)
                 .then(|| &content[COMPACT_CONTINUATION_PREAMBLE.len()..])
         })?;
+    // Strip the trailing directive and (optional) recent-messages note.
+    // Trimming whitespace between each strip is important: the continuation
+    // builder separates the summary, note, and directive with plain newlines,
+    // so a naïve `trim_end_matches` of the exact constants would miss when a
+    // `\n` sits between a match and the end of the string.
+    let summary_text = summary_text.trim_end();
     let summary_text = summary_text
-        .trim_end_matches(COMPACT_DIRECT_RESUME_INSTRUCTION)
-        .trim_end_matches(COMPACT_RECENT_MESSAGES_NOTE);
+        .strip_suffix(COMPACT_DIRECT_RESUME_INSTRUCTION)
+        .unwrap_or(summary_text)
+        .trim_end();
+    let summary_text = summary_text
+        .strip_suffix(COMPACT_RECENT_MESSAGES_NOTE)
+        .unwrap_or(summary_text);
     let summary = summary_text.trim();
     if summary.is_empty() {
         return None;
@@ -216,8 +230,66 @@ pub fn extract_existing_compacted_summary(history: &[Value]) -> Option<String> {
 /// Enforces: max 1,200 chars total, max 24 lines, max 160 chars per line.
 /// Deduplicates lines (case-insensitive), preserves headers and bullets,
 /// and appends an omission notice when lines are dropped.
+///
+/// If the input is wrapped in `<summary>...</summary>`, the wrapper is
+/// stripped before compression and re-applied after, so budget-driven
+/// line dropping can never reorder the tags relative to the body.
 #[must_use]
 pub fn compress_summary(text: &str) -> String {
+    let text = text.trim();
+    if text.is_empty() {
+        return String::new();
+    }
+
+    // Detect and strip outer <summary>/</summary> wrapper. Without this the
+    // budget-enforcement pass could bucket both tags as headers and emit them
+    // adjacently at the top of the result, leaving the body outside the tags.
+    let (has_open, has_close, inner) = split_summary_wrapper(text);
+
+    // Reserve budget for the wrapper tags we'll re-apply at the end. Each
+    // reserved tag costs its own line plus a joining newline.
+    let mut wrapper_lines = 0usize;
+    let mut wrapper_chars = 0usize;
+    if has_open {
+        wrapper_lines += 1;
+        wrapper_chars += "<summary>".len() + 1;
+    }
+    if has_close {
+        wrapper_lines += 1;
+        wrapper_chars += "</summary>".len() + 1;
+    }
+    let inner_max_lines = SUMMARY_MAX_LINES.saturating_sub(wrapper_lines);
+    let inner_max_chars = SUMMARY_MAX_CHARS.saturating_sub(wrapper_chars);
+
+    let compressed = compress_body(inner, inner_max_chars, inner_max_lines);
+
+    match (has_open, has_close) {
+        (true, true) => format!("<summary>\n{compressed}\n</summary>"),
+        (true, false) => format!("<summary>\n{compressed}"),
+        (false, true) => format!("{compressed}\n</summary>"),
+        (false, false) => compressed,
+    }
+}
+
+/// Detect the `<summary>`/`</summary>` wrapper on a trimmed summary string.
+///
+/// Returns `(has_open, has_close, inner)` where `inner` has had any matched
+/// wrapper lines removed.
+fn split_summary_wrapper(text: &str) -> (bool, bool, &str) {
+    let (has_open, after_open) = text
+        .strip_prefix("<summary>\n")
+        .map_or((false, text), |rest| (true, rest));
+    let (has_close, inner) = after_open
+        .strip_suffix("\n</summary>")
+        .map_or((false, after_open), |rest| (true, rest));
+    (has_open, has_close, inner)
+}
+
+/// Budget-enforce a plain (already-unwrapped) compaction body.
+///
+/// Same semantics as the public wrapper but with explicit limits so the
+/// caller can reserve space for any outer wrapping.
+fn compress_body(text: &str, max_chars: usize, max_lines: usize) -> String {
     let text = text.trim();
     if text.is_empty() {
         return String::new();
@@ -241,7 +313,7 @@ pub fn compress_summary(text: &str) -> String {
 
     // Step 2: check if already within budget.
     let joined = deduped.join("\n");
-    if deduped.len() <= SUMMARY_MAX_LINES && joined.len() <= SUMMARY_MAX_CHARS {
+    if deduped.len() <= max_lines && joined.len() <= max_chars {
         return joined;
     }
 
@@ -253,7 +325,7 @@ pub fn compress_summary(text: &str) -> String {
 
     for line in deduped {
         let trimmed = line.trim_start();
-        if trimmed == "<summary>" || trimmed == "</summary>" || trimmed.starts_with('#') {
+        if trimmed.starts_with('#') {
             headers.push(line);
         } else if trimmed.starts_with(['-', '*', '\u{2022}']) {
             bullets.push(line);
@@ -270,8 +342,8 @@ pub fn compress_summary(text: &str) -> String {
     let header_count = headers.len();
 
     // Check if keeping all candidates fits.
-    if header_count + candidates.len() <= SUMMARY_MAX_LINES
-        && total_join_len(&headers, &candidates) <= SUMMARY_MAX_CHARS
+    if header_count + candidates.len() <= max_lines
+        && total_join_len(&headers, &candidates) <= max_chars
     {
         let mut result = headers;
         result.extend(candidates);
@@ -284,13 +356,13 @@ pub fn compress_summary(text: &str) -> String {
     for drop_count in 1..=candidates.len() {
         let keep = &candidates[..candidates.len() - drop_count];
         let line_count = header_count + keep.len() + 1;
-        if line_count > SUMMARY_MAX_LINES {
+        if line_count > max_lines {
             continue;
         }
 
         let notice = omission_notice(drop_count);
         let len = total_join_len(&headers, keep) + notice.len() + 1;
-        if len <= SUMMARY_MAX_CHARS {
+        if len <= max_chars {
             let mut result = headers;
             result.extend(keep.iter().cloned());
             result.push(notice);
@@ -299,15 +371,18 @@ pub fn compress_summary(text: &str) -> String {
     }
 
     // Edge case: even dropping all candidates, headers alone are too long.
+    // Reserve space for the worst-case notice (all candidates AND every header
+    // dropped) so the final notice can never push us past `max_chars`.
     let all_dropped = candidates.len();
+    let max_possible_drops = all_dropped + headers.len();
+    let notice_len = omission_notice(max_possible_drops).len() + 1;
+    let mut budget = max_chars.saturating_sub(notice_len);
+
     let mut result: Vec<String> = Vec::new();
     let mut header_drops = 0usize;
-    let notice_len = omission_notice(all_dropped).len() + 1;
-    let mut budget = SUMMARY_MAX_CHARS.saturating_sub(notice_len);
-
     for line in &headers {
         let needed = line.len() + usize::from(!result.is_empty());
-        if needed > budget || result.len() + 1 >= SUMMARY_MAX_LINES {
+        if needed > budget || result.len() + 1 >= max_lines {
             header_drops += 1;
             continue;
         }
@@ -413,6 +488,11 @@ fn extract_content_preview(message: &Value) -> String {
 }
 
 /// Collect unique, sorted tool names from message history.
+///
+/// Pulls names from assistant `tool_calls[].function.name` on any message and
+/// from `tool_name`/`name` only on tool-result messages — the OpenAI format
+/// uses `name` on user messages too, which would otherwise leak user handles
+/// into the "Tools mentioned" field.
 fn collect_unique_tool_names(messages: &[Value]) -> Vec<&str> {
     let mut names: Vec<&str> = messages
         .iter()
@@ -429,11 +509,13 @@ fn collect_unique_tool_names(messages: &[Value]) -> Vec<&str> {
                     }
                 }
             }
-            if let Some(name) = m.get("tool_name").and_then(Value::as_str) {
-                out.push(name);
-            }
-            if let Some(name) = m.get("name").and_then(Value::as_str) {
-                out.push(name);
+            if is_tool_role(m) {
+                if let Some(name) = m.get("tool_name").and_then(Value::as_str) {
+                    out.push(name);
+                }
+                if let Some(name) = m.get("name").and_then(Value::as_str) {
+                    out.push(name);
+                }
             }
             out
         })
@@ -441,6 +523,14 @@ fn collect_unique_tool_names(messages: &[Value]) -> Vec<&str> {
     names.sort_unstable();
     names.dedup();
     names
+}
+
+/// True if a message's role is `tool` or `tool_result`.
+fn is_tool_role(message: &Value) -> bool {
+    matches!(
+        message.get("role").and_then(Value::as_str),
+        Some("tool" | "tool_result")
+    )
 }
 
 /// Collect recent text previews for messages matching a given role.
@@ -693,6 +783,7 @@ fn strip_tag_block(content: &str, tag: &str) -> String {
     content.to_string()
 }
 
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 #[cfg(test)]
 mod tests {
     use {super::*, serde_json::json};
@@ -1006,20 +1097,15 @@ mod tests {
             make_user("how are you"),
             make_assistant("doing well"),
         ];
-        let result = compute_compaction_summary(&history);
-        assert!(result.is_some());
-        let summary = result.unwrap();
+        let summary = compute_compaction_summary(&history).expect("basic history compacts");
         assert!(summary.contains("<summary>"));
         assert!(summary.contains("Scope: 4 earlier messages"));
     }
 
     #[test]
     fn compute_compaction_summary_empty() {
-        // Empty history produces a summary with zero counts, not None.
-        // The function only returns None when the trimmed result is empty.
-        let result = compute_compaction_summary(&[]);
-        assert!(result.is_some());
-        assert!(result.unwrap().contains("user=0"));
+        // Empty history returns None so callers can surface a meaningful error.
+        assert!(compute_compaction_summary(&[]).is_none());
     }
 
     // ── summarize_messages timeline truncation ──────────────────────
@@ -1044,31 +1130,52 @@ mod tests {
 
     #[test]
     fn extract_existing_compacted_summary_preamble_format() {
-        let preamble = format!(
-            "This session is being continued from a previous conversation that ran out of context. \
-             The summary below covers the earlier portion of the conversation.\n\nSome summary content"
-        );
+        let content = "This session is being continued from a previous conversation that ran out of context. \
+             The summary below covers the earlier portion of the conversation.\n\nSome summary content";
         let history = vec![json!({
             "role": "user",
-            "content": preamble
+            "content": content,
         })];
-        let result = extract_existing_compacted_summary(&history).unwrap();
+        let result =
+            extract_existing_compacted_summary(&history).expect("preamble-only format extracts");
         assert_eq!(result, "Some summary content");
         assert!(!result.contains("continued from a previous"));
     }
 
     #[test]
     fn extract_existing_compacted_summary_strips_full_wrapping() {
-        // Simulates the actual persisted format: prefix + preamble + summary + directive.
-        let content = format!(
-            "[Conversation Summary]\n\n{}\n\n<summary>Actual summary here</summary>\n\n{}",
-            COMPACT_CONTINUATION_PREAMBLE.trim(),
-            COMPACT_DIRECT_RESUME_INSTRUCTION.trim(),
-        );
-        let history = vec![json!({ "role": "user", "content": &content })];
-        let result = extract_existing_compacted_summary(&history).unwrap();
+        // Build the actual persisted shape via the same helper production uses,
+        // so the test exercises the real round-trip instead of a hand-rolled
+        // approximation that could drift from the builder.
+        let raw_summary = "<summary>Actual summary here</summary>";
+        let continuation = get_compact_continuation_message(raw_summary, false);
+        let persisted = format!("[Conversation Summary]\n\n{continuation}");
+        let history = vec![json!({ "role": "user", "content": persisted })];
+
+        let result =
+            extract_existing_compacted_summary(&history).expect("production wrapping extracts");
         assert!(result.contains("Actual summary here"));
         assert!(!result.contains("continued from a previous"));
+        assert!(!result.contains("Continue the conversation from where it left off"));
+    }
+
+    #[test]
+    fn extract_existing_compacted_summary_recent_messages_preserved() {
+        // When recent_messages_preserved=true, the note sits between the
+        // summary and the resume directive separated by newlines — the suffix
+        // stripping must still peel off both, not just the directive.
+        let raw_summary = "<summary>Inner body</summary>";
+        let continuation = get_compact_continuation_message(raw_summary, true);
+        let persisted = format!("[Conversation Summary]\n\n{continuation}");
+        let history = vec![json!({ "role": "user", "content": persisted })];
+
+        let result =
+            extract_existing_compacted_summary(&history).expect("recent-preserved extracts");
+        assert!(result.contains("Inner body"));
+        assert!(
+            !result.contains("Recent messages are preserved verbatim"),
+            "recent-messages note must be stripped, got: {result}"
+        );
         assert!(!result.contains("Continue the conversation from where it left off"));
     }
 
@@ -1207,16 +1314,14 @@ mod tests {
             .lines()
             .filter(|l| {
                 let t = l.trim_start();
-                !t.is_empty()
-                    && !t.starts_with('#')
-                    && !t.starts_with('-')
-                    && !t.starts_with("[")
+                !t.is_empty() && !t.starts_with('#') && !t.starts_with('-') && !t.starts_with("[")
             })
             .collect();
 
         // All 10 bullets must survive since they have higher priority.
         assert_eq!(
-            retained_bullets.len(), 10,
+            retained_bullets.len(),
+            10,
             "all bullets should be retained when there are fewer bullets than budget space"
         );
         // Some plain lines must be dropped (only 23 slots for 30 non-header lines).
@@ -1264,17 +1369,25 @@ mod tests {
 
         let result = compress_summary(&input);
         assert!(
-            result.contains("<summary>"),
-            "opening <summary> tag must be preserved, got: {result}"
+            result.starts_with("<summary>\n"),
+            "opening <summary> must remain at the start, got: {result}"
         );
         assert!(
-            result.contains("</summary>"),
-            "closing </summary> tag must be preserved, got: {result}"
+            result.ends_with("\n</summary>"),
+            "closing </summary> must remain at the end, got: {result}"
         );
         assert!(
             result.len() <= 1_200,
             "result must fit within budget, got {} chars",
             result.len()
+        );
+
+        // The tag wrapping must still be parseable structurally — i.e. the
+        // body text should live *between* the tags, not after the closing tag.
+        let inner = extract_tag_block(&result, "summary").expect("summary tags wrap content");
+        assert!(
+            inner.contains("- Scope: 50 messages"),
+            "body content must be inside <summary>...</summary>, got: {inner}"
         );
     }
 }
