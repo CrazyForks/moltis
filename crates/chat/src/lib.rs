@@ -4960,7 +4960,7 @@ impl ChatService for LiveChatService {
         // Discover enabled skills/plugins (only if provider supports tools and
         // `[skills] enabled` is true — see #655).
         let skills_list: Vec<Value> = if supports_tools {
-            discover_skills_if_enabled(&moltis_config::discover_and_load())
+            discover_skills_if_enabled(&config)
                 .await
                 .iter()
                 .map(|s| {
