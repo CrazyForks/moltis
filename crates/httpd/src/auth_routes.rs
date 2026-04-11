@@ -220,6 +220,7 @@ async fn setup_handler(
                 Ok(rk) => {
                     tracing::info!("vault initialized");
                     run_vault_env_migration(&state).await;
+                    start_stored_channels_on_vault_unseal(&state).await;
                     Some(rk.phrase().to_owned())
                 },
                 Err(moltis_vault::VaultError::AlreadyInitialized) => {
@@ -297,6 +298,7 @@ async fn login_handler(
                     Ok(()) => {
                         tracing::info!("vault unsealed on login");
                         run_vault_env_migration(&state).await;
+                        start_stored_channels_on_vault_unseal(&state).await;
                     },
                     Err(e) => {
                         tracing::debug!(error = %e, "vault unseal on login skipped");
@@ -399,6 +401,7 @@ async fn change_password_handler(
                         Ok(rk) => {
                             tracing::info!("vault initialized on first password set");
                             run_vault_env_migration(&state).await;
+                            start_stored_channels_on_vault_unseal(&state).await;
                             Some(rk.phrase().to_owned())
                         },
                         Err(moltis_vault::VaultError::AlreadyInitialized) => {
@@ -1024,6 +1027,7 @@ async fn vault_unlock_handler(
     match vault.unseal(&body.password).await {
         Ok(()) => {
             run_vault_env_migration(&state).await;
+            start_stored_channels_on_vault_unseal(&state).await;
             Json(serde_json::json!({ "ok": true })).into_response()
         },
         Err(moltis_vault::VaultError::BadCredential) => {
@@ -1050,6 +1054,7 @@ async fn vault_recovery_handler(
     match vault.unseal_with_recovery(&body.recovery_key).await {
         Ok(()) => {
             run_vault_env_migration(&state).await;
+            start_stored_channels_on_vault_unseal(&state).await;
             Json(serde_json::json!({ "ok": true })).into_response()
         },
         Err(moltis_vault::VaultError::BadCredential) => {
@@ -1081,6 +1086,72 @@ async fn run_vault_env_migration(state: &AuthState) {
             Err(e) => {
                 tracing::warn!(error = %e, "ssh key migration failed");
             },
+        }
+    }
+}
+
+/// Start stored channel accounts after vault unseal.
+///
+/// When the vault is unsealed, previously encrypted channel configs become
+/// decryptable. This function reads all stored channels and starts any that
+/// aren't already running in the channel registry. This is the counterpart to
+/// the startup-time channel loading in `server.rs` — it handles the case where
+/// the vault was sealed at startup and channels couldn't be started then.
+#[cfg(feature = "vault")]
+async fn start_stored_channels_on_vault_unseal(state: &AuthState) {
+    let Some(registry) = state.gateway_state.services.channel_registry.as_ref() else {
+        tracing::debug!("no channel registry available, skipping channel startup on vault unseal");
+        return;
+    };
+    let Some(store) = state.gateway_state.services.channel_store.as_ref() else {
+        tracing::debug!("no channel store available, skipping channel startup on vault unseal");
+        return;
+    };
+
+    let stored = match store.list().await {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to list stored channels on vault unseal");
+            return;
+        },
+    };
+
+    if stored.is_empty() {
+        return;
+    }
+
+    for ch in stored {
+        // Skip channel types with no registered plugin.
+        if registry.get(&ch.channel_type).is_none() {
+            tracing::warn!(
+                account_id = ch.account_id,
+                channel_type = ch.channel_type,
+                "unsupported channel type on vault unseal, skipping stored account"
+            );
+            continue;
+        }
+
+        // Skip accounts that are already running.
+        if registry.resolve_channel_type(&ch.account_id).is_some() {
+            continue;
+        }
+
+        tracing::info!(
+            account_id = ch.account_id,
+            channel_type = ch.channel_type,
+            "starting stored channel on vault unseal"
+        );
+
+        if let Err(e) = registry
+            .start_account(&ch.channel_type, &ch.account_id, ch.config)
+            .await
+        {
+            tracing::warn!(
+                account_id = ch.account_id,
+                channel_type = ch.channel_type,
+                error = %e,
+                "failed to start stored channel on vault unseal"
+            );
         }
     }
 }
