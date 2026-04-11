@@ -30,7 +30,7 @@ pub use {
         ChannelMessageMeta, ChannelOtpProvider, ChannelOutbound, ChannelPlugin, ChannelReplyTarget,
         ChannelStatus, ChannelStreamOutbound, ChannelThreadContext, ChannelType, InboundMode,
         InteractiveButton, InteractiveMessage, StreamEvent, StreamReceiver, StreamSender,
-        ThreadMessage,
+        ThreadMessage, resolve_session_channel_binding, web_session_channel_binding,
     },
     registry::{ChannelRegistry, RegistryOutboundRouter},
 };

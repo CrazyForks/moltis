@@ -1134,70 +1134,63 @@ fn prompt_build_limits_from_config(config: &moltis_config::MoltisConfig) -> Prom
     }
 }
 
-#[derive(Default)]
-struct ChannelRuntimeContext {
-    surface: Option<String>,
-    session_kind: Option<String>,
-    channel_type: Option<String>,
-    channel_account_id: Option<String>,
-    channel_chat_id: Option<String>,
-    channel_chat_type: Option<String>,
-}
-
-fn infer_channel_chat_type(channel_type: &str, chat_id: &str) -> Option<String> {
-    if channel_type.eq_ignore_ascii_case("telegram") {
-        if chat_id.starts_with("-100") {
-            return Some("channel_or_supergroup".to_string());
-        }
-        if chat_id.starts_with('-') {
-            return Some("group".to_string());
-        }
-        return Some("private".to_string());
-    }
-    None
-}
-
 fn resolve_channel_runtime_context(
     session_key: &str,
     session_entry: Option<&SessionEntry>,
-) -> ChannelRuntimeContext {
-    if session_key == "cron:heartbeat" {
-        return ChannelRuntimeContext {
-            surface: Some("heartbeat".to_string()),
-            session_kind: Some("cron".to_string()),
-            ..Default::default()
-        };
+) -> moltis_common::hooks::ChannelBinding {
+    match moltis_channels::resolve_session_channel_binding(
+        session_key,
+        session_entry.and_then(|entry| entry.channel_binding.as_deref()),
+    ) {
+        Ok(binding) => binding,
+        Err(error) => {
+            warn!(
+                error = %error,
+                session = %session_key,
+                "failed to parse channel_binding JSON; falling back to web"
+            );
+            moltis_channels::web_session_channel_binding()
+        },
     }
+}
 
-    if session_key.starts_with("cron:") {
-        return ChannelRuntimeContext {
-            surface: Some("cron".to_string()),
-            session_kind: Some("cron".to_string()),
-            ..Default::default()
-        };
-    }
+fn channel_binding_from_runtime_context(
+    runtime_context: Option<&PromptRuntimeContext>,
+) -> Option<moltis_common::hooks::ChannelBinding> {
+    let host = &runtime_context?.host;
+    let binding = moltis_common::hooks::ChannelBinding {
+        surface: host.surface.clone(),
+        session_kind: host.session_kind.clone(),
+        channel_type: host.channel_type.clone(),
+        account_id: host.channel_account_id.clone(),
+        chat_id: host.channel_chat_id.clone(),
+        chat_type: host.channel_chat_type.clone(),
+        sender_id: None,
+    };
+    (!binding.is_empty()).then_some(binding)
+}
 
-    if let Some(binding_json) = session_entry.and_then(|entry| entry.channel_binding.as_deref())
-        && let Ok(binding) =
-            serde_json::from_str::<moltis_channels::ChannelReplyTarget>(binding_json)
+fn build_tool_context(
+    session_key: &str,
+    accept_language: Option<&str>,
+    conn_id: Option<&str>,
+    runtime_context: Option<&PromptRuntimeContext>,
+) -> Value {
+    let mut tool_context = serde_json::json!({
+        "_session_key": session_key,
+    });
+    if let Some(channel_binding) = channel_binding_from_runtime_context(runtime_context)
+        && let Ok(channel_value) = serde_json::to_value(channel_binding)
     {
-        let channel_type = binding.channel_type.as_str().to_string();
-        let chat_id = binding.chat_id;
-        return ChannelRuntimeContext {
-            surface: Some(channel_type.clone()),
-            session_kind: Some("channel".to_string()),
-            channel_chat_type: infer_channel_chat_type(&channel_type, &chat_id),
-            channel_type: Some(channel_type),
-            channel_account_id: Some(binding.account_id),
-            channel_chat_id: Some(chat_id),
-        };
+        tool_context["_channel"] = channel_value;
     }
-
-    ChannelRuntimeContext {
-        surface: Some("web".to_string()),
-        session_kind: Some("web".to_string()),
-        ..Default::default()
+    if let Some(lang) = accept_language {
+        tool_context["_accept_language"] = serde_json::json!(lang);
     }
+    if let Some(cid) = conn_id {
+        tool_context["_conn_id"] = serde_json::json!(cid);
+    }
+    tool_context
 }
 
 async fn build_prompt_runtime_context(
@@ -1269,9 +1262,9 @@ async fn build_prompt_runtime_context(
         surface: channel_context.surface,
         session_kind: channel_context.session_kind,
         channel_type: channel_context.channel_type,
-        channel_account_id: channel_context.channel_account_id,
-        channel_chat_id: channel_context.channel_chat_id,
-        channel_chat_type: channel_context.channel_chat_type,
+        channel_account_id: channel_context.account_id,
+        channel_chat_id: channel_context.chat_id,
+        channel_chat_type: channel_context.chat_type,
         data_dir: Some(data_dir_display),
         sudo_non_interactive,
         sudo_status,
@@ -3586,14 +3579,21 @@ impl ChatService for LiveChatService {
         // Hook errors are treated as fail-open: a broken hook must not be
         // able to wedge every inbound message. See GH #639.
         if let Some(ref hooks) = self.hook_registry {
+            let session_entry = self.session_metadata.get(&session_key).await;
             let channel = params
                 .get("channel")
                 .and_then(|v| v.as_str())
                 .map(String::from);
+            let channel_binding = Some(resolve_channel_runtime_context(
+                &session_key,
+                session_entry.as_ref(),
+            ))
+            .filter(|binding| !binding.is_empty());
             let payload = moltis_common::hooks::HookPayload::MessageReceived {
                 session_key: session_key.clone(),
                 content: text.clone(),
                 channel,
+                channel_binding,
             };
             match hooks.dispatch(&payload).await {
                 Ok(moltis_common::hooks::HookAction::Continue) => {},
@@ -6878,15 +6878,12 @@ async fn run_with_tools(
 
     // Inject session key and accept-language into tool call params so tools can
     // resolve per-session state and forward the user's locale to web requests.
-    let mut tool_context = serde_json::json!({
-        "_session_key": session_key,
-    });
-    if let Some(lang) = accept_language.as_deref() {
-        tool_context["_accept_language"] = serde_json::json!(lang);
-    }
-    if let Some(cid) = conn_id.as_deref() {
-        tool_context["_conn_id"] = serde_json::json!(cid);
-    }
+    let tool_context = build_tool_context(
+        session_key,
+        accept_language.as_deref(),
+        conn_id.as_deref(),
+        runtime_context,
+    );
 
     let provider_ref = provider.clone();
     let first_result = run_agent_loop_streaming(
@@ -9557,9 +9554,9 @@ mod tests {
         assert_eq!(context.surface.as_deref(), Some("telegram"));
         assert_eq!(context.session_kind.as_deref(), Some("channel"));
         assert_eq!(context.channel_type.as_deref(), Some("telegram"));
-        assert_eq!(context.channel_account_id.as_deref(), Some("bot-main"));
-        assert_eq!(context.channel_chat_id.as_deref(), Some("123456"));
-        assert_eq!(context.channel_chat_type.as_deref(), Some("private"));
+        assert_eq!(context.account_id.as_deref(), Some("bot-main"));
+        assert_eq!(context.chat_id.as_deref(), Some("123456"));
+        assert_eq!(context.chat_type.as_deref(), Some("private"));
     }
 
     #[test]
@@ -9568,8 +9565,62 @@ mod tests {
         assert_eq!(context.surface.as_deref(), Some("web"));
         assert_eq!(context.session_kind.as_deref(), Some("web"));
         assert_eq!(context.channel_type, None);
-        assert_eq!(context.channel_account_id, None);
-        assert_eq!(context.channel_chat_id, None);
+        assert_eq!(context.account_id, None);
+        assert_eq!(context.chat_id, None);
+    }
+
+    #[test]
+    fn resolve_channel_runtime_context_falls_back_to_web_when_binding_is_invalid() {
+        let entry = make_session_entry_with_binding(Some("{not-json".to_string()));
+        let context = resolve_channel_runtime_context("telegram:bot-main:123456", Some(&entry));
+        assert_eq!(context.surface.as_deref(), Some("web"));
+        assert_eq!(context.session_kind.as_deref(), Some("web"));
+        assert!(context.channel_type.is_none());
+        assert!(context.account_id.is_none());
+        assert!(context.chat_id.is_none());
+    }
+
+    #[test]
+    fn build_tool_context_includes_channel_binding() {
+        let runtime_context = PromptRuntimeContext {
+            host: PromptHostRuntimeContext {
+                surface: Some("telegram".to_string()),
+                session_kind: Some("channel".to_string()),
+                channel_type: Some("telegram".to_string()),
+                channel_account_id: Some("bot-main".to_string()),
+                channel_chat_id: Some("-100123".to_string()),
+                channel_chat_type: Some("channel_or_supergroup".to_string()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let tool_context = build_tool_context(
+            "telegram:bot-main:-100123",
+            Some("en-US"),
+            Some("conn-1"),
+            Some(&runtime_context),
+        );
+
+        assert_eq!(tool_context["_session_key"], "telegram:bot-main:-100123");
+        assert_eq!(tool_context["_accept_language"], "en-US");
+        assert_eq!(tool_context["_conn_id"], "conn-1");
+        assert_eq!(tool_context["_channel"]["channel_type"], "telegram");
+        assert_eq!(tool_context["_channel"]["account_id"], "bot-main");
+        assert_eq!(
+            tool_context["_channel"]["chat_type"],
+            "channel_or_supergroup"
+        );
+    }
+
+    #[test]
+    fn build_tool_context_omits_channel_binding_without_runtime_context() {
+        let tool_context = build_tool_context("main", None, None, None);
+
+        assert_eq!(tool_context["_session_key"], "main");
+        assert!(tool_context.get("_channel").is_none());
+        assert!(tool_context.get("_accept_language").is_none());
+        assert!(tool_context.get("_conn_id").is_none());
     }
 
     #[test]

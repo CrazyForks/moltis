@@ -99,6 +99,38 @@ impl HookEvent {
 
 // ── HookPayload ─────────────────────────────────────────────────────────────
 
+/// Best-effort channel/session provenance attached to hook payloads.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChannelBinding {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub surface: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_kind: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub channel_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chat_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chat_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sender_id: Option<String>,
+}
+
+impl ChannelBinding {
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.surface.is_none()
+            && self.session_kind.is_none()
+            && self.channel_type.is_none()
+            && self.account_id.is_none()
+            && self.chat_id.is_none()
+            && self.chat_type.is_none()
+            && self.sender_id.is_none()
+    }
+}
+
 /// Typed payload carried with each hook event.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "event")]
@@ -143,6 +175,8 @@ pub enum HookPayload {
         session_key: String,
         content: String,
         channel: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        channel_binding: Option<ChannelBinding>,
     },
     MessageSending {
         session_key: String,
@@ -156,20 +190,28 @@ pub enum HookPayload {
         session_key: String,
         tool_name: String,
         arguments: Value,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        channel: Option<ChannelBinding>,
     },
     AfterToolCall {
         session_key: String,
         tool_name: String,
         success: bool,
         result: Option<Value>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        channel: Option<ChannelBinding>,
     },
     ToolResultPersist {
         session_key: String,
         tool_name: String,
         result: Value,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        channel: Option<ChannelBinding>,
     },
     SessionStart {
         session_key: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        channel: Option<ChannelBinding>,
     },
     SessionEnd {
         session_key: String,
@@ -698,12 +740,26 @@ mod tests {
             session_key: "test".into(),
             tool_name: "exec".into(),
             arguments: serde_json::json!({}),
+            channel: None,
         }
     }
 
     fn read_only_payload() -> HookPayload {
         HookPayload::SessionStart {
             session_key: "test".into(),
+            channel: None,
+        }
+    }
+
+    fn test_channel_binding() -> ChannelBinding {
+        ChannelBinding {
+            surface: Some("telegram".into()),
+            session_kind: Some("channel".into()),
+            channel_type: Some("telegram".into()),
+            account_id: Some("bot-main".into()),
+            chat_id: Some("-100123".into()),
+            chat_type: Some("channel_or_supergroup".into()),
+            sender_id: None,
         }
     }
 
@@ -825,6 +881,7 @@ mod tests {
             session_key: "test".into(),
             content: "hello".into(),
             channel: Some("telegram".into()),
+            channel_binding: None,
         };
         let result = registry.dispatch(&payload).await.unwrap();
         match result {
@@ -867,6 +924,7 @@ mod tests {
             session_key: "test".into(),
             content: "original".into(),
             channel: None,
+            channel_binding: None,
         };
         let result = registry.dispatch(&payload).await.unwrap();
         match result {
@@ -991,5 +1049,145 @@ mod tests {
         let json = serde_json::to_string(&after).unwrap();
         let deser: HookPayload = serde_json::from_str(&json).unwrap();
         assert_eq!(deser.event(), HookEvent::AfterLLMCall);
+    }
+
+    #[test]
+    fn channel_binding_is_empty_only_when_all_fields_are_absent() {
+        assert!(ChannelBinding::default().is_empty());
+        assert!(
+            !ChannelBinding {
+                surface: Some("web".into()),
+                ..Default::default()
+            }
+            .is_empty()
+        );
+    }
+
+    #[test]
+    fn hook_payloads_with_channel_binding_round_trip() {
+        let binding = test_channel_binding();
+        let before = HookPayload::BeforeToolCall {
+            session_key: "s".into(),
+            tool_name: "exec".into(),
+            arguments: serde_json::json!({"command": "pwd"}),
+            channel: Some(binding.clone()),
+        };
+        let json = serde_json::to_string(&before).unwrap();
+        let deser: HookPayload = serde_json::from_str(&json).unwrap();
+        match deser {
+            HookPayload::BeforeToolCall { channel, .. } => {
+                assert_eq!(channel, Some(binding.clone()));
+            },
+            other => panic!("unexpected payload: {other:?}"),
+        }
+
+        let message = HookPayload::MessageReceived {
+            session_key: "s".into(),
+            content: "hello".into(),
+            channel: Some("telegram".into()),
+            channel_binding: Some(binding.clone()),
+        };
+        let json = serde_json::to_string(&message).unwrap();
+        let deser: HookPayload = serde_json::from_str(&json).unwrap();
+        match deser {
+            HookPayload::MessageReceived {
+                channel_binding, ..
+            } => {
+                assert_eq!(channel_binding, Some(binding.clone()));
+            },
+            other => panic!("unexpected payload: {other:?}"),
+        }
+
+        let start = HookPayload::SessionStart {
+            session_key: "s".into(),
+            channel: Some(binding.clone()),
+        };
+        let json = serde_json::to_string(&start).unwrap();
+        let deser: HookPayload = serde_json::from_str(&json).unwrap();
+        match deser {
+            HookPayload::SessionStart { channel, .. } => {
+                assert_eq!(channel, Some(binding));
+            },
+            other => panic!("unexpected payload: {other:?}"),
+        }
+
+        let after = HookPayload::AfterToolCall {
+            session_key: "s".into(),
+            tool_name: "exec".into(),
+            success: true,
+            result: Some(serde_json::json!({"cwd": "/tmp"})),
+            channel: Some(test_channel_binding()),
+        };
+        let json = serde_json::to_string(&after).unwrap();
+        let deser: HookPayload = serde_json::from_str(&json).unwrap();
+        match deser {
+            HookPayload::AfterToolCall { channel, .. } => {
+                assert_eq!(channel, Some(test_channel_binding()));
+            },
+            other => panic!("unexpected payload: {other:?}"),
+        }
+
+        let persist = HookPayload::ToolResultPersist {
+            session_key: "s".into(),
+            tool_name: "exec".into(),
+            result: serde_json::json!({"cwd": "/tmp"}),
+            channel: Some(test_channel_binding()),
+        };
+        let json = serde_json::to_string(&persist).unwrap();
+        let deser: HookPayload = serde_json::from_str(&json).unwrap();
+        match deser {
+            HookPayload::ToolResultPersist { channel, .. } => {
+                assert_eq!(channel, Some(test_channel_binding()));
+            },
+            other => panic!("unexpected payload: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn hook_payloads_deserialize_when_channel_binding_is_omitted() {
+        let json = serde_json::json!({
+            "event": "BeforeToolCall",
+            "session_key": "s",
+            "tool_name": "exec",
+            "arguments": {"command": "pwd"}
+        });
+        let payload: HookPayload = serde_json::from_value(json).unwrap();
+        match payload {
+            HookPayload::BeforeToolCall { channel, .. } => {
+                assert!(channel.is_none());
+            },
+            other => panic!("unexpected payload: {other:?}"),
+        }
+
+        let json = serde_json::json!({
+            "event": "MessageReceived",
+            "session_key": "s",
+            "content": "hello",
+            "channel": "telegram"
+        });
+        let payload: HookPayload = serde_json::from_value(json).unwrap();
+        match payload {
+            HookPayload::MessageReceived {
+                channel_binding, ..
+            } => {
+                assert!(channel_binding.is_none());
+            },
+            other => panic!("unexpected payload: {other:?}"),
+        }
+
+        let json = serde_json::json!({
+            "event": "AfterToolCall",
+            "session_key": "s",
+            "tool_name": "exec",
+            "success": true,
+            "result": {"cwd": "/tmp"}
+        });
+        let payload: HookPayload = serde_json::from_value(json).unwrap();
+        match payload {
+            HookPayload::AfterToolCall { channel, .. } => {
+                assert!(channel.is_none());
+            },
+            other => panic!("unexpected payload: {other:?}"),
+        }
     }
 }
