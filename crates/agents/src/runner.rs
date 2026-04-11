@@ -1462,11 +1462,16 @@ pub async fn run_agent_loop_with_context(
         // Execute all tools concurrently and collect results in order.
         let results = futures::future::join_all(tool_futures).await;
 
-        // Track the strongest loop-detector action observed this batch so we
-        // can inject an intervention message before the next iteration.
-        let mut pending_intervention: LoopDetectorAction = LoopDetectorAction::None;
-
         // Process results in original order: emit events, append messages.
+        // The loop detector records each outcome as it is processed; the
+        // authoritative intervention decision is derived AFTER the loop from
+        // the detector's post-batch state via `consume_pending_action()`.
+        // This avoids two edge cases that per-call return values hit in
+        // mixed batches:
+        //   1. Trailing success after a triggering failure must NOT leave a
+        //      stale intervention — the reset() abandons it cleanly.
+        //   2. A batch that races through both escalation stages must still
+        //      deliver the stage-1 nudge first, not skip straight to strip.
         for (tc, (success, mut result, error, rejected)) in response.tool_calls.iter().zip(results)
         {
             if success {
@@ -1482,23 +1487,12 @@ pub async fn run_agent_loop_with_context(
                 warn!(tool = %tc.name, id = %tc.id, error = %error.as_deref().unwrap_or(""), "tool execution failed");
             }
 
-            // Record outcome in the loop detector BEFORE the mutation below
-            // clobbers `error`. Feed the LLM-visible error text so variants
-            // like "missing 'command' parameter" repeated three times fire
-            // the detector even when the args differ slightly.
+            // Record outcome in the loop detector. Feed the LLM-visible error
+            // text so variants like "missing 'command' parameter" repeated
+            // three times fire the detector even when args differ slightly.
             if loop_detector.is_enabled() {
                 let fp = ToolCallFingerprint::new(&tc.name, &tc.arguments, error.as_deref());
-                let action = loop_detector.record(fp);
-                if action != LoopDetectorAction::None {
-                    // Stage 2 (StripTools) takes precedence over stage 1 (Nudge).
-                    pending_intervention = match (action, pending_intervention) {
-                        (LoopDetectorAction::StripTools, _) => LoopDetectorAction::StripTools,
-                        (LoopDetectorAction::InjectNudge, LoopDetectorAction::None) => {
-                            LoopDetectorAction::InjectNudge
-                        },
-                        (_, existing) => existing,
-                    };
-                }
+                let _ = loop_detector.record(fp);
             }
 
             if let Some(cb) = on_event {
@@ -1571,47 +1565,69 @@ pub async fn run_agent_loop_with_context(
         }
 
         // Apply loop-detector intervention if one fired during this batch.
-        match pending_intervention {
-            LoopDetectorAction::None => {},
-            LoopDetectorAction::InjectNudge => {
-                let window = loop_detector.window_snapshot();
-                let stuck_tool = window
-                    .first()
-                    .map(|fp| fp.tool_name.clone())
-                    .unwrap_or_default();
-                let intervention = format_intervention_message(&window);
-                info!(
-                    tool = %stuck_tool,
-                    "loop detector fired (stage 1): injecting directive intervention"
-                );
-                if let Some(cb) = on_event {
-                    cb(RunnerEvent::LoopInterventionFired {
-                        stage: 1,
-                        tool_name: stuck_tool,
-                    });
-                }
-                messages.push(ChatMessage::user(intervention));
-            },
-            LoopDetectorAction::StripTools => {
-                let stuck_tool = loop_detector
-                    .window_snapshot()
-                    .first()
-                    .map(|fp| fp.tool_name.clone())
-                    .unwrap_or_default();
-                info!(
-                    tool = %stuck_tool,
-                    "loop detector fired (stage 2): stripping tools for next iteration"
-                );
-                if let Some(cb) = on_event {
-                    cb(RunnerEvent::LoopInterventionFired {
-                        stage: 2,
-                        tool_name: stuck_tool,
-                    });
-                }
-                messages.push(ChatMessage::user(format_strip_tools_message()));
-                strip_tools_next_iter = true;
-            },
-        }
+        apply_loop_detector_intervention(
+            &mut loop_detector,
+            &mut messages,
+            &mut strip_tools_next_iter,
+            on_event,
+        );
+    }
+}
+
+/// Consume the detector's post-batch action (if any) and apply it to the
+/// runner state: push the directive user message into `messages`, emit the
+/// `LoopInterventionFired` UI event, and set `strip_tools_next_iter` when
+/// stage 2 fires. Shared by the streaming and non-streaming loops (issue
+/// #658).
+fn apply_loop_detector_intervention(
+    loop_detector: &mut ToolLoopDetector,
+    messages: &mut Vec<ChatMessage>,
+    strip_tools_next_iter: &mut bool,
+    on_event: Option<&OnEvent>,
+) {
+    if !loop_detector.is_enabled() {
+        return;
+    }
+    match loop_detector.consume_pending_action() {
+        LoopDetectorAction::None => {},
+        LoopDetectorAction::InjectNudge => {
+            let window = loop_detector.window_snapshot();
+            let stuck_tool = window
+                .first()
+                .map(|fp| fp.tool_name.clone())
+                .unwrap_or_default();
+            let intervention = format_intervention_message(&window);
+            info!(
+                tool = %stuck_tool,
+                "loop detector fired (stage 1): injecting directive intervention"
+            );
+            if let Some(cb) = on_event {
+                cb(RunnerEvent::LoopInterventionFired {
+                    stage: 1,
+                    tool_name: stuck_tool,
+                });
+            }
+            messages.push(ChatMessage::user(intervention));
+        },
+        LoopDetectorAction::StripTools => {
+            let stuck_tool = loop_detector
+                .window_snapshot()
+                .first()
+                .map(|fp| fp.tool_name.clone())
+                .unwrap_or_default();
+            info!(
+                tool = %stuck_tool,
+                "loop detector fired (stage 2): stripping tools for next iteration"
+            );
+            if let Some(cb) = on_event {
+                cb(RunnerEvent::LoopInterventionFired {
+                    stage: 2,
+                    tool_name: stuck_tool,
+                });
+            }
+            messages.push(ChatMessage::user(format_strip_tools_message()));
+            *strip_tools_next_iter = true;
+        },
     }
 }
 
@@ -2353,11 +2369,10 @@ pub async fn run_agent_loop_streaming(
         // Execute all tools concurrently and collect results in order.
         let results = futures::future::join_all(tool_futures).await;
 
-        // Track the strongest loop-detector action observed this batch so we
-        // can inject an intervention message before the next iteration.
-        let mut pending_intervention: LoopDetectorAction = LoopDetectorAction::None;
-
         // Process results in original order: emit events, append messages.
+        // Intervention is derived from the detector's post-batch state
+        // via `consume_pending_action()` below — see the non-streaming
+        // path for the rationale (issue #658).
         for (tc, (success, mut result, error, rejected)) in tool_calls.iter().zip(results) {
             if success {
                 info!(tool = %tc.name, id = %tc.id, "tool execution succeeded");
@@ -2375,16 +2390,7 @@ pub async fn run_agent_loop_streaming(
             // Record outcome in the loop detector (issue #658).
             if loop_detector.is_enabled() {
                 let fp = ToolCallFingerprint::new(&tc.name, &tc.arguments, error.as_deref());
-                let action = loop_detector.record(fp);
-                if action != LoopDetectorAction::None {
-                    pending_intervention = match (action, pending_intervention) {
-                        (LoopDetectorAction::StripTools, _) => LoopDetectorAction::StripTools,
-                        (LoopDetectorAction::InjectNudge, LoopDetectorAction::None) => {
-                            LoopDetectorAction::InjectNudge
-                        },
-                        (_, existing) => existing,
-                    };
-                }
+                let _ = loop_detector.record(fp);
             }
 
             if let Some(cb) = on_event {
@@ -2457,47 +2463,12 @@ pub async fn run_agent_loop_streaming(
         }
 
         // Apply loop-detector intervention if one fired during this batch.
-        match pending_intervention {
-            LoopDetectorAction::None => {},
-            LoopDetectorAction::InjectNudge => {
-                let window = loop_detector.window_snapshot();
-                let stuck_tool = window
-                    .first()
-                    .map(|fp| fp.tool_name.clone())
-                    .unwrap_or_default();
-                let intervention = format_intervention_message(&window);
-                info!(
-                    tool = %stuck_tool,
-                    "loop detector fired (stage 1): injecting directive intervention"
-                );
-                if let Some(cb) = on_event {
-                    cb(RunnerEvent::LoopInterventionFired {
-                        stage: 1,
-                        tool_name: stuck_tool,
-                    });
-                }
-                messages.push(ChatMessage::user(intervention));
-            },
-            LoopDetectorAction::StripTools => {
-                let stuck_tool = loop_detector
-                    .window_snapshot()
-                    .first()
-                    .map(|fp| fp.tool_name.clone())
-                    .unwrap_or_default();
-                info!(
-                    tool = %stuck_tool,
-                    "loop detector fired (stage 2): stripping tools for next iteration"
-                );
-                if let Some(cb) = on_event {
-                    cb(RunnerEvent::LoopInterventionFired {
-                        stage: 2,
-                        tool_name: stuck_tool,
-                    });
-                }
-                messages.push(ChatMessage::user(format_strip_tools_message()));
-                strip_tools_next_iter = true;
-            },
-        }
+        apply_loop_detector_intervention(
+            &mut loop_detector,
+            &mut messages,
+            &mut strip_tools_next_iter,
+            on_event,
+        );
     }
 }
 
@@ -9119,6 +9090,243 @@ mod tests {
                 .iter()
                 .any(|e| matches!(e, RunnerEvent::LoopInterventionFired { .. })),
             "legitimate retry must not trigger loop detector, got {events_snapshot:?}"
+        );
+    }
+
+    /// Provider that emits a parallel batch `[exec({}), exec("ls /tmp")]`
+    /// on the first turn — one call will fail schema validation and one
+    /// will succeed — then returns text. Exercises the "trailing success in
+    /// the same batch suppresses intervention" edge case end-to-end (Greptile
+    /// finding #1 on commit cf39c1a6).
+    struct MixedBatchProvider {
+        call_count: std::sync::atomic::AtomicUsize,
+    }
+
+    #[async_trait]
+    impl LlmProvider for MixedBatchProvider {
+        fn name(&self) -> &str {
+            "mock-mixed-batch"
+        }
+
+        fn id(&self) -> &str {
+            "mock-mixed-batch"
+        }
+
+        fn supports_tools(&self) -> bool {
+            true
+        }
+
+        async fn complete(
+            &self,
+            _messages: &[ChatMessage],
+            _tools: &[serde_json::Value],
+        ) -> Result<CompletionResponse> {
+            let n = self
+                .call_count
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if n == 0 {
+                // Two failures followed by a success in a single batch is
+                // the trickiest input for the loop detector: per-call
+                // return values would accumulate a pending nudge that the
+                // success then silently abandons. The runner must agree
+                // with the detector's post-batch state (None) and NOT
+                // inject an intervention.
+                return Ok(CompletionResponse {
+                    text: None,
+                    tool_calls: vec![
+                        ToolCall {
+                            id: "c1".into(),
+                            name: "exec".into(),
+                            arguments: serde_json::json!({}),
+                        },
+                        ToolCall {
+                            id: "c2".into(),
+                            name: "exec".into(),
+                            arguments: serde_json::json!({}),
+                        },
+                        ToolCall {
+                            id: "c3".into(),
+                            name: "exec".into(),
+                            arguments: serde_json::json!({"command": "true"}),
+                        },
+                    ],
+                    usage: Usage::default(),
+                });
+            }
+            Ok(CompletionResponse {
+                text: Some(
+                    "Mixed batch complete — proceeding to the next step of the task.".into(),
+                ),
+                tool_calls: vec![],
+                usage: Usage::default(),
+            })
+        }
+
+        fn stream(
+            &self,
+            _messages: Vec<ChatMessage>,
+        ) -> Pin<Box<dyn Stream<Item = StreamEvent> + Send + '_>> {
+            Box::pin(tokio_stream::empty())
+        }
+    }
+
+    #[tokio::test]
+    async fn mixed_batch_with_trailing_success_does_not_fire_intervention() {
+        // Regression for Greptile finding #1: trailing success must cancel
+        // any pending intervention from earlier rejects in the same batch.
+        let provider = Arc::new(MixedBatchProvider {
+            call_count: std::sync::atomic::AtomicUsize::new(0),
+        });
+        let mut tools = ToolRegistry::new();
+        tools.register(Box::new(TestExecTool));
+
+        let events: Arc<std::sync::Mutex<Vec<RunnerEvent>>> =
+            Arc::new(std::sync::Mutex::new(Vec::new()));
+        let events_clone = Arc::clone(&events);
+        let on_event: OnEvent = Box::new(move |e| {
+            events_clone.lock().unwrap().push(e);
+        });
+
+        let _result = run_agent_loop(
+            provider,
+            &tools,
+            "You are a test bot.",
+            &UserContent::text("Run something"),
+            Some(&on_event),
+            None,
+        )
+        .await
+        .unwrap();
+
+        let events_snapshot = events.lock().unwrap().clone();
+        assert!(
+            !events_snapshot
+                .iter()
+                .any(|e| matches!(e, RunnerEvent::LoopInterventionFired { .. })),
+            "trailing success in the same batch must not fire an intervention; \
+             got events: {events_snapshot:?}"
+        );
+        // Confirm the expected mix of rejected + successful calls was dispatched.
+        let rejected = events_snapshot
+            .iter()
+            .filter(|e| matches!(e, RunnerEvent::ToolCallRejected { .. }))
+            .count();
+        let started = events_snapshot
+            .iter()
+            .filter(|e| matches!(e, RunnerEvent::ToolCallStart { .. }))
+            .count();
+        assert_eq!(rejected, 2, "two calls should have been rejected");
+        assert_eq!(started, 1, "one successful call should have started");
+    }
+
+    /// Provider that emits FOUR identical `exec({})` calls in a single
+    /// batch. This races the loop detector through both escalation stages
+    /// within one batch; the runner must still deliver the stage-1 nudge
+    /// first rather than skipping straight to strip-tools (Greptile finding
+    /// #2 on commit cf39c1a6).
+    struct ParallelReflexProvider {
+        call_count: std::sync::atomic::AtomicUsize,
+    }
+
+    #[async_trait]
+    impl LlmProvider for ParallelReflexProvider {
+        fn name(&self) -> &str {
+            "mock-parallel-reflex"
+        }
+
+        fn id(&self) -> &str {
+            "mock-parallel-reflex"
+        }
+
+        fn supports_tools(&self) -> bool {
+            true
+        }
+
+        async fn complete(
+            &self,
+            messages: &[ChatMessage],
+            _tools: &[serde_json::Value],
+        ) -> Result<CompletionResponse> {
+            if history_contains_intervention(messages) {
+                return Ok(CompletionResponse {
+                    text: Some(
+                        "I cannot proceed without knowing what command to run. Please advise."
+                            .into(),
+                    ),
+                    tool_calls: vec![],
+                    usage: Usage::default(),
+                });
+            }
+            let _n = self
+                .call_count
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(CompletionResponse {
+                text: None,
+                tool_calls: (0..4)
+                    .map(|i| ToolCall {
+                        id: format!("call_{i}"),
+                        name: "exec".into(),
+                        arguments: serde_json::json!({}),
+                    })
+                    .collect(),
+                usage: Usage::default(),
+            })
+        }
+
+        fn stream(
+            &self,
+            _messages: Vec<ChatMessage>,
+        ) -> Pin<Box<dyn Stream<Item = StreamEvent> + Send + '_>> {
+            Box::pin(tokio_stream::empty())
+        }
+    }
+
+    #[tokio::test]
+    async fn parallel_batch_with_stage_skip_delivers_nudge_first() {
+        // Regression for Greptile finding #2: four identical failing calls
+        // in one batch race past the nudge stage and would skip straight to
+        // strip-tools. The runner must still deliver the stage-1 nudge.
+        let provider = Arc::new(ParallelReflexProvider {
+            call_count: std::sync::atomic::AtomicUsize::new(0),
+        });
+        let mut tools = ToolRegistry::new();
+        tools.register(Box::new(TestExecTool));
+
+        let events: Arc<std::sync::Mutex<Vec<RunnerEvent>>> =
+            Arc::new(std::sync::Mutex::new(Vec::new()));
+        let events_clone = Arc::clone(&events);
+        let on_event: OnEvent = Box::new(move |e| {
+            events_clone.lock().unwrap().push(e);
+        });
+
+        let _result = run_agent_loop(
+            provider,
+            &tools,
+            "You are a test bot.",
+            &UserContent::text("Run something"),
+            Some(&on_event),
+            None,
+        )
+        .await
+        .unwrap();
+
+        let events_snapshot = events.lock().unwrap().clone();
+        let intervention_stages: Vec<u8> = events_snapshot
+            .iter()
+            .filter_map(|e| match e {
+                RunnerEvent::LoopInterventionFired { stage, .. } => Some(*stage),
+                _ => None,
+            })
+            .collect();
+        // The first intervention fired must be stage 1 (nudge), not stage 2.
+        assert!(
+            !intervention_stages.is_empty(),
+            "expected at least one LoopInterventionFired event"
+        );
+        assert_eq!(
+            intervention_stages[0], 1,
+            "stage-1 nudge must be delivered first even when a single batch races \
+             through both escalation stages; stages were: {intervention_stages:?}"
         );
     }
 }

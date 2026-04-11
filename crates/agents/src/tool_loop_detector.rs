@@ -86,6 +86,10 @@ pub struct ToolLoopDetector {
     window: usize,
     strip_on_second_fire: bool,
     stage: InterventionStage,
+    /// Whether the stage-1 nudge has already been surfaced to the runner for
+    /// the current intervention cycle. Cleared on a hard reset (success or
+    /// `clear_strip_tools`).
+    nudge_delivered: bool,
 }
 
 impl ToolLoopDetector {
@@ -98,6 +102,7 @@ impl ToolLoopDetector {
             window,
             strip_on_second_fire,
             stage: InterventionStage::None,
+            nudge_delivered: false,
         }
     }
 
@@ -115,6 +120,7 @@ impl ToolLoopDetector {
     pub fn reset(&mut self) {
         self.recent.clear();
         self.stage = InterventionStage::None;
+        self.nudge_delivered = false;
     }
 
     /// Record a tool-call outcome and compute the next action.
@@ -179,6 +185,54 @@ impl ToolLoopDetector {
         if self.stage == InterventionStage::StripTools {
             self.stage = InterventionStage::None;
             self.recent.clear();
+            self.nudge_delivered = false;
+        }
+    }
+
+    /// Compute the action the runner should apply at the end of a batch based
+    /// on the detector's current state, and advance the internal bookkeeping
+    /// so the same action is not returned twice.
+    ///
+    /// This is the **authoritative** way for the runner to decide whether to
+    /// intervene. It sidesteps two edge cases that per-call [`Self::record`]
+    /// return values hit when a batch contains a mix of outcomes:
+    ///
+    /// 1. **False intervention after a trailing success in the same batch.**
+    ///    `[fail, fail, success]` used to leave `pending_intervention` set
+    ///    from the fail that pushed the window full, even though the trailing
+    ///    success already called [`Self::reset`]. Deriving the action from
+    ///    the post-batch `stage` returns `None` in this case.
+    ///
+    /// 2. **Stage-skip when both escalations fire within one batch.**
+    ///    `[fail, fail, fail]` (from a window of 3) used to return
+    ///    `InjectNudge` on call 3 and `StripTools` on call 4 — the runner
+    ///    would apply only the last one and the nudge was never delivered,
+    ///    robbing the model of its chance to recover via plain text. If the
+    ///    state is `StripTools` but the nudge has not yet been delivered,
+    ///    demote the stage back to `Nudged` and return `InjectNudge` so the
+    ///    nudge lands first; strip-tools will fire on the next batch if the
+    ///    pattern repeats.
+    pub fn consume_pending_action(&mut self) -> LoopDetectorAction {
+        match self.stage {
+            InterventionStage::None => LoopDetectorAction::None,
+            InterventionStage::Nudged => {
+                if self.nudge_delivered {
+                    LoopDetectorAction::None
+                } else {
+                    self.nudge_delivered = true;
+                    LoopDetectorAction::InjectNudge
+                }
+            },
+            InterventionStage::StripTools => {
+                if self.nudge_delivered {
+                    LoopDetectorAction::StripTools
+                } else {
+                    // Stage-skip guard — see doc comment above.
+                    self.stage = InterventionStage::Nudged;
+                    self.nudge_delivered = true;
+                    LoopDetectorAction::InjectNudge
+                }
+            },
         }
     }
 
@@ -484,6 +538,93 @@ mod tests {
         let a = json!({"a": 1, "b": 2});
         let b = json!({"b": 2, "a": 1});
         assert_eq!(hash_value(&a), hash_value(&b));
+    }
+
+    #[test]
+    fn consume_pending_action_none_when_empty() {
+        let mut d = ToolLoopDetector::new(3, true);
+        assert_eq!(d.consume_pending_action(), LoopDetectorAction::None);
+    }
+
+    #[test]
+    fn consume_pending_action_returns_nudge_once_then_none() {
+        let mut d = ToolLoopDetector::new(3, true);
+        for _ in 0..3 {
+            let _ = d.record(fp("exec", json!({}), Some("err")));
+        }
+        // Runner calls consume at end of batch — expect nudge.
+        assert_eq!(d.consume_pending_action(), LoopDetectorAction::InjectNudge);
+        // Second call in the same cycle (e.g. next batch without more
+        // failures) must not re-fire the nudge.
+        assert_eq!(d.consume_pending_action(), LoopDetectorAction::None);
+    }
+
+    #[test]
+    fn consume_pending_action_strip_only_after_nudge_delivered() {
+        let mut d = ToolLoopDetector::new(3, true);
+        for _ in 0..3 {
+            let _ = d.record(fp("exec", json!({}), Some("err")));
+        }
+        assert_eq!(d.consume_pending_action(), LoopDetectorAction::InjectNudge);
+        // Next batch: another identical failure advances stage to StripTools.
+        let _ = d.record(fp("exec", json!({}), Some("err")));
+        assert_eq!(d.stage(), InterventionStage::StripTools);
+        // Nudge WAS delivered in the prior cycle, so we progress to strip.
+        assert_eq!(d.consume_pending_action(), LoopDetectorAction::StripTools);
+    }
+
+    #[test]
+    fn trailing_success_in_same_batch_suppresses_intervention() {
+        // Greptile finding #1: [fail, fail, success] in one batch.
+        // Before the batch the detector already has 2 identical failures
+        // recorded; the first fail in the batch pushes the window full and
+        // record() would return InjectNudge. But the trailing success in the
+        // same batch immediately resets the detector. The runner must not
+        // apply an intervention that the detector has already abandoned.
+        let mut d = ToolLoopDetector::new(3, true);
+        let _ = d.record(fp("exec", json!({}), Some("err"))); // 1/3
+        let _ = d.record(fp("exec", json!({}), Some("err"))); // 2/3
+        // Start of a new batch:
+        let action_on_third = d.record(fp("exec", json!({}), Some("err")));
+        assert_eq!(action_on_third, LoopDetectorAction::InjectNudge);
+        // ...but the next record in the same batch is a success (reset).
+        let _ = d.record(fp("exec", json!({"command": "ls"}), None));
+        assert_eq!(d.stage(), InterventionStage::None);
+        // At end-of-batch the runner queries consume_pending_action — must
+        // return None because the success already abandoned the intervention.
+        assert_eq!(d.consume_pending_action(), LoopDetectorAction::None);
+    }
+
+    #[test]
+    fn stage_skip_in_one_batch_delivers_nudge_first() {
+        // Greptile finding #2: [fail, fail, fail, fail] in one batch with
+        // window = 3 — call 3 fires InjectNudge and call 4 immediately fires
+        // StripTools. Per-call return values would skip the nudge entirely.
+        // consume_pending_action must demote the stage back to Nudged and
+        // return InjectNudge so the nudge lands first.
+        let mut d = ToolLoopDetector::new(3, true);
+        let r1 = d.record(fp("exec", json!({}), Some("err")));
+        let r2 = d.record(fp("exec", json!({}), Some("err")));
+        let r3 = d.record(fp("exec", json!({}), Some("err"))); // → Nudged
+        let r4 = d.record(fp("exec", json!({}), Some("err"))); // → StripTools
+        assert_eq!(r1, LoopDetectorAction::None);
+        assert_eq!(r2, LoopDetectorAction::None);
+        assert_eq!(r3, LoopDetectorAction::InjectNudge);
+        assert_eq!(r4, LoopDetectorAction::StripTools);
+        assert_eq!(d.stage(), InterventionStage::StripTools);
+
+        // End-of-batch: runner asks for the authoritative action.
+        assert_eq!(d.consume_pending_action(), LoopDetectorAction::InjectNudge);
+        // Stage demoted back so strip can fire next batch.
+        assert_eq!(d.stage(), InterventionStage::Nudged);
+        // Same batch/cycle: subsequent consume calls yield nothing.
+        assert_eq!(d.consume_pending_action(), LoopDetectorAction::None);
+
+        // Next batch with another identical failure → promotes to StripTools
+        // again, this time the runner applies it (nudge already delivered).
+        let _ = d.record(fp("exec", json!({}), Some("err")));
+        assert_eq!(d.stage(), InterventionStage::StripTools);
+        assert_eq!(d.consume_pending_action(), LoopDetectorAction::StripTools);
     }
 
     #[test]
