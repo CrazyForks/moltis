@@ -3078,7 +3078,7 @@ mod tests {
             let mut guard = fs_state
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
-            let _ = guard.record_read("side", PathBuf::from("/tmp/demo.txt"), 0, 25);
+            let _ = guard.record_read("side", PathBuf::from("/tmp/demo.txt"), 0, 25, None);
             assert!(guard.has_been_read("side", Path::new("/tmp/demo.txt")));
         }
 
