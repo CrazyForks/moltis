@@ -466,12 +466,13 @@ moltis hooks info my-hook
 </code></pre>
 <h2 id="bundled-hooks"><a class="header" href="#bundled-hooks">Bundled Hooks</a></h2>
 <p>Moltis includes several built-in hooks:</p>
-<h3 id="boot-md"><a class="header" href="#boot-md">boot-md</a></h3>
-<p>Reads <code>BOOT.md</code> from the workspace on <code>GatewayStart</code> and injects it into the agent context.</p>
-<p><code>BOOT.md</code> is intended for short, explicit startup tasks (health checks, reminders,
-“send one startup message”, etc.). If the file is missing or empty, nothing is injected.</p>
 <h2 id="workspace-context-files"><a class="header" href="#workspace-context-files">Workspace Context Files</a></h2>
 <p>Moltis supports several workspace markdown files in <code>data_dir</code>.</p>
+<h3 id="bootmd"><a class="header" href="#bootmd">BOOT.md</a></h3>
+<p><code>BOOT.md</code> is loaded per session and injected into the system prompt as startup context.</p>
+<p>Best use is for short, explicit startup tasks (health checks, reminders,
+“send one startup message”, etc.). If the file is missing or empty, nothing is injected.</p>
+<p>Agent-specific overrides are supported: place <code>BOOT.md</code> in <code>agents/&lt;id&gt;/BOOT.md</code>.</p>
 <h3 id="toolsmd"><a class="header" href="#toolsmd">TOOLS.md</a></h3>
 <p><code>TOOLS.md</code> is loaded as a workspace context file in the system prompt.</p>
 <p>Best use is to combine:</p>
@@ -495,7 +496,20 @@ external tool that scans shell commands against 49+ destructive pattern
 categories, including heredoc/inline-script scanning, database, cloud, and
 infrastructure patterns.</p>
 <p><strong>Install:</strong></p>
-<pre><code class="language-bash">cargo install dcg
+<p>Pin to a released tag and verify the script’s SHA-256 before executing it —
+never pipe an unpinned <code>curl | bash</code> from <code>main</code>. Check the project’s
+<a href="https://github.com/Dicklesworthstone/destructive_command_guard/releases">releases page</a>
+for the latest tag and expected checksum.</p>
+<pre><code class="language-bash">DCG_VERSION="v0.4.0"
+DCG_SHA256="2cd1287c30cc7bfca3ec6e45a3a474e9bb8f8586dfe83d78db0d6c3a25f3b55c"
+curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/destructive_command_guard/${DCG_VERSION}/install.sh" -o /tmp/dcg-install.sh
+echo "${DCG_SHA256}  /tmp/dcg-install.sh" | shasum -a 256 -c - &amp;&amp; bash /tmp/dcg-install.sh
+rm /tmp/dcg-install.sh
+</code></pre>
+<p>Alternatively, review the script first and only then execute it:</p>
+<pre><code class="language-bash">curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/destructive_command_guard/v0.4.0/install.sh" -o /tmp/dcg-install.sh
+less /tmp/dcg-install.sh   # review before running
+bash /tmp/dcg-install.sh &amp;&amp; rm /tmp/dcg-install.sh
 </code></pre>
 <p><strong>Hook setup:</strong></p>
 <p>Copy the bundled hook example to your hooks directory:</p>

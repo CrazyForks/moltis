@@ -205,6 +205,7 @@
 <tr><td><strong>Sessions</strong></td><td>JSONL conversation files under <code>agents/*/sessions/</code></td><td><code>~/.moltis/sessions/</code> and <code>~/.moltis/memory/sessions/</code></td><td>Converts OpenClaw message format to Moltis format; prefixes keys with <code>oc:</code>. Also generates markdown transcripts for memory search indexing</td></tr>
 <tr><td><strong>MCP Servers</strong></td><td><code>mcp-servers.json</code></td><td><code>~/.moltis/mcp-servers.json</code></td><td>Merges with existing servers; skips duplicates by name</td></tr>
 <tr><td><strong>Workspace Files</strong></td><td><code>SOUL.md</code>, <code>IDENTITY.md</code>, <code>USER.md</code>, <code>TOOLS.md</code>, <code>AGENTS.md</code>, <code>HEARTBEAT.md</code>, <code>BOOT.md</code></td><td><code>~/.moltis/</code> (root) or <code>~/.moltis/agents/&lt;id&gt;/</code></td><td>Copies raw workspace files; skips if destination already has user content. Replaces auto-seeded defaults</td></tr>
+<tr><td><strong>Agent Presets</strong></td><td>Non-default agents in <code>agents.list</code></td><td><code>moltis.toml</code> <code>[agents.presets.*]</code></td><td>Creates <code>spawn_agent</code> presets with name, theme, and model. Existing presets are preserved</td></tr>
 </tbody></table>
 </div>
 <h3 id="workspace-files-explained"><a class="header" href="#workspace-files-explained">Workspace files explained</a></h3>
@@ -224,6 +225,7 @@
 <ul>
 <li>The <strong>default agent</strong> becomes Moltis’s <code>main</code> agent</li>
 <li><strong>Non-default agents</strong> are created as separate agent personas with their name, theme, and emoji</li>
+<li><strong>Non-default agents become <code>spawn_agent</code> presets</strong> in <code>moltis.toml</code>, so the main agent can delegate tasks to them via the <code>spawn_agent</code> tool. Each preset inherits the agent’s name, theme, and model override. See <a href="agent-presets.html">Agent Presets</a> for details</li>
 <li><strong>Per-agent workspace files</strong> (<code>SOUL.md</code>, <code>IDENTITY.md</code>, etc.) are copied to <code>~/.moltis/agents/&lt;id&gt;/</code>, giving each agent its own personality</li>
 <li><strong>Per-agent sessions</strong> are prefixed with <code>oc:&lt;agent_id&gt;:</code> so they appear under the correct agent</li>
 <li>Agents without per-agent workspace files inherit from the root files automatically</li>
@@ -373,7 +375,7 @@
                                 <i class="fa fa-angle-left"></i>
                             </a>
 
-                            <a rel="next prefetch" href="authentication.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="nodes.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <i class="fa fa-angle-right"></i>
                             </a>
 
@@ -387,7 +389,7 @@
                         <i class="fa fa-angle-left"></i>
                     </a>
 
-                    <a rel="next prefetch" href="authentication.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="nodes.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <i class="fa fa-angle-right"></i>
                     </a>
             </nav>

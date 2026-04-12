@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Skill Self-Extension - Moltis Documentation</title>
+        <title>Checkpoints - Moltis Documentation</title>
 
 
         <!-- Custom HTML head -->
@@ -149,7 +149,7 @@
                         <a href="https://github.com/moltis-org/moltis" title="Git repository" aria-label="Git repository">
                             <i id="git-repository-button" class="fa fa-github"></i>
                         </a>
-                        <a href="https://github.com/moltis-org/moltis/edit/main/docs/src/src/skill-tools.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                        <a href="https://github.com/moltis-org/moltis/edit/main/docs/src/src/checkpoints.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
                             <i id="git-edit-button" class="fa fa-edit"></i>
                         </a>
 
@@ -183,108 +183,57 @@
 
                 <div id="content" class="content">
                     <main>
-                        <h1 id="skill-self-extension"><a class="header" href="#skill-self-extension">Skill Self-Extension</a></h1>
-<p>Moltis can create, update, and delete personal skills at runtime through agent
-tools, enabling the system to extend its own capabilities during a conversation.</p>
-<h2 id="overview"><a class="header" href="#overview">Overview</a></h2>
-<p>Three agent tools manage personal skills by default:</p>
-<div class="table-wrapper"><table><thead><tr><th>Tool</th><th>Description</th></tr></thead><tbody>
-<tr><td><code>create_skill</code></td><td>Write a new <code>SKILL.md</code> to <code>&lt;data_dir&gt;/skills/&lt;name&gt;/</code></td></tr>
-<tr><td><code>update_skill</code></td><td>Overwrite an existing skill’s <code>SKILL.md</code></td></tr>
-<tr><td><code>delete_skill</code></td><td>Remove a skill directory</td></tr>
-</tbody></table>
-</div>
-<p>When <code>skills.enable_agent_sidecar_files = true</code>, a fourth tool becomes
-available:</p>
-<div class="table-wrapper"><table><thead><tr><th>Tool</th><th>Description</th></tr></thead><tbody>
-<tr><td><code>write_skill_files</code></td><td>Write supplementary UTF-8 text files inside an existing personal skill directory</td></tr>
-</tbody></table>
-</div>
-<p>Skills created this way are personal and stored in the configured data
-directory’s <code>skills/</code> folder. They become available on the next message
-automatically thanks to the skill watcher.</p>
-<p>Before any built-in skill mutation runs, Moltis creates an automatic
-checkpoint. Tool results include a <code>checkpointId</code> you can later restore with
-<code>checkpoint_restore</code>.</p>
-<h2 id="skill-watcher"><a class="header" href="#skill-watcher">Skill Watcher</a></h2>
-<p>The skill watcher (<code>crates/skills/src/watcher.rs</code>) monitors skill directories
-for filesystem changes using debounced notifications. When a <code>SKILL.md</code> file is
-created, modified, or deleted, the watcher emits a <code>skills.changed</code> event via
-the WebSocket event bus so the UI can refresh. Supplementary file writes do not
-change discovery on their own, so the watcher intentionally stays focused on
-<code>SKILL.md</code>.</p>
-<div id="admonition-tip" class="admonition admonish-tip" role="note" aria-labelledby="admonition-tip-title">
-<div class="admonition-title">
-<div id="admonition-tip-title">
-<p>Tip</p>
-</div>
-<a class="admonition-anchor-link" href="#admonition-tip"></a>
-</div>
-<div>
-<p>The watcher uses debouncing to avoid firing multiple events for rapid
-successive edits (e.g. an editor writing a temp file then renaming).</p>
-</div>
-</div>
-<h2 id="creating-a-skill"><a class="header" href="#creating-a-skill">Creating a Skill</a></h2>
-<p>The agent can create a skill by calling the <code>create_skill</code> tool:</p>
-<pre><code class="language-json">{
-  "name": "summarize-pr",
-  "content": "# summarize-pr\n\nSummarize a GitHub pull request...",
-  "description": "Summarize GitHub PRs with key changes and review notes"
-}
-</code></pre>
-<p>This writes <code>&lt;data_dir&gt;/skills/summarize-pr/SKILL.md</code> with the provided content.
-The skill discoverer picks it up on the next message.</p>
-<h2 id="writing-supplementary-files"><a class="header" href="#writing-supplementary-files">Writing Supplementary Files</a></h2>
-<p>When <code>skills.enable_agent_sidecar_files = true</code>, the agent can add sidecar
-files such as shell scripts, templates, <code>_meta.json</code>, or <code>Dockerfile</code>:</p>
-<pre><code class="language-json">{
-  "name": "summarize-pr",
-  "files": [
-    {
-      "path": "script.sh",
-      "content": "#!/usr/bin/env bash\necho summarize\n"
-    },
-    {
-      "path": "templates/prompt.txt",
-      "content": "Summarize the pull request with risks first.\n"
-    }
-  ]
-}
-</code></pre>
-<p>Safety rules:</p>
+                        <h1 id="checkpoints"><a class="header" href="#checkpoints">Checkpoints</a></h1>
+<p>Moltis now creates automatic checkpoints before built-in file mutations that
+change personal skills or agent memory files.</p>
+<h2 id="what-gets-checkpointed"><a class="header" href="#what-gets-checkpointed">What Gets Checkpointed</a></h2>
+<p>Current built-in checkpoint coverage includes:</p>
 <ul>
-<li>only writes inside <code>&lt;data_dir&gt;/skills/&lt;name&gt;/</code></li>
-<li>only relative UTF-8 text files</li>
-<li>rejects <code>..</code>, absolute paths, hidden path components, and <code>SKILL.md</code></li>
-<li>rejects symlink escapes and oversized batches</li>
-<li>appends an audit entry to <code>~/.moltis/logs/security-audit.jsonl</code></li>
+<li><code>create_skill</code></li>
+<li><code>update_skill</code></li>
+<li><code>delete_skill</code></li>
+<li><code>write_skill_files</code></li>
+<li><code>memory_save</code></li>
+<li>the silent pre-compaction memory flush</li>
 </ul>
-<h2 id="updating-a-skill"><a class="header" href="#updating-a-skill">Updating a Skill</a></h2>
+<p>Each mutation creates a manifest-backed snapshot in <code>~/.moltis/checkpoints/</code>
+before the write or delete happens.</p>
+<h2 id="tool-surface"><a class="header" href="#tool-surface">Tool Surface</a></h2>
+<h3 id="checkpoints_list"><a class="header" href="#checkpoints_list"><code>checkpoints_list</code></a></h3>
+<p>List recent automatic checkpoints.</p>
 <pre><code class="language-json">{
-  "name": "summarize-pr",
-  "content": "# summarize-pr\n\nUpdated instructions..."
+  "limit": 20,
+  "path_contains": "skills/my-skill"
 }
 </code></pre>
-<h2 id="deleting-a-skill"><a class="header" href="#deleting-a-skill">Deleting a Skill</a></h2>
+<h3 id="checkpoint_restore"><a class="header" href="#checkpoint_restore"><code>checkpoint_restore</code></a></h3>
+<p>Restore a checkpoint by ID.</p>
 <pre><code class="language-json">{
-  "name": "summarize-pr"
+  "id": "3c7c6f2f8b7c4d8c8b8cdb91d9161f59"
 }
 </code></pre>
-<p>This removes the entire <code>&lt;data_dir&gt;/skills/summarize-pr/</code> directory, including
-any supplementary files written alongside <code>SKILL.md</code>.</p>
-<p>Deleted skills can be restored from the returned <code>checkpointId</code> with
-<code>checkpoint_restore</code>, as long as the checkpoint still exists.</p>
+<h2 id="mutation-results"><a class="header" href="#mutation-results">Mutation Results</a></h2>
+<p>Checkpointed tools return a <code>checkpointId</code> field in their result payload. That
+gives agents and users a direct restore handle without first listing every
+checkpoint.</p>
+<h2 id="behavior"><a class="header" href="#behavior">Behavior</a></h2>
+<ul>
+<li>If the target existed, Moltis snapshots the file or directory first.</li>
+<li>If the target did not exist yet, restore removes the later-created path.</li>
+<li>Restore replaces the current target state with the checkpoint snapshot.</li>
+<li>Checkpoints are internal safety artifacts, they do not touch the user’s git
+history.</li>
+</ul>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="webhooks.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="session-branching.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <i class="fa fa-angle-left"></i>
                             </a>
 
-                            <a rel="next prefetch" href="mobile-pwa.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="scheduling.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <i class="fa fa-angle-right"></i>
                             </a>
 
@@ -294,11 +243,11 @@ any supplementary files written alongside <code>SKILL.md</code>.</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="webhooks.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="session-branching.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <i class="fa fa-angle-left"></i>
                     </a>
 
-                    <a rel="next prefetch" href="mobile-pwa.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="scheduling.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <i class="fa fa-angle-right"></i>
                     </a>
             </nav>

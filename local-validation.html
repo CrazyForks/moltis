@@ -219,6 +219,10 @@ checks in the PR.</p>
 changes). Commit or stash local changes before running.</li>
 <li>On macOS without CUDA (<code>nvcc</code>), the script automatically falls back to
 non-CUDA test/coverage defaults for local runs.</li>
+<li>On Linux, <code>local/lint</code> and <code>local/test</code> use <code>--all-features</code>. If you want
+the opt-in Vulkan path covered locally, install the Vulkan development
+packages first, for example <code>libvulkan-dev</code> and <code>glslang-tools</code> on Debian/Ubuntu
+(on Ubuntu 22.04, install <code>glslang-tools</code> from the LunarG Vulkan SDK).</li>
 <li><code>local/lint</code> uses the same clippy flags as CI and release:
 <code>cargo +nightly-2025-11-30 clippy -Z unstable-options --workspace --all-features --all-targets --timings -- -D warnings</code>.</li>
 <li><code>zizmor</code> is installed automatically (Homebrew on macOS, apt on Linux) when
@@ -241,7 +245,7 @@ release paths).</p>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="configuration.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="upstream-proxy.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <i class="fa fa-angle-left"></i>
                             </a>
 
@@ -255,7 +259,7 @@ release paths).</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="configuration.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="upstream-proxy.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <i class="fa fa-angle-left"></i>
                     </a>
 

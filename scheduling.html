@@ -189,12 +189,15 @@ recurring tasks. Jobs can fire agent turns, send system events, or trigger
 other actions on a flexible schedule.</p>
 <h2 id="heartbeat"><a class="header" href="#heartbeat">Heartbeat</a></h2>
 <p>The <strong>heartbeat</strong> is a special system cron job (<code>__heartbeat__</code>) that runs
-periodically (default: every 15 minutes). It gives the agent an opportunity to
+periodically (default: every 30 minutes). It gives the agent an opportunity to
 check reminders, run deferred tasks, and react to events that occurred while
 the user was away.</p>
 <p>The heartbeat prompt is assembled from <code>HEARTBEAT.md</code> in the workspace data
 directory. If the file is empty and no pending events exist, the heartbeat
 turn is skipped to save tokens.</p>
+<p>Heartbeat replies can also be delivered to a configured channel destination via
+<code>[heartbeat] deliver</code>, <code>channel</code>, and <code>to</code> in <code>moltis.toml</code>, or from the web UI
+under <strong>Settings -&gt; Heartbeat</strong>.</p>
 <h2 id="event-driven-heartbeat-wake"><a class="header" href="#event-driven-heartbeat-wake">Event-Driven Heartbeat Wake</a></h2>
 <p>Normally the heartbeat fires on its regular schedule. The <strong>wake</strong> system lets
 other parts of Moltis trigger an immediate heartbeat when something noteworthy
@@ -241,7 +244,7 @@ surface in the next heartbeat turn.</p>
 <p>Jobs support several schedule kinds:</p>
 <div class="table-wrapper"><table><thead><tr><th>Kind</th><th>Fields</th><th>Description</th></tr></thead><tbody>
 <tr><td><code>every</code></td><td><code>every_ms</code></td><td>Repeat at a fixed interval (milliseconds)</td></tr>
-<tr><td><code>cron</code></td><td><code>cron_expr</code></td><td>Standard cron expression (e.g. <code>"0 */6 * * *"</code>)</td></tr>
+<tr><td><code>cron</code></td><td><code>expr</code>, optional <code>tz</code></td><td>Standard cron expression (e.g. <code>"0 */6 * * *"</code>)</td></tr>
 <tr><td><code>at</code></td><td><code>at_ms</code></td><td>Run once at a specific Unix timestamp (ms)</td></tr>
 </tbody></table>
 </div>
@@ -250,6 +253,7 @@ surface in the next heartbeat turn.</p>
 <ul>
 <li><strong><code>add</code></strong> — Create a new job</li>
 <li><strong><code>list</code></strong> — List all jobs</li>
+<li><strong><code>run</code></strong> — Trigger a job immediately</li>
 <li><strong><code>update</code></strong> — Patch an existing job (name, schedule, enabled, wakeMode, etc.)</li>
 <li><strong><code>remove</code></strong> — Delete a job</li>
 <li><strong><code>runs</code></strong> — View recent execution history for a job</li>
@@ -258,11 +262,43 @@ surface in the next heartbeat turn.</p>
 <p>Set <code>deleteAfterRun: true</code> to automatically remove a job after its first
 execution. Combined with the <code>at</code> schedule, this is useful for deferred
 one-time tasks (reminders, follow-ups).</p>
+<h2 id="channel-delivery"><a class="header" href="#channel-delivery">Channel Delivery</a></h2>
+<p>Background agent turns can deliver their final output to a configured channel
+account/chat after the run completes.</p>
+<p>Use all of the following together:</p>
+<ul>
+<li><code>sessionTarget: "isolated"</code></li>
+<li><code>payload.kind: "agentTurn"</code></li>
+<li><code>payload.deliver: true</code></li>
+<li><code>payload.channel: "&lt;account_id&gt;"</code></li>
+<li><code>payload.to: "&lt;chat_or_peer_id&gt;"</code></li>
+</ul>
+<p>Example:</p>
+<pre><code class="language-json">{
+  "action": "add",
+  "job": {
+    "name": "daily summary",
+    "schedule": { "kind": "cron", "expr": "0 9 * * *", "tz": "Europe/Paris" },
+    "sessionTarget": "isolated",
+    "payload": {
+      "kind": "agentTurn",
+      "message": "Summarize yesterday's activity and send it to Telegram.",
+      "deliver": true,
+      "channel": "my-telegram-bot",
+      "to": "123456789"
+    }
+  }
+}
+</code></pre>
+<p>Channel delivery is separate from session targeting. The cron job still runs in
+an isolated cron session, then Moltis forwards the finished output to the
+requested channel destination.</p>
 <h2 id="session-targeting"><a class="header" href="#session-targeting">Session Targeting</a></h2>
 <p>Each job specifies where its agent turn runs:</p>
 <div class="table-wrapper"><table><thead><tr><th>Target</th><th>Description</th></tr></thead><tbody>
-<tr><td><code>"main"</code></td><td>The main UI session (default)</td></tr>
-<tr><td><code>{ "channel": "&lt;name&gt;" }</code></td><td>A specific channel session</td></tr>
+<tr><td><code>"main"</code></td><td>Inject a <code>systemEvent</code> into the main session. Use this for reminders that should continue the main conversation.</td></tr>
+<tr><td><code>"isolated"</code></td><td>Run an <code>agentTurn</code> in a throwaway cron session. Use this for background jobs and channel delivery.</td></tr>
+<tr><td><code>named("&lt;name&gt;")</code></td><td>Internal/persistent cron session used by system jobs such as heartbeat. Not user-configurable through the <code>cron</code> tool.</td></tr>
 </tbody></table>
 </div>
 <h2 id="security"><a class="header" href="#security">Security</a></h2>
@@ -283,11 +319,11 @@ sandbox isolation, and job notification details.</p>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="session-branching.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="checkpoints.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <i class="fa fa-angle-left"></i>
                             </a>
 
-                            <a rel="next prefetch" href="skill-tools.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="webhooks.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <i class="fa fa-angle-right"></i>
                             </a>
 
@@ -297,11 +333,11 @@ sandbox isolation, and job notification details.</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="session-branching.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="checkpoints.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <i class="fa fa-angle-left"></i>
                     </a>
 
-                    <a rel="next prefetch" href="skill-tools.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="webhooks.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <i class="fa fa-angle-right"></i>
                     </a>
             </nav>

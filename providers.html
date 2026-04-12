@@ -202,6 +202,7 @@ Configure providers through the web UI or directly in configuration files.</p>
 <tr><td><strong>Moonshot (Kimi)</strong></td><td><code>moonshot</code></td><td><code>MOONSHOT_API_KEY</code></td><td>Streaming, tools, model discovery</td></tr>
 <tr><td><strong>Venice</strong></td><td><code>venice</code></td><td><code>VENICE_API_KEY</code></td><td>Streaming, tools, model discovery</td></tr>
 <tr><td><strong>Z.AI (Zhipu)</strong></td><td><code>zai</code></td><td><code>Z_API_KEY</code></td><td>Streaming, tools, model discovery</td></tr>
+<tr><td><strong>Z.AI Coding Plan</strong></td><td><code>zai-code</code></td><td><code>Z_CODE_API_KEY</code></td><td>Streaming, tools, model discovery (Coding plan billing endpoint)</td></tr>
 </tbody></table>
 </div>
 <h3 id="oauth-providers"><a class="header" href="#oauth-providers">OAuth Providers</a></h3>
@@ -213,6 +214,7 @@ Configure providers through the web UI or directly in configuration files.</p>
 <h3 id="local"><a class="header" href="#local">Local</a></h3>
 <div class="table-wrapper"><table><thead><tr><th>Provider</th><th>Config Name</th><th>Notes</th></tr></thead><tbody>
 <tr><td><strong>Ollama</strong></td><td><code>ollama</code></td><td>Local or remote Ollama instance</td></tr>
+<tr><td><strong>LM Studio</strong></td><td><code>lmstudio</code></td><td>Local LM Studio or any OpenAI-compatible server</td></tr>
 <tr><td><strong>Local LLM</strong></td><td><code>local-llm</code></td><td>Runs GGUF models directly on your machine</td></tr>
 </tbody></table>
 </div>
@@ -299,6 +301,9 @@ models = ["gemini-2.5-flash-preview-05-20", "gemini-2.0-flash"]
 <li>Click <strong>Connect</strong> and complete the auth flow.</li>
 <li>Choose a Codex model.</li>
 </ol>
+<p>If the browser cannot reach <code>localhost:1455</code>, Moltis now supports a manual
+fallback in both <strong>Settings</strong> and <strong>Onboarding</strong>: paste the callback URL (or
+<code>code#state</code>) into the OAuth panel and submit it.</p>
 <div id="admonition-docker-and-cloud-deployments" class="admonition admonish-note" role="note" aria-labelledby="admonition-docker-and-cloud-deployments-title">
 <div class="admonition-title">
 <div id="admonition-docker-and-cloud-deployments-title">
@@ -316,7 +321,9 @@ docker exec -it moltis moltis auth login --provider openai-codex
 # Fly.io
 fly ssh console -C "moltis auth login --provider openai-codex"
 </code></pre>
-<p>The CLI opens a browser on your machine and handles the callback locally.
+<p>The CLI opens a browser on your machine and handles the callback locally. If
+automatic callback capture fails, the CLI prompts you to paste the callback URL
+(or <code>code#state</code>) directly in the terminal.
 Tokens are saved to the config volume and picked up by the gateway automatically.</p>
 </div>
 </div>
@@ -359,6 +366,13 @@ CLI:</p>
 enabled = true
 # base_url = "http://127.0.0.1:11434/v1"  # Override for remote Ollama
 </code></pre>
+<h3 id="lm-studio"><a class="header" href="#lm-studio">LM Studio</a></h3>
+<p>LM Studio auto-detects when running at <code>http://127.0.0.1:1234</code>. No API key needed.
+Also works with llama.cpp or any OpenAI-compatible local server.</p>
+<pre><code class="language-toml">[providers.lmstudio]
+enabled = true
+# base_url = "http://127.0.0.1:1234/v1"  # Override for different port/host
+</code></pre>
 <h3 id="local-llm"><a class="header" href="#local-llm">Local LLM</a></h3>
 <p>Local LLM runs GGUF models directly on your machine.</p>
 <ol>
@@ -400,7 +414,7 @@ enabled = true
                                 <i class="fa fa-angle-left"></i>
                             </a>
 
-                            <a rel="next prefetch" href="mcp.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="choosing-a-provider.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <i class="fa fa-angle-right"></i>
                             </a>
 
@@ -414,7 +428,7 @@ enabled = true
                         <i class="fa fa-angle-left"></i>
                     </a>
 
-                    <a rel="next prefetch" href="mcp.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="choosing-a-provider.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <i class="fa fa-angle-right"></i>
                     </a>
             </nav>

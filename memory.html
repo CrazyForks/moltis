@@ -217,9 +217,12 @@
 </ul>
 <p>To use QMD:</p>
 <ol>
-<li>Install QMD separately from <a href="https://github.com/tobi/qmd">github.com/tobi/qmd</a></li>
+<li>Install the QMD CLI from <a href="https://github.com/tobi/qmd">github.com/tobi/qmd</a>: <code>npm install -g --ignore-scripts @tobilu/qmd</code> or <code>bun add -g @tobilu/qmd</code></li>
+<li>Verify the binary is on your <code>PATH</code>: <code>qmd --version</code></li>
 <li>Enable it in Settings &gt; Memory &gt; Backend</li>
 </ol>
+<p>Moltis invokes the <code>qmd</code> CLI directly for indexing and search, so the memory
+backend does not require a separate background daemon.</p>
 <h2 id="features"><a class="header" href="#features">Features</a></h2>
 <h3 id="citations"><a class="header" href="#citations">Citations</a></h3>
 <p>Citations append source file and line number information to search results:</p>
@@ -329,6 +332,8 @@ decides certain information is worth persisting.</p>
   "append": true
 }
 </code></pre>
+<p>Successful writes also return a <code>checkpointId</code>, so the change can be rolled
+back with <code>checkpoint_restore</code>.</p>
 <p><strong>Parameters:</strong></p>
 <div class="table-wrapper"><table><thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead><tbody>
 <tr><td><code>content</code></td><td>string</td><td><em>(required)</em></td><td>The content to save</td></tr>
@@ -428,6 +433,7 @@ systems.</p>
 </ol>
 <h3 id="qmd-not-available"><a class="header" href="#qmd-not-available">QMD not available</a></h3>
 <ol>
+<li>Install QMD if needed: <code>npm install -g --ignore-scripts @tobilu/qmd</code> or <code>bun add -g @tobilu/qmd</code></li>
 <li>Verify QMD is installed: <code>qmd --version</code></li>
 <li>Check that the path is correct in settings</li>
 <li>Ensure QMD has indexed your collections: <code>qmd stats</code></li>

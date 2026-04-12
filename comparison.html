@@ -230,8 +230,8 @@ Node.js as a runtime dependency and a smaller feature surface.</p>
 startup. It uses trait-driven architecture with 22+ provider implementations
 and 9+ channel integrations. Memory is backed by SQLite with hybrid vector +
 FTS search. The focus is on minimal footprint and broad platform support.</p>
-<h3 id="moltis--auditable-rust-gateway"><a class="header" href="#moltis--auditable-rust-gateway">Moltis — Auditable Rust gateway</a></h3>
-<p>Moltis prioritizes auditability and defense in depth. The core agent engine
+<h3 id="moltis--auditable-persistent-agent-server"><a class="header" href="#moltis--auditable-persistent-agent-server">Moltis — Auditable persistent agent server</a></h3>
+<p>Moltis prioritizes auditability, durable agent workflows, and defense in depth. The core agent engine
 (runner + provider model) is ~5K lines; the core (excluding the optional web UI)
 is ~196K lines across 46 modular crates, each independently auditable. Key
 differences from ZeroClaw:</p>
@@ -240,6 +240,8 @@ differences from ZeroClaw:</p>
 automation, web UI, and MCP support</li>
 <li><strong>Apple Container support</strong> in addition to Docker</li>
 <li><strong>WebAuthn passkey authentication</strong> — not just tokens</li>
+<li><strong>Cross-session recall tools</strong> for finding earlier work without dumping raw history</li>
+<li><strong>Automatic checkpoints</strong> before built-in skill and memory mutations</li>
 <li><strong>15 lifecycle hook events</strong> with circuit breaker and dry-run mode</li>
 <li><strong>Built-in web UI</strong> with real-time streaming, settings management, and
 session branching</li>
@@ -279,6 +281,7 @@ startup, and broad channel support without a web UI.</p>
 <p><strong>Choose Moltis if</strong> you want:</p>
 <ul>
 <li>A single auditable Rust binary with built-in web UI</li>
+<li>A persistent agent with cross-session recall and restoreable built-in edits</li>
 <li>Voice I/O with 15+ providers (8 TTS + 7 STT)</li>
 <li>MCP server support (stdio + HTTP/SSE)</li>
 <li>WebAuthn passkey authentication</li>

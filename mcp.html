@@ -203,12 +203,16 @@
 <ol>
 <li>Go to <strong>Settings</strong> → <strong>MCP Servers</strong></li>
 <li>Click <strong>Add Server</strong></li>
-<li>Enter the server configuration</li>
+<li>For remote Streamable HTTP servers, enter the server URL and any optional request headers</li>
 <li>Click <strong>Save</strong></li>
 </ol>
+<p>After saving a remote server, Moltis only shows a sanitized URL plus header names/count in the UI and status views. Stored header values stay hidden.</p>
 <h3 id="via-configuration"><a class="header" href="#via-configuration">Via Configuration</a></h3>
 <p>Add servers to <code>moltis.toml</code>:</p>
-<pre><code class="language-toml">[mcp.servers.filesystem]
+<pre><code class="language-toml">[mcp]
+request_timeout_secs = 30
+
+[mcp.servers.filesystem]
 command = "npx"
 args = ["-y", "@modelcontextprotocol/server-filesystem", "/Users/me/projects"]
 
@@ -216,11 +220,19 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/Users/me/projects"]
 command = "npx"
 args = ["-y", "@modelcontextprotocol/server-github"]
 env = { GITHUB_TOKEN = "ghp_..." }
+request_timeout_secs = 90
 
 [mcp.servers.remote_api]
-url = "https://mcp.example.com/mcp"
 transport = "sse"
+url = "https://mcp.example.com/mcp?api_key=$REMOTE_MCP_KEY"
+headers = { Authorization = "Bearer ${REMOTE_MCP_TOKEN}" }
+
+[mcp.servers.remote_http]
+transport = "streamable-http"
+url = "https://mcp.example.com/mcp"
+headers = { Authorization = "Bearer ${API_KEY}" }
 </code></pre>
+<p>Remote URLs and headers support <code>$NAME</code> and <code>${NAME}</code> placeholders. For live remote servers, placeholder values resolve from Moltis-managed env overrides, either <code>[env]</code> in config or <strong>Settings</strong> → <strong>Environment Variables</strong>.</p>
 <h2 id="popular-mcp-servers"><a class="header" href="#popular-mcp-servers">Popular MCP Servers</a></h2>
 <h3 id="official-servers"><a class="header" href="#official-servers">Official Servers</a></h3>
 <div class="table-wrapper"><table><thead><tr><th>Server</th><th>Description</th><th>Install</th></tr></thead><tbody>
@@ -235,17 +247,56 @@ transport = "sse"
 <h3 id="community-servers"><a class="header" href="#community-servers">Community Servers</a></h3>
 <p>Explore more at <a href="https://mcp.so">mcp.so</a> and <a href="https://github.com/modelcontextprotocol/servers">GitHub MCP Servers</a>.</p>
 <h2 id="configuration-options"><a class="header" href="#configuration-options">Configuration Options</a></h2>
-<pre><code class="language-toml">[mcp.servers.my_server]
+<pre><code class="language-toml">[mcp]
+request_timeout_secs = 30       # Global default timeout for MCP requests
+
+[mcp.servers.my_server]
 command = "node"                # Required for stdio transport
 args = ["server.js"]            # Optional arguments
 
 # Optional environment variables
 env = { API_KEY = "secret", DEBUG = "true" }
 
+# Optional: per-server timeout override
+request_timeout_secs = 90
+
 # Optional: remote transport
-transport = "sse"               # "stdio" (default) or "sse"
-url = "https://mcp.example.com/mcp"  # Required when transport = "sse"
+transport = "sse"               # "stdio" (default), "sse", or "streamable-http"
+url = "https://mcp.example.com/mcp"  # Required when transport = "sse" or "streamable-http"
+headers = { "x-api-key" = "$REMOTE_MCP_KEY" }  # Optional request headers
 </code></pre>
+<h2 id="request-timeouts"><a class="header" href="#request-timeouts">Request Timeouts</a></h2>
+<p>Moltis applies MCP request timeouts in two layers:</p>
+<ul>
+<li><code>mcp.request_timeout_secs</code> sets the global default for every MCP server</li>
+<li><code>mcp.servers.&lt;name&gt;.request_timeout_secs</code> optionally overrides that default for a specific server</li>
+</ul>
+<p>This is useful when most local MCP servers respond quickly, but one remote server or one expensive tool server needs a longer timeout.</p>
+<pre><code class="language-toml">[mcp]
+request_timeout_secs = 30
+
+[mcp.servers.remote_api]
+transport = "sse"
+url = "https://mcp.example.com/mcp"
+request_timeout_secs = 120
+</code></pre>
+<p>In the web UI, the MCP settings page lets you edit both the global default timeout and the optional timeout override for each configured server.</p>
+<h2 id="remote-server-secrets-and-placeholders"><a class="header" href="#remote-server-secrets-and-placeholders">Remote Server Secrets and Placeholders</a></h2>
+<p>Remote MCP servers (SSE or Streamable HTTP) often expect API keys or bearer tokens in the URL query string or request headers. Moltis supports both patterns.</p>
+<pre><code class="language-toml">[mcp.servers.linear_remote]
+transport = "sse"
+url = "https://mcp.example.com/mcp?api_key=$REMOTE_MCP_KEY"
+headers = {
+  Authorization = "Bearer ${REMOTE_MCP_TOKEN}",
+  "x-workspace" = "team-a",
+}
+</code></pre>
+<ul>
+<li>Use <code>$NAME</code> or <code>${NAME}</code> placeholders in remote <code>url</code> and <code>headers</code></li>
+<li>Placeholder values resolve from Moltis-managed env overrides, either <code>[env]</code> in config or <strong>Settings</strong> → <strong>Environment Variables</strong></li>
+<li>UI and API status payloads only expose sanitized URLs plus header names/count, not raw header values</li>
+<li>Query-string secrets are redacted when Moltis displays a remote URL after save</li>
+</ul>
 <h2 id="server-lifecycle"><a class="header" href="#server-lifecycle">Server Lifecycle</a></h2>
 <pre><code>┌─────────────────────────────────────────────────────┐
 │                   MCP Server                         │
@@ -327,6 +378,7 @@ args = ["server.js"]
 <ul>
 <li>Connection status (connected/disconnected/error)</li>
 <li>Available tools</li>
+<li>Sanitized remote URL and configured header names</li>
 <li>Recent errors</li>
 </ul>
 <h3 id="view-logs"><a class="header" href="#view-logs">View Logs</a></h3>
@@ -364,6 +416,48 @@ scopes = ["mcp:read", "mcp:write"]
 </code></pre>
 <h3 id="re-authentication"><a class="header" href="#re-authentication">Re-authentication</a></h3>
 <p>If your session expires or tokens are revoked, Moltis automatically re-authenticates on the next <code>401</code> response. You can also trigger re-authentication manually via the <code>mcp.reauth</code> RPC method.</p>
+<h2 id="running-mcp-servers-in-docker"><a class="header" href="#running-mcp-servers-in-docker">Running MCP Servers in Docker</a></h2>
+<p>When running Moltis in Docker, you have two options for stdio-based MCP servers:</p>
+<h3 id="using-the-built-in-nodejs"><a class="header" href="#using-the-built-in-nodejs">Using the built-in Node.js</a></h3>
+<p>The Moltis Docker image includes Node.js and npm, so most MCP servers work out of the box:</p>
+<pre><code class="language-toml">[mcp.servers.filesystem]
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-filesystem", "/data"]
+</code></pre>
+<blockquote>
+<p><strong>Tip:</strong> Mount <code>/home/moltis/.npm</code> as a named volume so packages are only
+downloaded once, and bind-mount any directories the MCP server needs to
+access:</p>
+<pre><code class="language-sh">docker run \
+  -v moltis-npm-cache:/home/moltis/.npm \
+  -v /host/path/to/data:/data \
+  ...
+</code></pre>
+</blockquote>
+<h3 id="using-docker-containers"><a class="header" href="#using-docker-containers">Using Docker containers</a></h3>
+<p>Since the Moltis image ships the Docker CLI (<code>docker-ce-cli</code>), and given a Docker daemon is reachable via the mounted socket, you can also run MCP servers as isolated containers. This is useful when you need a specific Node version, want stronger isolation, or prefer official MCP Docker images:</p>
+<pre><code class="language-toml"># Run an npm-based MCP server in a container
+[mcp.servers.filesystem]
+command = "docker"
+args = [
+  "run", "--rm", "-i",
+  # NOTE: bind-mount paths resolve against the HOST filesystem, not the
+  # Moltis container. Use the same host path you mounted into Moltis.
+  "-v", "/data:/data",
+  # Cache npm downloads across container restarts
+  "-v", "moltis-npx-cache:/root/.npm",
+  "--entrypoint", "npx",
+  "node:22-alpine",
+  "-y", "@modelcontextprotocol/server-filesystem", "/data",
+]
+
+# Use an official MCP Docker image
+[mcp.servers.memory]
+command = "docker"
+args = ["run", "--rm", "-i", "mcp/memory"]
+</code></pre>
+<p>The named volume <code>moltis-npx-cache</code> persists the npm cache across container restarts, avoiding re-downloads on every MCP server restart. For air-gapped environments, consider pre-building a custom image with the MCP package installed.</p>
+<p>When using containerized MCP servers, remember to mount any directories the server needs access to with <code>-v</code>. Because Moltis talks to the Docker daemon via the mounted socket, bind-mount paths (<code>-v</code>) always reference the <strong>host</strong> filesystem — not the Moltis container’s filesystem.</p>
 <h2 id="security-considerations"><a class="header" href="#security-considerations">Security Considerations</a></h2>
 <div id="admonition-warning" class="admonition admonish-warning" role="note" aria-labelledby="admonition-warning-title">
 <div class="admonition-title">
@@ -380,6 +474,7 @@ scopes = ["mcp:read", "mcp:write"]
 <li><strong>Review server code</strong> before running</li>
 <li><strong>Limit file access</strong> — use specific paths, not <code>/</code></li>
 <li><strong>Use environment variables</strong> for secrets</li>
+<li><strong>Prefer placeholders</strong> in remote URLs and headers (<code>$NAME</code> / <code>${NAME}</code>) instead of hardcoding secrets repeatedly</li>
 <li><strong>Network isolation</strong> — run untrusted servers in containers</li>
 </ul>
 <h2 id="troubleshooting"><a class="header" href="#troubleshooting">Troubleshooting</a></h2>
@@ -406,7 +501,7 @@ scopes = ["mcp:read", "mcp:write"]
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="providers.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="anthropic-oauth.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <i class="fa fa-angle-left"></i>
                             </a>
 
@@ -420,7 +515,7 @@ scopes = ["mcp:read", "mcp:write"]
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="providers.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="anthropic-oauth.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <i class="fa fa-angle-left"></i>
                     </a>
 

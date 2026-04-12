@@ -235,6 +235,30 @@ MCP server connections.</p>
 (local-llm and Ollama) from the provider setup page since they cannot run
 on cloud VMs. The included deploy templates for Fly.io, DigitalOcean, and
 Render already set this variable.</p>
+<h2 id="ngrok"><a class="header" href="#ngrok">ngrok</a></h2>
+<p>Moltis can also expose a public HTTPS endpoint through ngrok without running
+an external <code>ngrok</code> binary. This is useful when you want a public callback
+URL or temporary team access from a local machine or private host.</p>
+<p>Configuration:</p>
+<pre><code class="language-toml">[ngrok]
+enabled = true
+authtoken = "${NGROK_AUTHTOKEN}" # or set NGROK_AUTHTOKEN in the environment
+# domain = "team-gateway.ngrok.app" # optional reserved/static domain
+</code></pre>
+<p>Notes:</p>
+<ul>
+<li>The tunnel is feature-gated. Standard CLI builds include it by default, but
+custom minimal builds can opt out of the <code>ngrok</code> feature.</li>
+<li>In the web UI, configure Tailscale and ngrok from Settings -&gt; Remote Access.</li>
+<li>ngrok forwards into a loopback-only internal HTTP listener. Your normal
+local TLS and bind settings remain unchanged.</li>
+<li>Keep authentication enabled. Exposing ngrok with <code>auth.disabled = true</code>
+creates a public unauthenticated endpoint, which is exactly as bad as it
+sounds.</li>
+<li>Passkeys are hostname-bound. If you use ephemeral ngrok URLs, existing
+passkeys may not work on the new hostname. Use a reserved domain if you want
+stable passkey behavior.</li>
+</ul>
 <h2 id="coolify-self-hosted-eg-hetzner"><a class="header" href="#coolify-self-hosted-eg-hetzner">Coolify (self-hosted, e.g. Hetzner)</a></h2>
 <p>Coolify deployments can run Moltis with sandboxed exec tools, as long as the
 service mounts the host Docker socket.</p>
@@ -351,9 +375,11 @@ docker exec -it moltis moltis auth login --provider openai-codex
 # Generic container
 docker exec -it &lt;container&gt; moltis auth login --provider openai-codex
 </code></pre>
-<p>The CLI opens a browser on the machine where you run the command. After you
-log in, tokens are saved to the config volume and the running gateway picks
-them up automatically — no restart needed.</p>
+<p>The CLI opens a browser on the machine where you run the command. If automatic
+callback capture fails, Moltis prompts you to paste the callback URL (or
+<code>code#state</code>) directly in the terminal. After you log in, tokens are saved to
+the config volume and the running gateway picks them up automatically — no
+restart needed.</p>
 <div id="admonition-tip-1" class="admonition admonish-tip" role="note" aria-labelledby="admonition-tip-1-title">
 <div class="admonition-title">
 <div id="admonition-tip-1-title">

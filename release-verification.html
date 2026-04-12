@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Skill Self-Extension - Moltis Documentation</title>
+        <title>Release Verification - Moltis Documentation</title>
 
 
         <!-- Custom HTML head -->
@@ -149,7 +149,7 @@
                         <a href="https://github.com/moltis-org/moltis" title="Git repository" aria-label="Git repository">
                             <i id="git-repository-button" class="fa fa-github"></i>
                         </a>
-                        <a href="https://github.com/moltis-org/moltis/edit/main/docs/src/src/skill-tools.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                        <a href="https://github.com/moltis-org/moltis/edit/main/docs/src/src/release-verification.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
                             <i id="git-edit-button" class="fa fa-edit"></i>
                         </a>
 
@@ -183,108 +183,171 @@
 
                 <div id="content" class="content">
                     <main>
-                        <h1 id="skill-self-extension"><a class="header" href="#skill-self-extension">Skill Self-Extension</a></h1>
-<p>Moltis can create, update, and delete personal skills at runtime through agent
-tools, enabling the system to extend its own capabilities during a conversation.</p>
-<h2 id="overview"><a class="header" href="#overview">Overview</a></h2>
-<p>Three agent tools manage personal skills by default:</p>
-<div class="table-wrapper"><table><thead><tr><th>Tool</th><th>Description</th></tr></thead><tbody>
-<tr><td><code>create_skill</code></td><td>Write a new <code>SKILL.md</code> to <code>&lt;data_dir&gt;/skills/&lt;name&gt;/</code></td></tr>
-<tr><td><code>update_skill</code></td><td>Overwrite an existing skill’s <code>SKILL.md</code></td></tr>
-<tr><td><code>delete_skill</code></td><td>Remove a skill directory</td></tr>
+                        <h1 id="release-verification"><a class="header" href="#release-verification">Release Verification</a></h1>
+<p>Moltis releases use <strong>multiple signing layers</strong> to provide strong supply chain guarantees:</p>
+<div class="table-wrapper"><table><thead><tr><th>Method</th><th>Proves</th><th>Verification</th></tr></thead><tbody>
+<tr><td><strong>GitHub Artifact Attestations</strong> (CI-generated)</td><td>Artifact was built by this repo’s GitHub Actions workflow</td><td><code>gh attestation verify</code></td></tr>
+<tr><td><strong>Sigstore</strong> (keyless, CI-generated)</td><td>Artifact was built by GitHub Actions from this repo</td><td><code>cosign verify-blob</code></td></tr>
+<tr><td><strong>GPG</strong> (YubiKey-resident key, maintainer-signed)</td><td>A specific maintainer authorized the release</td><td><code>gpg --verify</code></td></tr>
+<tr><td><strong>SHA256/SHA512 checksums</strong></td><td>File integrity (no corruption/tampering in transit)</td><td><code>sha256sum --check</code></td></tr>
 </tbody></table>
 </div>
-<p>When <code>skills.enable_agent_sidecar_files = true</code>, a fourth tool becomes
-available:</p>
-<div class="table-wrapper"><table><thead><tr><th>Tool</th><th>Description</th></tr></thead><tbody>
-<tr><td><code>write_skill_files</code></td><td>Write supplementary UTF-8 text files inside an existing personal skill directory</td></tr>
+<p>All attestations are publicly visible on the
+<a href="https://github.com/moltis-org/moltis/attestations">repository attestations page</a>.</p>
+<h2 id="quick-verification"><a class="header" href="#quick-verification">Quick Verification</a></h2>
+<p>The easiest way to verify a release is with the included script:</p>
+<pre><code class="language-bash"># Verify all artifacts for a release (fetches GPG key automatically)
+./scripts/verify-release.sh --version VERSION
+
+# Also check SHA256 checksums
+./scripts/verify-release.sh --checksums --version VERSION
+
+# Verify specific local files
+./scripts/verify-release.sh moltis-VERSION-x86_64-unknown-linux-gnu.tar.gz
+</code></pre>
+<h3 id="github-artifact-attestations"><a class="header" href="#github-artifact-attestations">GitHub Artifact Attestations</a></h3>
+<p>GitHub artifact attestations provide cryptographic proof that release artifacts
+were built inside this repository’s GitHub Actions workflow. Verification uses
+the <a href="https://cli.github.com/">GitHub CLI</a>:</p>
+<pre><code class="language-bash"># Verify a downloaded binary
+gh attestation verify moltis-VERSION-x86_64-unknown-linux-gnu.tar.gz \
+  -R moltis-org/moltis
+
+# Verify a Docker image
+gh attestation verify oci://ghcr.io/moltis-org/moltis:VERSION \
+  -R moltis-org/moltis
+
+# Verify an SBOM
+gh attestation verify moltis-sbom.spdx.json \
+  -R moltis-org/moltis
+</code></pre>
+<p>Browse all attestations at
+<a href="https://github.com/moltis-org/moltis/attestations">https://github.com/moltis-org/moltis/attestations</a>.</p>
+<h3 id="manual-verification"><a class="header" href="#manual-verification">Manual Verification</a></h3>
+<h4 id="1-verify-checksums"><a class="header" href="#1-verify-checksums">1. Verify checksums</a></h4>
+<pre><code class="language-bash"># Download the artifact and its checksum
+curl -LO https://github.com/moltis-org/moltis/releases/download/VERSION/moltis-VERSION-x86_64-unknown-linux-gnu.tar.gz
+curl -LO https://github.com/moltis-org/moltis/releases/download/VERSION/moltis-VERSION-x86_64-unknown-linux-gnu.tar.gz.sha256
+
+sha256sum --check moltis-VERSION-x86_64-unknown-linux-gnu.tar.gz.sha256
+</code></pre>
+<h4 id="2-verify-gpg-signature"><a class="header" href="#2-verify-gpg-signature">2. Verify GPG signature</a></h4>
+<p>The maintainer’s GPG key fingerprint is:</p>
+<pre><code>3103 20A8 CC1C 5BA8 6AD0  9040 C045 1BAD F764 9BBF
+</code></pre>
+<pre><code class="language-bash"># Import the maintainer's public key (one-time)
+curl -fsSL https://pen.so/gpg.asc | gpg --import
+
+# Confirm the fingerprint matches
+gpg --fingerprint F7649BBF
+
+# Download the detached signature
+curl -LO https://github.com/moltis-org/moltis/releases/download/VERSION/moltis-VERSION-x86_64-unknown-linux-gnu.tar.gz.asc
+
+# Verify
+gpg --verify \
+  moltis-VERSION-x86_64-unknown-linux-gnu.tar.gz.asc \
+  moltis-VERSION-x86_64-unknown-linux-gnu.tar.gz
+</code></pre>
+<p>You should see <code>Good signature from ...</code> with the maintainer’s identity.</p>
+<h4 id="3-verify-sigstore-signature"><a class="header" href="#3-verify-sigstore-signature">3. Verify Sigstore signature</a></h4>
+<pre><code class="language-bash"># Install cosign: https://docs.sigstore.dev/cosign/system_config/installation/
+
+# Download signature and certificate
+curl -LO https://github.com/moltis-org/moltis/releases/download/VERSION/moltis-VERSION-x86_64-unknown-linux-gnu.tar.gz.sig
+curl -LO https://github.com/moltis-org/moltis/releases/download/VERSION/moltis-VERSION-x86_64-unknown-linux-gnu.tar.gz.crt
+
+cosign verify-blob \
+  --signature moltis-VERSION-x86_64-unknown-linux-gnu.tar.gz.sig \
+  --certificate moltis-VERSION-x86_64-unknown-linux-gnu.tar.gz.crt \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-identity-regexp 'https://github\.com/moltis-org/moltis/' \
+  moltis-VERSION-x86_64-unknown-linux-gnu.tar.gz
+</code></pre>
+<h4 id="4-verify-docker-images"><a class="header" href="#4-verify-docker-images">4. Verify Docker images</a></h4>
+<pre><code class="language-bash">cosign verify \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-identity-regexp 'https://github\.com/moltis-org/moltis/' \
+  ghcr.io/moltis-org/moltis:VERSION
+</code></pre>
+<h2 id="what-each-layer-proves"><a class="header" href="#what-each-layer-proves">What Each Layer Proves</a></h2>
+<p><strong>Checksums</strong> detect download corruption or CDN tampering. They do not prove
+who created the file.</p>
+<p><strong>GitHub artifact attestations</strong> create unfalsifiable provenance records tied
+to the repository, workflow, commit SHA, and triggering event. They are stored
+in GitHub’s attestation ledger and verifiable with <code>gh attestation verify</code>.
+This provides SLSA v1.0 Build Level 2 guarantees.</p>
+<p><strong>Sigstore signatures</strong> prove the artifact was built inside the
+<code>moltis-org/moltis</code> GitHub Actions workflow using OIDC-based keyless signing.
+This guards against a compromised maintainer laptop — even if someone steals
+credentials, they cannot reproduce a valid Sigstore certificate from the CI
+environment. Signatures are recorded in Sigstore’s Rekor transparency log.</p>
+<p><strong>GPG signatures</strong> prove the release was reviewed and authorized by a specific
+maintainer holding the corresponding private key. Because the key lives on a
+YubiKey hardware token, compromise requires physical access to the device plus
+the PIN.</p>
+<p>Together, these layers create a strong chain: GitHub attestations and Sigstore
+prove <em>where</em> the artifact was built (CI), and GPG proves <em>who</em> authorized it
+(maintainer with hardware key).</p>
+<h2 id="release-artifacts-per-file"><a class="header" href="#release-artifacts-per-file">Release Artifacts Per File</a></h2>
+<p>Each release artifact (<code>.deb</code>, <code>.rpm</code>, <code>.tar.gz</code>, <code>.exe</code>, etc.) may have:</p>
+<div class="table-wrapper"><table><thead><tr><th>Extension</th><th>Source</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>.sha256</code></td><td>CI</td><td>SHA-256 checksum</td></tr>
+<tr><td><code>.sha512</code></td><td>CI</td><td>SHA-512 checksum</td></tr>
+<tr><td><code>.sig</code></td><td>CI</td><td>Sigstore detached signature</td></tr>
+<tr><td><code>.crt</code></td><td>CI</td><td>Sigstore signing certificate</td></tr>
+<tr><td><code>.asc</code></td><td>Maintainer</td><td>GPG detached armored signature</td></tr>
 </tbody></table>
 </div>
-<p>Skills created this way are personal and stored in the configured data
-directory’s <code>skills/</code> folder. They become available on the next message
-automatically thanks to the skill watcher.</p>
-<p>Before any built-in skill mutation runs, Moltis creates an automatic
-checkpoint. Tool results include a <code>checkpointId</code> you can later restore with
-<code>checkpoint_restore</code>.</p>
-<h2 id="skill-watcher"><a class="header" href="#skill-watcher">Skill Watcher</a></h2>
-<p>The skill watcher (<code>crates/skills/src/watcher.rs</code>) monitors skill directories
-for filesystem changes using debounced notifications. When a <code>SKILL.md</code> file is
-created, modified, or deleted, the watcher emits a <code>skills.changed</code> event via
-the WebSocket event bus so the UI can refresh. Supplementary file writes do not
-change discovery on their own, so the watcher intentionally stays focused on
-<code>SKILL.md</code>.</p>
-<div id="admonition-tip" class="admonition admonish-tip" role="note" aria-labelledby="admonition-tip-title">
-<div class="admonition-title">
-<div id="admonition-tip-title">
-<p>Tip</p>
-</div>
-<a class="admonition-anchor-link" href="#admonition-tip"></a>
-</div>
-<div>
-<p>The watcher uses debouncing to avoid firing multiple events for rapid
-successive edits (e.g. an editor writing a temp file then renaming).</p>
-</div>
-</div>
-<h2 id="creating-a-skill"><a class="header" href="#creating-a-skill">Creating a Skill</a></h2>
-<p>The agent can create a skill by calling the <code>create_skill</code> tool:</p>
-<pre><code class="language-json">{
-  "name": "summarize-pr",
-  "content": "# summarize-pr\n\nSummarize a GitHub pull request...",
-  "description": "Summarize GitHub PRs with key changes and review notes"
-}
+<h2 id="for-maintainers-signing-a-release"><a class="header" href="#for-maintainers-signing-a-release">For Maintainers: Signing a Release</a></h2>
+<p>After CI publishes a release, sign the artifacts locally using your
+YubiKey-resident GPG key:</p>
+<pre><code class="language-bash"># Sign the latest release (prompts for YubiKey PIN/touch)
+./scripts/gpg-sign-release.sh
+
+# Sign a specific version
+./scripts/gpg-sign-release.sh 20260331.01
+
+# Use a specific key
+./scripts/gpg-sign-release.sh --key 0xABCD1234 20260331.01
+
+# Dry run (sign locally, don't upload)
+./scripts/gpg-sign-release.sh --dry-run 20260331.01
 </code></pre>
-<p>This writes <code>&lt;data_dir&gt;/skills/summarize-pr/SKILL.md</code> with the provided content.
-The skill discoverer picks it up on the next message.</p>
-<h2 id="writing-supplementary-files"><a class="header" href="#writing-supplementary-files">Writing Supplementary Files</a></h2>
-<p>When <code>skills.enable_agent_sidecar_files = true</code>, the agent can add sidecar
-files such as shell scripts, templates, <code>_meta.json</code>, or <code>Dockerfile</code>:</p>
-<pre><code class="language-json">{
-  "name": "summarize-pr",
-  "files": [
-    {
-      "path": "script.sh",
-      "content": "#!/usr/bin/env bash\necho summarize\n"
-    },
-    {
-      "path": "templates/prompt.txt",
-      "content": "Summarize the pull request with risks first.\n"
-    }
-  ]
-}
-</code></pre>
-<p>Safety rules:</p>
+<p>The script:</p>
+<ol>
+<li>Downloads all release packages from GitHub</li>
+<li>Verifies their SHA256 checksums against CI-generated values</li>
+<li>Creates <code>.asc</code> detached GPG signatures for each artifact</li>
+<li>Uploads the <code>.asc</code> files to the GitHub release</li>
+</ol>
+<h3 id="prerequisites"><a class="header" href="#prerequisites">Prerequisites</a></h3>
 <ul>
-<li>only writes inside <code>&lt;data_dir&gt;/skills/&lt;name&gt;/</code></li>
-<li>only relative UTF-8 text files</li>
-<li>rejects <code>..</code>, absolute paths, hidden path components, and <code>SKILL.md</code></li>
-<li>rejects symlink escapes and oversized batches</li>
-<li>appends an audit entry to <code>~/.moltis/logs/security-audit.jsonl</code></li>
+<li><a href="https://cli.github.com/">GitHub CLI</a> (<code>gh</code>) authenticated</li>
+<li>GPG with your signing key available (YubiKey inserted)</li>
+<li>The <code>GPG_KEY_ID</code> environment variable or <code>--key</code> flag if you have
+multiple secret keys</li>
 </ul>
-<h2 id="updating-a-skill"><a class="header" href="#updating-a-skill">Updating a Skill</a></h2>
-<pre><code class="language-json">{
-  "name": "summarize-pr",
-  "content": "# summarize-pr\n\nUpdated instructions..."
-}
+<h3 id="publish-your-public-key"><a class="header" href="#publish-your-public-key">Publish Your Public Key</a></h3>
+<p>Upload your public GPG key so users can verify signatures:</p>
+<pre><code class="language-bash"># Export and upload to a keyserver
+gpg --export --armor YOUR_KEY_ID | \
+  curl -T - https://keys.openpgp.org
+
+# Also add to your GitHub profile:
+# Settings &gt; SSH and GPG keys &gt; New GPG key
+gpg --export --armor YOUR_KEY_ID
 </code></pre>
-<h2 id="deleting-a-skill"><a class="header" href="#deleting-a-skill">Deleting a Skill</a></h2>
-<pre><code class="language-json">{
-  "name": "summarize-pr"
-}
-</code></pre>
-<p>This removes the entire <code>&lt;data_dir&gt;/skills/summarize-pr/</code> directory, including
-any supplementary files written alongside <code>SKILL.md</code>.</p>
-<p>Deleted skills can be restored from the returned <code>checkpointId</code> with
-<code>checkpoint_restore</code>, as long as the checkpoint still exists.</p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="webhooks.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="skills-security.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <i class="fa fa-angle-left"></i>
                             </a>
 
-                            <a rel="next prefetch" href="mobile-pwa.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="docker.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <i class="fa fa-angle-right"></i>
                             </a>
 
@@ -294,11 +357,11 @@ any supplementary files written alongside <code>SKILL.md</code>.</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="webhooks.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="skills-security.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <i class="fa fa-angle-left"></i>
                     </a>
 
-                    <a rel="next prefetch" href="mobile-pwa.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="docker.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <i class="fa fa-angle-right"></i>
                     </a>
             </nav>

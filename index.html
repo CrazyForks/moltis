@@ -196,7 +196,7 @@
 </div>
 </div>
 <div style="text-align: center; margin: 2em 0;">
-<strong style="font-size: 1.2em;">A personal AI gateway written in Rust.<br>One binary, no runtime, no npm.</strong>
+<strong style="font-size: 1.2em;">A secure persistent personal agent server written in Rust.<br>One binary, no runtime, no npm.</strong>
 </div>
 <p>Moltis compiles your entire AI gateway — web UI, LLM providers, tools, and all assets — into a single self-contained executable. There’s no Node.js to babysit, no <code>node_modules</code> to sync, no V8 garbage collector introducing latency spikes.</p>
 <pre><code class="language-bash"># Quick install (macOS / Linux)
@@ -220,6 +220,10 @@ curl -fsSL https://www.moltis.org/install.sh | sh
 <li><strong>Multi-Channel</strong> — Web UI, Telegram, Discord, API access with synchronized responses</li>
 <li><strong>Built-in Throttling</strong> — Per-IP endpoint limits with strict login protection</li>
 <li><strong>Long-Term Memory</strong> — Embeddings-powered knowledge base with hybrid search</li>
+<li><strong>Cross-Session Recall</strong> — Search earlier sessions for relevant snippets and prior decisions</li>
+<li><strong>Automatic Checkpoints</strong> — Restore built-in skill and memory mutations without touching git history</li>
+<li><strong>Remote Exec Targets</strong> — Route command execution locally, through a paired node, or over SSH</li>
+<li><strong>Context Hardening</strong> — Load <code>CLAUDE.md</code>, <code>AGENTS.md</code>, <code>.cursorrules</code>, and rule directories with safety scanning</li>
 <li><strong>Hook System</strong> — Observe, modify, or block actions at any lifecycle point</li>
 <li><strong>Compile-Time Safety</strong> — Misconfigurations caught by <code>cargo check</code>, not runtime crashes</li>
 </ul>

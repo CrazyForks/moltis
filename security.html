@@ -376,8 +376,9 @@ The encryption key is derived from the user’s password via Argon2id.</p>
 in Settings &gt; Authentication), unseals automatically on login, and
 re-seals on server restart. A recovery key is provided at initialization
 for emergency access.</p>
-<p>When the vault is sealed, a middleware layer blocks API requests with
-<code>423 Locked</code> to prevent serving stale data.</p>
+<p>When the vault is sealed, a middleware layer blocks vault-protected API
+requests with <code>423 Locked</code>. Session history and bootstrap endpoints remain
+available because those payloads are not yet encrypted at rest.</p>
 <p>For full details on the key hierarchy, vault states, API endpoints, and
 cryptographic parameters, see <a href="vault.html">Encryption at Rest (Vault)</a>.</p>
 <h2 id="network-security"><a class="header" href="#network-security">Network Security</a></h2>
@@ -431,6 +432,7 @@ allowed.</p>
 <tr><td>Other <code>/api/auth/*</code></td><td>120 requests per 60 seconds</td></tr>
 <tr><td>Other <code>/api/*</code></td><td>180 requests per 60 seconds</td></tr>
 <tr><td><code>/ws/chat</code> upgrade</td><td>30 requests per 60 seconds</td></tr>
+<tr><td><code>/ws</code> upgrade</td><td>30 requests per 60 seconds</td></tr>
 </tbody></table>
 </div>
 <h3 id="when-limits-are-hit"><a class="header" href="#when-limits-are-hit">When Limits Are Hit</a></h3>
@@ -502,6 +504,29 @@ Moltis TLS enabled. Set <code>MOLTIS_ALLOW_TLS_BEHIND_PROXY=true</code> to
 acknowledge this non-default setup.</p>
 </li>
 </ol>
+<h3 id="nginx-direct-config-example"><a class="header" href="#nginx-direct-config-example">Nginx (direct config example)</a></h3>
+<p>If HTTP works but WebSockets fail, make sure your location block includes
+<code>proxy_http_version 1.1;</code> and upgrade headers.</p>
+<pre><code class="language-nginx">location / {
+    proxy_pass http://172.17.0.1:13131;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Real-IP $remote_addr;
+
+    # WebSocket upgrade support
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+}
+</code></pre>
+<p>If you use <code>$connection_upgrade</code>, define it once in the <code>http {}</code> block:</p>
+<pre><code class="language-nginx">map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+</code></pre>
 <h3 id="nginx-proxy-manager-known-good-headers"><a class="header" href="#nginx-proxy-manager-known-good-headers">Nginx Proxy Manager (known-good headers)</a></h3>
 <p>If WebSockets fail behind NPM while HTTP works, ensure:</p>
 <ul>
@@ -585,6 +610,22 @@ rate_limit_window_secs = 300  # 5 per 5 minutes
 <h3 id="7-keep-software-updated"><a class="header" href="#7-keep-software-updated">7. Keep Software Updated</a></h3>
 <p>Subscribe to security advisories and update promptly when vulnerabilities are
 disclosed.</p>
+<h2 id="release-signing-and-verification"><a class="header" href="#release-signing-and-verification">Release Signing and Verification</a></h2>
+<p>All release artifacts are signed with three independent methods:</p>
+<ol>
+<li><strong><a href="https://github.com/moltis-org/moltis/attestations">GitHub artifact attestations</a></strong>
+(automated in CI) — cryptographic provenance records tied to the repository,
+workflow, and commit SHA; provides SLSA v1.0 Build Level 2 guarantees;
+verifiable with <code>gh attestation verify</code></li>
+<li><strong>Sigstore keyless signing</strong> (automated in CI) — proves the artifact was
+built by the <code>moltis-org/moltis</code> GitHub Actions pipeline; recorded in
+Sigstore’s Rekor transparency log</li>
+<li><strong>GPG signing</strong> (maintainer’s YubiKey hardware key) — proves a specific
+maintainer authorized the release</li>
+</ol>
+<p>Checksums (SHA-256 and SHA-512) are generated for every artifact.</p>
+<p>See <a href="release-verification.html">Release Verification</a> for detailed verification
+instructions, artifact file extensions, and maintainer signing workflow.</p>
 <h2 id="reporting-security-issues"><a class="header" href="#reporting-security-issues">Reporting Security Issues</a></h2>
 <p>Report security vulnerabilities privately to the maintainers. Do not open
 public issues for security bugs.</p>

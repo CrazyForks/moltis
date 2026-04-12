@@ -199,6 +199,9 @@ Registry on every release.</p>
   ghcr.io/moltis-org/moltis:latest
 </code></pre>
 <p>Open https://localhost:13131 in your browser and configure your LLM provider to start chatting.</p>
+<p>For unattended bootstraps, add <code>MOLTIS_PASSWORD</code>, <code>MOLTIS_PROVIDER</code>, and
+<code>MOLTIS_API_KEY</code> before first start. That pre-configures auth plus one LLM
+provider so you can skip the browser setup wizard entirely.</p>
 <h3 id="ports"><a class="header" href="#ports">Ports</a></h3>
 <div class="table-wrapper"><table><thead><tr><th>Port</th><th>Purpose</th></tr></thead><tbody>
 <tr><td>13131</td><td>Gateway (HTTPS) — web UI, API, WebSocket</td></tr>
@@ -260,20 +263,32 @@ for easier access to configuration files:</p>
 <p>Moltis runs LLM-generated shell commands inside isolated containers for
 security. When Moltis itself runs in a container, it needs access to the host’s
 container runtime to create these sandbox containers.</p>
-<p><strong>Without the socket mount</strong>, sandbox execution is disabled. The agent will
-still work for chat-only interactions, but any tool that runs shell commands
-will fail.</p>
-<pre><code class="language-bash"># Required for sandbox execution
+<pre><code class="language-bash"># Recommended for full container isolation
 -v /var/run/docker.sock:/var/run/docker.sock
 </code></pre>
+<p><strong>Without the socket mount</strong>, Moltis automatically falls back to the
+<a href="sandbox.html#restricted-host-sandbox">restricted-host sandbox</a>, which provides
+lightweight isolation by clearing environment variables, restricting <code>PATH</code>,
+and applying resource limits via <code>ulimit</code>. Commands will execute successfully
+inside the Moltis container but without filesystem or network isolation.</p>
+<p>For full container-level isolation (filesystem boundaries, network policies),
+mount the Docker socket.</p>
+<p>If Moltis is itself running in Docker and your <code>data_dir()</code> mount is backed by
+a different host path than <code>/home/moltis/.moltis</code>, Moltis will try to discover
+that host path automatically from <code>docker inspect</code>/<code>podman inspect</code>. If that
+lookup fails, add this to <code>/home/moltis/.config/moltis/moltis.toml</code> inside the
+container:</p>
+<pre><code class="language-toml">[tools.exec.sandbox]
+host_data_dir = "/absolute/host/path/to/data"
+</code></pre>
+<p>For a bind mount like <code>-v ./data:/home/moltis/.moltis</code>, use the resolved host
+path to <code>./data</code>. Restart Moltis after changing the config so new sandbox
+containers pick up the corrected mount source.</p>
 <h3 id="security-consideration"><a class="header" href="#security-consideration">Security Consideration</a></h3>
 <p>Mounting the Docker socket gives the container full access to the Docker
 daemon. This is equivalent to root access on the host for practical purposes.
 Only run Moltis containers from trusted sources (official images from
 <code>ghcr.io/moltis-org/moltis</code>).</p>
-<p>If you cannot mount the Docker socket, Moltis will run in “no sandbox” mode —
-commands execute directly inside the Moltis container itself, which provides
-no isolation.</p>
 <h2 id="docker-compose"><a class="header" href="#docker-compose">Docker Compose</a></h2>
 <p>See <a href="../examples/docker-compose.yml"><code>examples/docker-compose.yml</code></a> for a
 complete example:</p>
@@ -309,6 +324,30 @@ isolation for exec tools.</li>
 <pre><code class="language-bash">docker compose up -d
 docker compose logs -f moltis  # watch for startup messages
 </code></pre>
+<h2 id="browser-sandbox-in-docker"><a class="header" href="#browser-sandbox-in-docker">Browser Sandbox in Docker</a></h2>
+<p>When Moltis runs inside Docker and launches a sandboxed browser, the browser
+container is a sibling container on the host. By default, Moltis connects to
+<code>127.0.0.1</code> which only reaches its own loopback, not the browser.</p>
+<p>Add <code>container_host</code> to your <code>moltis.toml</code> so Moltis can reach the browser
+container through the host’s port mapping:</p>
+<pre><code class="language-toml">[tools.browser]
+container_host = "host.docker.internal"
+</code></pre>
+<p>On Linux, add <code>--add-host</code> to the Moltis container so <code>host.docker.internal</code>
+resolves to the host:</p>
+<pre><code class="language-bash">docker run -d \
+  --name moltis \
+  --add-host=host.docker.internal:host-gateway \
+  -p 13131:13131 \
+  -p 13132:13132 \
+  -p 1455:1455 \
+  -v moltis-config:/home/moltis/.config/moltis \
+  -v moltis-data:/home/moltis/.moltis \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  ghcr.io/moltis-org/moltis:latest
+</code></pre>
+<p>Alternatively, use the Docker bridge gateway IP directly
+(<code>container_host = "172.17.0.1"</code> on most Linux setups).</p>
 <h2 id="podman-support"><a class="header" href="#podman-support">Podman Support</a></h2>
 <p>Moltis works with Podman using its Docker-compatible API. Mount the Podman
 socket instead of the Docker socket:</p>
@@ -363,8 +402,23 @@ sudo systemctl enable --now podman.socket
 <h3 id="api-keys-and-the-env-section"><a class="header" href="#api-keys-and-the-env-section">API Keys and the <code>[env]</code> Section</a></h3>
 <p>Features like web search (Brave), embeddings, and LLM provider API calls read
 keys from process environment variables (<code>std::env::var</code>). In Docker, there are
-two ways to provide these:</p>
-<p><strong>Option 1: <code>docker -e</code> flags</strong> (takes precedence)</p>
+three ways to provide these:</p>
+<p><strong>Option 1: Generic first-run LLM bootstrap</strong> (best for one provider)</p>
+<p>Use this when you want a minimal <code>docker compose</code> file with one chat provider
+and no manual setup:</p>
+<pre><code class="language-yaml">services:
+  moltis:
+    image: ghcr.io/moltis-org/moltis:latest
+    environment:
+      MOLTIS_PASSWORD: "change-me"
+      MOLTIS_PROVIDER: "openai"
+      MOLTIS_API_KEY: "sk-..."
+</code></pre>
+<p><code>MOLTIS_PROVIDER</code> must be a Moltis provider name such as <code>openai</code>,
+<code>anthropic</code>, <code>gemini</code>, <code>groq</code>, <code>openrouter</code>, or <code>mistral</code>. The shorter
+aliases <code>PROVIDER</code> and <code>API_KEY</code> also work, but the <code>MOLTIS_*</code> names are
+preferred because they are less likely to collide with other containers.</p>
+<p><strong>Option 2: Provider-specific <code>docker -e</code> flags</strong> (takes precedence for that provider)</p>
 <pre><code class="language-bash">docker run -d \
   --name moltis \
   -e BRAVE_API_KEY=your-key \
@@ -372,7 +426,7 @@ two ways to provide these:</p>
   ...
   ghcr.io/moltis-org/moltis:latest
 </code></pre>
-<p><strong>Option 2: <code>[env]</code> section in <code>moltis.toml</code></strong></p>
+<p><strong>Option 3: <code>[env]</code> section in <code>moltis.toml</code></strong></p>
 <p>Add an <code>[env]</code> section to your config file. These variables are injected into
 the Moltis process at startup, making them available to all features:</p>
 <pre><code class="language-toml">[env]
@@ -434,8 +488,9 @@ machine — not the server. In that case, authenticate via the CLI instead:</p>
 <pre><code class="language-bash">docker exec -it moltis moltis auth login --provider openai-codex
 </code></pre>
 <p>The CLI opens a browser on the machine where you run the command and handles
-the OAuth callback locally. Tokens are saved to the config volume and picked
-up by the running gateway automatically.</p>
+the OAuth callback locally. If automatic callback capture fails, Moltis prompts
+you to paste the callback URL (or <code>code#state</code>) into the terminal. Tokens are
+saved to the config volume and picked up by the running gateway automatically.</p>
 <h3 id="permission-denied-on-bind-mounts"><a class="header" href="#permission-denied-on-bind-mounts">Permission denied on bind mounts</a></h3>
 <p>When using bind mounts, ensure the directories exist and are writable:</p>
 <pre><code class="language-bash">mkdir -p ./config ./data
@@ -450,7 +505,7 @@ you may need to adjust ownership:</p>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="skills-security.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="release-verification.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <i class="fa fa-angle-left"></i>
                             </a>
 
@@ -464,7 +519,7 @@ you may need to adjust ownership:</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="skills-security.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="release-verification.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <i class="fa fa-angle-left"></i>
                     </a>
 

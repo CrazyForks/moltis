@@ -231,12 +231,44 @@ models = ["qwen2.5-coder-7b-q4_k_m"]
 priority_models = ["gpt-5.2"]
 </code></pre>
 <p>See <a href="providers.html">Providers</a> for the full list of supported providers and configuration options.</p>
+<h2 id="remote-execution"><a class="header" href="#remote-execution">Remote Execution</a></h2>
+<p>Command execution can stay local, route to a paired node, or use SSH:</p>
+<pre><code class="language-toml">[tools.exec]
+host = "local"                 # "local", "node", or "ssh"
+# node = "mac-mini"            # default paired node when host = "node"
+# ssh_target = "deploy@box"    # default SSH target when host = "ssh"
+</code></pre>
+<p>When <code>host = "ssh"</code>, Moltis can work in two modes:</p>
+<ul>
+<li><strong>System OpenSSH</strong>: reuse your existing host aliases, agent forwarding policy,
+and <code>~/.ssh/config</code>.</li>
+<li><strong>Managed targets</strong>: create or import a deploy key in <strong>Settings → SSH</strong>,
+then bind that key to a named target. Moltis stores the private key in its
+credential store and encrypts it with the vault whenever the vault is
+unsealed. Imported keys may be passphrase-protected, Moltis strips the
+passphrase during import so runtime execution can stay non-interactive.</li>
+</ul>
+<p>For stricter SSH verification, managed targets also accept a pasted
+<code>known_hosts</code> line from <code>ssh-keyscan -H host</code>. The SSH settings page can scan
+that for you, and saved targets can refresh or clear their stored pin later.
+When present, Moltis uses that pin instead of your global OpenSSH known-host
+policy for that target.</p>
+<p>Managed targets appear in the Nodes page and chat node picker, so users can see
+where <code>exec</code> will run without digging through config. If multiple managed
+targets exist, the default one is used when <code>tools.exec.host = "ssh"</code> and no
+session-specific route is selected. <code>moltis doctor</code> also reports remote-exec
+inventory, active backend mode, and obvious SSH setup problems from the CLI.</p>
+<p><code>Settings -&gt; Tools</code> shows the effective tool inventory for the active session
+and model, including tool-calling support, MCP server state, skills/plugins,
+and available execution routes. It is session-aware by design, switching the
+model or disabling MCP for a session changes what appears there.</p>
 <h2 id="sandbox-configuration"><a class="header" href="#sandbox-configuration">Sandbox Configuration</a></h2>
 <p>Commands run inside isolated containers for security:</p>
 <pre><code class="language-toml">[tools.exec.sandbox]
 mode = "all"                    # "off", "non-main", or "all"
 scope = "session"               # "command", "session", or "global"
 workspace_mount = "ro"          # "ro", "rw", or "none"
+# host_data_dir = "/host/path/data"  # Optional override if auto-detection cannot resolve the host path
 home_persistence = "shared"     # "off", "session", or "shared" (default: "shared")
 # shared_home_dir = "/path/to/shared-home"  # Optional path for shared mode
 backend = "auto"                # "auto", "docker", or "apple-container"
@@ -247,6 +279,7 @@ packages = [
     "curl",
     "git",
     "jq",
+    "tmux",
     "python3",
     "python3-pip",
     "nodejs",
@@ -254,6 +287,10 @@ packages = [
     "golang-go",
 ]
 </code></pre>
+<p>If Moltis runs inside Docker and also mounts the host container socket
+(<code>/var/run/docker.sock</code>), Moltis now auto-detects the host path backing
+<code>/home/moltis/.moltis</code> from the parent container’s mount table. If that
+inspection cannot resolve the correct path, set <code>host_data_dir</code> explicitly.</p>
 <div id="admonition-info" class="admonition admonish-info" role="note" aria-labelledby="admonition-info-title">
 <div class="admonition-title">
 <div id="admonition-info-title">
@@ -286,6 +323,19 @@ duckduckgo_fallback = false      # Default: do not use DuckDuckGo fallback
 <li>with <code>duckduckgo_fallback = false</code> (default), Moltis returns a clear hint to set <code>BRAVE_API_KEY</code> or <code>PERPLEXITY_API_KEY</code></li>
 <li>with <code>duckduckgo_fallback = true</code>, Moltis attempts DuckDuckGo HTML search, which may hit CAPTCHA/rate limits</li>
 </ul>
+<h2 id="skills"><a class="header" href="#skills">Skills</a></h2>
+<p>Configure skill discovery and agent-managed personal skills:</p>
+<pre><code class="language-toml">[skills]
+enabled = true
+auto_load = ["commit"]
+enable_agent_sidecar_files = false  # Opt-in: allow agents to write sidecar text files in personal skills
+</code></pre>
+<p><code>enable_agent_sidecar_files</code> is disabled by default. When enabled, Moltis
+registers the <code>write_skill_files</code> tool so agents can write supplementary files
+such as <code>script.sh</code>, <code>Dockerfile</code>, templates, or <code>_meta.json</code> inside
+<code>&lt;data_dir&gt;/skills/&lt;name&gt;/</code>. Writes stay confined to that personal skill
+directory, reject path traversal and symlink escapes, and are recorded in
+<code>~/.moltis/logs/security-audit.jsonl</code>.</p>
 <h2 id="chat-message-queue"><a class="header" href="#chat-message-queue">Chat Message Queue</a></h2>
 <p>When a new message arrives while an agent run is already active, Moltis can either
 replay queued messages one-by-one or merge them into a single follow-up message.</p>
@@ -339,21 +389,37 @@ MY_VAR = "value"               # Environment variables for the hook
 <h2 id="mcp-servers"><a class="header" href="#mcp-servers">MCP Servers</a></h2>
 <p>Connect to Model Context Protocol servers:</p>
 <pre><code class="language-toml">[mcp]
+request_timeout_secs = 30
+                                    # Default timeout for MCP requests (seconds)
 
 [mcp.servers.filesystem]
 command = "npx"
 args = ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/allowed"]
+request_timeout_secs = 90        # Optional override for this server
 
 [mcp.servers.github]
 command = "npx"
 args = ["-y", "@modelcontextprotocol/server-github"]
 env = { GITHUB_TOKEN = "ghp_..." }
+
+[mcp.servers.remote_api]
+transport = "sse"
+url = "https://mcp.example.com/mcp?api_key=$REMOTE_MCP_KEY"
+headers = { Authorization = "Bearer ${REMOTE_MCP_TOKEN}" }
+
+[mcp.servers.remote_http]
+transport = "streamable-http"
+url = "https://mcp.example.com/mcp"
+headers = { Authorization = "Bearer ${API_KEY}" }
 </code></pre>
+<p>Remote MCP URLs and headers support <code>$NAME</code> or <code>${NAME}</code> placeholders. For live remote servers, values resolve from Moltis-managed env overrides, either <code>[env]</code> in config or <strong>Settings</strong> → <strong>Environment Variables</strong>.</p>
 <h2 id="telegram-integration"><a class="header" href="#telegram-integration">Telegram Integration</a></h2>
 <pre><code class="language-toml">[channels.telegram.my-bot]
 token = "123456:ABC..."
-allowed_users = [123456789]     # Telegram user IDs allowed to chat
+dm_policy = "allowlist"
+allowlist = ["123456789"]       # Telegram user IDs or usernames (strings)
 </code></pre>
+<p>See <a href="telegram.html">Telegram</a> for full configuration reference and setup instructions.</p>
 <h2 id="discord-integration"><a class="header" href="#discord-integration">Discord Integration</a></h2>
 <pre><code class="language-toml">[channels]
 offered = ["telegram", "discord"]
@@ -365,6 +431,17 @@ mention_mode = "mention"
 allowlist = ["your_username"]
 </code></pre>
 <p>See <a href="discord.html">Discord</a> for full configuration reference and setup instructions.</p>
+<h2 id="slack-integration"><a class="header" href="#slack-integration">Slack Integration</a></h2>
+<pre><code class="language-toml">[channels]
+offered = ["slack"]
+
+[channels.slack.my-bot]
+bot_token = "xoxb-..."
+app_token = "xapp-..."
+dm_policy = "allowlist"
+allowlist = ["U123456789"]
+</code></pre>
+<p>See <a href="slack.html">Slack</a> for full configuration reference and setup instructions.</p>
 <h2 id="tls--https"><a class="header" href="#tls--https">TLS / HTTPS</a></h2>
 <pre><code class="language-toml">[tls]
 enabled = true
@@ -477,7 +554,7 @@ timeout = 5
                                 <i class="fa fa-angle-left"></i>
                             </a>
 
-                            <a rel="next prefetch" href="local-validation.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="upstream-proxy.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <i class="fa fa-angle-right"></i>
                             </a>
 
@@ -491,7 +568,7 @@ timeout = 5
                         <i class="fa fa-angle-left"></i>
                     </a>
 
-                    <a rel="next prefetch" href="local-validation.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="upstream-proxy.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <i class="fa fa-angle-right"></i>
                     </a>
             </nav>

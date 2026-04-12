@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Skill Self-Extension - Moltis Documentation</title>
+        <title>Choosing a Provider - Moltis Documentation</title>
 
 
         <!-- Custom HTML head -->
@@ -149,7 +149,7 @@
                         <a href="https://github.com/moltis-org/moltis" title="Git repository" aria-label="Git repository">
                             <i id="git-repository-button" class="fa fa-github"></i>
                         </a>
-                        <a href="https://github.com/moltis-org/moltis/edit/main/docs/src/src/skill-tools.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                        <a href="https://github.com/moltis-org/moltis/edit/main/docs/src/src/choosing-a-provider.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
                             <i id="git-edit-button" class="fa fa-edit"></i>
                         </a>
 
@@ -183,108 +183,88 @@
 
                 <div id="content" class="content">
                     <main>
-                        <h1 id="skill-self-extension"><a class="header" href="#skill-self-extension">Skill Self-Extension</a></h1>
-<p>Moltis can create, update, and delete personal skills at runtime through agent
-tools, enabling the system to extend its own capabilities during a conversation.</p>
-<h2 id="overview"><a class="header" href="#overview">Overview</a></h2>
-<p>Three agent tools manage personal skills by default:</p>
-<div class="table-wrapper"><table><thead><tr><th>Tool</th><th>Description</th></tr></thead><tbody>
-<tr><td><code>create_skill</code></td><td>Write a new <code>SKILL.md</code> to <code>&lt;data_dir&gt;/skills/&lt;name&gt;/</code></td></tr>
-<tr><td><code>update_skill</code></td><td>Overwrite an existing skill’s <code>SKILL.md</code></td></tr>
-<tr><td><code>delete_skill</code></td><td>Remove a skill directory</td></tr>
+                        <h1 id="choosing-a-provider"><a class="header" href="#choosing-a-provider">Choosing a Provider</a></h1>
+<p>Not sure which LLM provider to use? This page compares the providers
+supported by Moltis so you can pick the best fit for your use case.</p>
+<h2 id="quick-recommendations"><a class="header" href="#quick-recommendations">Quick Recommendations</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>Goal</th><th>Provider</th><th>Why</th></tr></thead><tbody>
+<tr><td><strong>Best overall quality</strong></td><td>Anthropic</td><td>Claude Sonnet 4 and Opus 4 excel at tool use, long context, and instruction following</td></tr>
+<tr><td><strong>Widest model range</strong></td><td>OpenAI</td><td>GPT-4.1, o3/o4-mini reasoning models, image generation</td></tr>
+<tr><td><strong>Largest context window</strong></td><td>Google Gemini</td><td>Up to 1M tokens with Gemini 2.5 Pro</td></tr>
+<tr><td><strong>Best value</strong></td><td>DeepSeek</td><td>DeepSeek V3 and R1 offer strong performance at low cost</td></tr>
+<tr><td><strong>Fast inference</strong></td><td>Groq</td><td>Hardware-accelerated inference, very low latency</td></tr>
+<tr><td><strong>Free / offline</strong></td><td>Ollama</td><td>Run open models locally, no API key needed</td></tr>
+<tr><td><strong>Rising stars</strong></td><td>MiniMax, Z.AI</td><td>MiniMax and GLM-4 models are gaining traction for quality and price</td></tr>
 </tbody></table>
 </div>
-<p>When <code>skills.enable_agent_sidecar_files = true</code>, a fourth tool becomes
-available:</p>
-<div class="table-wrapper"><table><thead><tr><th>Tool</th><th>Description</th></tr></thead><tbody>
-<tr><td><code>write_skill_files</code></td><td>Write supplementary UTF-8 text files inside an existing personal skill directory</td></tr>
+<h2 id="provider-comparison"><a class="header" href="#provider-comparison">Provider Comparison</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>Provider</th><th>Top Models</th><th>Tool Use</th><th>Streaming</th><th>Context</th><th>Price Tier</th><th>Speed</th><th>Notes</th></tr></thead><tbody>
+<tr><td><strong>Anthropic</strong></td><td>Claude Sonnet 4, Opus 4</td><td>Full</td><td>Yes</td><td>200K</td><td>$$</td><td>Fast</td><td>Best tool-use reliability</td></tr>
+<tr><td><strong>OpenAI</strong></td><td>GPT-4.1, o3, o4-mini</td><td>Full</td><td>Yes</td><td>128K-1M</td><td>$$</td><td>Fast</td><td>Widest ecosystem, reasoning models</td></tr>
+<tr><td><strong>Google Gemini</strong></td><td>Gemini 2.5 Pro, 2.5 Flash</td><td>Full</td><td>Yes</td><td>1M</td><td>$</td><td>Fast</td><td>Largest context, competitive pricing</td></tr>
+<tr><td><strong>DeepSeek</strong></td><td>V3, R1</td><td>Full</td><td>Yes</td><td>128K</td><td>$</td><td>Medium</td><td>Excellent quality-to-price ratio</td></tr>
+<tr><td><strong>Groq</strong></td><td>Llama 3, Mixtral, Gemma</td><td>Partial</td><td>Yes</td><td>128K</td><td>$</td><td>Very fast</td><td>Speed-optimized hardware inference</td></tr>
+<tr><td><strong>xAI</strong></td><td>Grok 3, Grok 3 Mini</td><td>Yes</td><td>Yes</td><td>128K</td><td>$$</td><td>Fast</td><td>Strong reasoning capabilities</td></tr>
+<tr><td><strong>Mistral</strong></td><td>Mistral Large, Medium</td><td>Full</td><td>Yes</td><td>128K</td><td>$$</td><td>Fast</td><td>European provider, multilingual</td></tr>
+<tr><td><strong>OpenRouter</strong></td><td>Any (aggregator)</td><td>Varies</td><td>Yes</td><td>Varies</td><td>Varies</td><td>Varies</td><td>Access 100+ models with one key</td></tr>
+<tr><td><strong>Cerebras</strong></td><td>Llama 3</td><td>Partial</td><td>Yes</td><td>128K</td><td>$</td><td>Very fast</td><td>Wafer-scale inference hardware</td></tr>
+<tr><td><strong>MiniMax</strong></td><td>MiniMax-Text-01, abab7</td><td>Full</td><td>Yes</td><td>1M</td><td>$</td><td>Fast</td><td>Strong multilingual, long context</td></tr>
+<tr><td><strong>Z.AI (Zhipu)</strong></td><td>GLM-4, GLM-4 Air</td><td>Full</td><td>Yes</td><td>128K</td><td>$</td><td>Fast</td><td>GLM-4 series, competitive quality</td></tr>
+<tr><td><strong>Z.AI Coding</strong></td><td>CodeGeeX, GLM-4 Code</td><td>Full</td><td>Yes</td><td>128K</td><td>$</td><td>Fast</td><td>Optimized for code tasks</td></tr>
+<tr><td><strong>Moonshot</strong></td><td>Kimi</td><td>Full</td><td>Yes</td><td>200K</td><td>$</td><td>Medium</td><td>Long context, Chinese/English</td></tr>
+<tr><td><strong>Venice</strong></td><td>Various</td><td>Varies</td><td>Yes</td><td>Varies</td><td>$</td><td>Medium</td><td>Privacy-focused, uncensored models</td></tr>
+<tr><td><strong>Ollama</strong></td><td>Any GGUF model</td><td>Varies</td><td>Yes</td><td>Varies</td><td>Free</td><td>Varies</td><td>Local inference, no API key</td></tr>
+<tr><td><strong>Local LLM</strong></td><td>Any GGUF model</td><td>Varies</td><td>Yes</td><td>Varies</td><td>Free</td><td>Varies</td><td>Built-in GGUF runner, no server needed</td></tr>
+<tr><td><strong>GitHub Copilot</strong></td><td>GPT-4o, Claude (via Copilot)</td><td>Full</td><td>Yes</td><td>Varies</td><td>Subscription</td><td>Fast</td><td>Uses existing Copilot subscription</td></tr>
+<tr><td><strong>OpenAI Codex</strong></td><td>Codex models</td><td>Full</td><td>Yes</td><td>Varies</td><td>$$</td><td>Fast</td><td>OAuth-based, code-focused</td></tr>
 </tbody></table>
 </div>
-<p>Skills created this way are personal and stored in the configured data
-directory’s <code>skills/</code> folder. They become available on the next message
-automatically thanks to the skill watcher.</p>
-<p>Before any built-in skill mutation runs, Moltis creates an automatic
-checkpoint. Tool results include a <code>checkpointId</code> you can later restore with
-<code>checkpoint_restore</code>.</p>
-<h2 id="skill-watcher"><a class="header" href="#skill-watcher">Skill Watcher</a></h2>
-<p>The skill watcher (<code>crates/skills/src/watcher.rs</code>) monitors skill directories
-for filesystem changes using debounced notifications. When a <code>SKILL.md</code> file is
-created, modified, or deleted, the watcher emits a <code>skills.changed</code> event via
-the WebSocket event bus so the UI can refresh. Supplementary file writes do not
-change discovery on their own, so the watcher intentionally stays focused on
-<code>SKILL.md</code>.</p>
-<div id="admonition-tip" class="admonition admonish-tip" role="note" aria-labelledby="admonition-tip-title">
-<div class="admonition-title">
-<div id="admonition-tip-title">
-<p>Tip</p>
+<h3 id="price-tier-legend"><a class="header" href="#price-tier-legend">Price Tier Legend</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Symbol</th><th>Meaning</th></tr></thead><tbody>
+<tr><td><strong>Free</strong></td><td>No cost (local inference)</td></tr>
+<tr><td><strong>$</strong></td><td>Budget-friendly (&lt; $1/M input tokens)</td></tr>
+<tr><td><strong>$$</strong></td><td>Standard pricing ($1-15/M input tokens)</td></tr>
+<tr><td><strong>$$$</strong></td><td>Premium pricing (&gt; $15/M input tokens)</td></tr>
+<tr><td><strong>Subscription</strong></td><td>Flat monthly fee</td></tr>
+</tbody></table>
 </div>
-<a class="admonition-anchor-link" href="#admonition-tip"></a>
-</div>
-<div>
-<p>The watcher uses debouncing to avoid firing multiple events for rapid
-successive edits (e.g. an editor writing a temp file then renaming).</p>
-</div>
-</div>
-<h2 id="creating-a-skill"><a class="header" href="#creating-a-skill">Creating a Skill</a></h2>
-<p>The agent can create a skill by calling the <code>create_skill</code> tool:</p>
-<pre><code class="language-json">{
-  "name": "summarize-pr",
-  "content": "# summarize-pr\n\nSummarize a GitHub pull request...",
-  "description": "Summarize GitHub PRs with key changes and review notes"
-}
-</code></pre>
-<p>This writes <code>&lt;data_dir&gt;/skills/summarize-pr/SKILL.md</code> with the provided content.
-The skill discoverer picks it up on the next message.</p>
-<h2 id="writing-supplementary-files"><a class="header" href="#writing-supplementary-files">Writing Supplementary Files</a></h2>
-<p>When <code>skills.enable_agent_sidecar_files = true</code>, the agent can add sidecar
-files such as shell scripts, templates, <code>_meta.json</code>, or <code>Dockerfile</code>:</p>
-<pre><code class="language-json">{
-  "name": "summarize-pr",
-  "files": [
-    {
-      "path": "script.sh",
-      "content": "#!/usr/bin/env bash\necho summarize\n"
-    },
-    {
-      "path": "templates/prompt.txt",
-      "content": "Summarize the pull request with risks first.\n"
-    }
-  ]
-}
-</code></pre>
-<p>Safety rules:</p>
-<ul>
-<li>only writes inside <code>&lt;data_dir&gt;/skills/&lt;name&gt;/</code></li>
-<li>only relative UTF-8 text files</li>
-<li>rejects <code>..</code>, absolute paths, hidden path components, and <code>SKILL.md</code></li>
-<li>rejects symlink escapes and oversized batches</li>
-<li>appends an audit entry to <code>~/.moltis/logs/security-audit.jsonl</code></li>
-</ul>
-<h2 id="updating-a-skill"><a class="header" href="#updating-a-skill">Updating a Skill</a></h2>
-<pre><code class="language-json">{
-  "name": "summarize-pr",
-  "content": "# summarize-pr\n\nUpdated instructions..."
-}
-</code></pre>
-<h2 id="deleting-a-skill"><a class="header" href="#deleting-a-skill">Deleting a Skill</a></h2>
-<pre><code class="language-json">{
-  "name": "summarize-pr"
-}
-</code></pre>
-<p>This removes the entire <code>&lt;data_dir&gt;/skills/summarize-pr/</code> directory, including
-any supplementary files written alongside <code>SKILL.md</code>.</p>
-<p>Deleted skills can be restored from the returned <code>checkpointId</code> with
-<code>checkpoint_restore</code>, as long as the checkpoint still exists.</p>
+<h2 id="how-to-choose"><a class="header" href="#how-to-choose">How to Choose</a></h2>
+<h3 id="for-personal-projects-or-experimentation"><a class="header" href="#for-personal-projects-or-experimentation">For personal projects or experimentation</a></h3>
+<p>Start with <strong>Google Gemini</strong> (generous free tier, large context) or
+<strong>Ollama</strong> (completely free, runs locally). Both are easy to set up and
+let you explore without cost pressure.</p>
+<h3 id="for-production-agent-workflows"><a class="header" href="#for-production-agent-workflows">For production agent workflows</a></h3>
+<p><strong>Anthropic</strong> and <strong>OpenAI</strong> are the most battle-tested for tool use and
+complex multi-step tasks. Anthropic’s Claude models tend to follow
+instructions more precisely; OpenAI offers a broader model range
+including reasoning models (o3, o4-mini).</p>
+<h3 id="for-cost-sensitive-workloads"><a class="header" href="#for-cost-sensitive-workloads">For cost-sensitive workloads</a></h3>
+<p><strong>DeepSeek</strong> offers the best quality-to-price ratio for most tasks.
+<strong>Groq</strong> and <strong>Cerebras</strong> provide extremely fast inference at low cost,
+though model selection is more limited.</p>
+<h3 id="for-local--offline-use"><a class="header" href="#for-local--offline-use">For local / offline use</a></h3>
+<p><strong>Ollama</strong> is the easiest path — install it, pull a model, and Moltis
+auto-detects it. <strong>Local LLM</strong> runs GGUF models directly without a
+separate server. Both require sufficient RAM (8GB+ for small models,
+16GB+ recommended).</p>
+<h3 id="for-access-to-many-models"><a class="header" href="#for-access-to-many-models">For access to many models</a></h3>
+<p><strong>OpenRouter</strong> aggregates 100+ models behind a single API key. Useful if
+you want to experiment across providers without managing multiple
+accounts.</p>
+<h2 id="setting-up-a-provider"><a class="header" href="#setting-up-a-provider">Setting Up a Provider</a></h2>
+<p>See the <a href="providers.html">LLM Providers</a> page for step-by-step setup
+instructions for each provider, including configuration file options and
+environment variables.</p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="webhooks.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="providers.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <i class="fa fa-angle-left"></i>
                             </a>
 
-                            <a rel="next prefetch" href="mobile-pwa.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="anthropic-oauth.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <i class="fa fa-angle-right"></i>
                             </a>
 
@@ -294,11 +274,11 @@ any supplementary files written alongside <code>SKILL.md</code>.</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="webhooks.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="providers.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <i class="fa fa-angle-left"></i>
                     </a>
 
-                    <a rel="next prefetch" href="mobile-pwa.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="anthropic-oauth.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <i class="fa fa-angle-right"></i>
                     </a>
             </nav>

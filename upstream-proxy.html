@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Skill Self-Extension - Moltis Documentation</title>
+        <title>Upstream Proxy - Moltis Documentation</title>
 
 
         <!-- Custom HTML head -->
@@ -149,7 +149,7 @@
                         <a href="https://github.com/moltis-org/moltis" title="Git repository" aria-label="Git repository">
                             <i id="git-repository-button" class="fa fa-github"></i>
                         </a>
-                        <a href="https://github.com/moltis-org/moltis/edit/main/docs/src/src/skill-tools.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                        <a href="https://github.com/moltis-org/moltis/edit/main/docs/src/src/upstream-proxy.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
                             <i id="git-edit-button" class="fa fa-edit"></i>
                         </a>
 
@@ -183,108 +183,89 @@
 
                 <div id="content" class="content">
                     <main>
-                        <h1 id="skill-self-extension"><a class="header" href="#skill-self-extension">Skill Self-Extension</a></h1>
-<p>Moltis can create, update, and delete personal skills at runtime through agent
-tools, enabling the system to extend its own capabilities during a conversation.</p>
-<h2 id="overview"><a class="header" href="#overview">Overview</a></h2>
-<p>Three agent tools manage personal skills by default:</p>
-<div class="table-wrapper"><table><thead><tr><th>Tool</th><th>Description</th></tr></thead><tbody>
-<tr><td><code>create_skill</code></td><td>Write a new <code>SKILL.md</code> to <code>&lt;data_dir&gt;/skills/&lt;name&gt;/</code></td></tr>
-<tr><td><code>update_skill</code></td><td>Overwrite an existing skill’s <code>SKILL.md</code></td></tr>
-<tr><td><code>delete_skill</code></td><td>Remove a skill directory</td></tr>
+                        <h1 id="upstream-proxy"><a class="header" href="#upstream-proxy">Upstream Proxy</a></h1>
+<p>Moltis can route all outbound HTTP traffic through an upstream proxy. This is
+useful when running behind a corporate firewall, in a restricted network, or
+when you need to audit/filter outbound connections.</p>
+<h2 id="configuration"><a class="header" href="#configuration">Configuration</a></h2>
+<p>Add <code>upstream_proxy</code> to the top level of your <code>moltis.toml</code>:</p>
+<pre><code class="language-toml">upstream_proxy = "http://proxy.corp.example.com:8080"
+</code></pre>
+<h3 id="supported-schemes"><a class="header" href="#supported-schemes">Supported schemes</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Scheme</th><th>Example</th><th>Notes</th></tr></thead><tbody>
+<tr><td><code>http://</code></td><td><code>http://proxy:8080</code></td><td>HTTP CONNECT proxy (most common)</td></tr>
+<tr><td><code>https://</code></td><td><code>https://proxy:8443</code></td><td>TLS-encrypted proxy connection</td></tr>
+<tr><td><code>socks5://</code></td><td><code>socks5://proxy:1080</code></td><td>SOCKS5 proxy (DNS resolved locally)</td></tr>
+<tr><td><code>socks5h://</code></td><td><code>socks5h://proxy:1080</code></td><td>SOCKS5 proxy (DNS resolved by proxy)</td></tr>
 </tbody></table>
 </div>
-<p>When <code>skills.enable_agent_sidecar_files = true</code>, a fourth tool becomes
-available:</p>
-<div class="table-wrapper"><table><thead><tr><th>Tool</th><th>Description</th></tr></thead><tbody>
-<tr><td><code>write_skill_files</code></td><td>Write supplementary UTF-8 text files inside an existing personal skill directory</td></tr>
-</tbody></table>
-</div>
-<p>Skills created this way are personal and stored in the configured data
-directory’s <code>skills/</code> folder. They become available on the next message
-automatically thanks to the skill watcher.</p>
-<p>Before any built-in skill mutation runs, Moltis creates an automatic
-checkpoint. Tool results include a <code>checkpointId</code> you can later restore with
-<code>checkpoint_restore</code>.</p>
-<h2 id="skill-watcher"><a class="header" href="#skill-watcher">Skill Watcher</a></h2>
-<p>The skill watcher (<code>crates/skills/src/watcher.rs</code>) monitors skill directories
-for filesystem changes using debounced notifications. When a <code>SKILL.md</code> file is
-created, modified, or deleted, the watcher emits a <code>skills.changed</code> event via
-the WebSocket event bus so the UI can refresh. Supplementary file writes do not
-change discovery on their own, so the watcher intentionally stays focused on
-<code>SKILL.md</code>.</p>
-<div id="admonition-tip" class="admonition admonish-tip" role="note" aria-labelledby="admonition-tip-title">
-<div class="admonition-title">
-<div id="admonition-tip-title">
-<p>Tip</p>
-</div>
-<a class="admonition-anchor-link" href="#admonition-tip"></a>
-</div>
-<div>
-<p>The watcher uses debouncing to avoid firing multiple events for rapid
-successive edits (e.g. an editor writing a temp file then renaming).</p>
-</div>
-</div>
-<h2 id="creating-a-skill"><a class="header" href="#creating-a-skill">Creating a Skill</a></h2>
-<p>The agent can create a skill by calling the <code>create_skill</code> tool:</p>
-<pre><code class="language-json">{
-  "name": "summarize-pr",
-  "content": "# summarize-pr\n\nSummarize a GitHub pull request...",
-  "description": "Summarize GitHub PRs with key changes and review notes"
-}
+<h3 id="proxy-authentication"><a class="header" href="#proxy-authentication">Proxy authentication</a></h3>
+<p>Include credentials in the URL:</p>
+<pre><code class="language-toml">upstream_proxy = "http://user:password@proxy.corp.example.com:8080"
 </code></pre>
-<p>This writes <code>&lt;data_dir&gt;/skills/summarize-pr/SKILL.md</code> with the provided content.
-The skill discoverer picks it up on the next message.</p>
-<h2 id="writing-supplementary-files"><a class="header" href="#writing-supplementary-files">Writing Supplementary Files</a></h2>
-<p>When <code>skills.enable_agent_sidecar_files = true</code>, the agent can add sidecar
-files such as shell scripts, templates, <code>_meta.json</code>, or <code>Dockerfile</code>:</p>
-<pre><code class="language-json">{
-  "name": "summarize-pr",
-  "files": [
-    {
-      "path": "script.sh",
-      "content": "#!/usr/bin/env bash\necho summarize\n"
-    },
-    {
-      "path": "templates/prompt.txt",
-      "content": "Summarize the pull request with risks first.\n"
-    }
-  ]
-}
-</code></pre>
-<p>Safety rules:</p>
+<h3 id="what-is-proxied"><a class="header" href="#what-is-proxied">What is proxied</a></h3>
+<p>When <code>upstream_proxy</code> is set, the following traffic routes through the proxy:</p>
 <ul>
-<li>only writes inside <code>&lt;data_dir&gt;/skills/&lt;name&gt;/</code></li>
-<li>only relative UTF-8 text files</li>
-<li>rejects <code>..</code>, absolute paths, hidden path components, and <code>SKILL.md</code></li>
-<li>rejects symlink escapes and oversized batches</li>
-<li>appends an audit entry to <code>~/.moltis/logs/security-audit.jsonl</code></li>
+<li><strong>LLM provider API calls</strong> (Anthropic, OpenAI, Gemini, etc.)</li>
+<li><strong>Tool HTTP requests</strong> (web fetch, web search, Firecrawl)</li>
+<li><strong>OAuth flows</strong> (device auth, token exchange)</li>
+<li><strong>MCP server auth</strong> (OAuth for remote MCP servers)</li>
+<li><strong>Channel outbound</strong> (Slack streaming, MS Teams API calls)</li>
 </ul>
-<h2 id="updating-a-skill"><a class="header" href="#updating-a-skill">Updating a Skill</a></h2>
-<pre><code class="language-json">{
-  "name": "summarize-pr",
-  "content": "# summarize-pr\n\nUpdated instructions..."
-}
+<p>Localhost and loopback addresses (<code>127.0.0.1</code>, <code>::1</code>, <code>localhost</code>) are
+automatically excluded from the proxy (<code>no_proxy</code>).</p>
+<h3 id="slack-caveat"><a class="header" href="#slack-caveat">Slack caveat</a></h3>
+<p>Slack streaming messages (progressive edits) are proxied via reqwest.
+However, regular <code>chat.postMessage</code> calls go through the <code>slack-morphism</code>
+library’s built-in hyper connector, which does <strong>not</strong> use the upstream
+proxy. If you need full Slack proxy coverage, also set the <code>HTTPS_PROXY</code>
+environment variable.</p>
+<h3 id="telegram-caveat"><a class="header" href="#telegram-caveat">Telegram caveat</a></h3>
+<p>Telegram uses <a href="https://github.com/teloxide/teloxide">teloxide</a> which bundles
+its own HTTP client (reqwest 0.11). The <code>upstream_proxy</code> config does not apply
+to Telegram traffic directly. To proxy Telegram, set the standard
+<code>HTTPS_PROXY</code> environment variable, which teloxide’s reqwest honours:</p>
+<pre><code class="language-bash">export HTTPS_PROXY=http://proxy.corp.example.com:8080
+moltis
 </code></pre>
-<h2 id="deleting-a-skill"><a class="header" href="#deleting-a-skill">Deleting a Skill</a></h2>
-<pre><code class="language-json">{
-  "name": "summarize-pr"
-}
+<p>Or use the <code>env</code> section in <code>moltis.toml</code>:</p>
+<pre><code class="language-toml">[env]
+HTTPS_PROXY = "http://proxy.corp.example.com:8080"
 </code></pre>
-<p>This removes the entire <code>&lt;data_dir&gt;/skills/summarize-pr/</code> directory, including
-any supplementary files written alongside <code>SKILL.md</code>.</p>
-<p>Deleted skills can be restored from the returned <code>checkpointId</code> with
-<code>checkpoint_restore</code>, as long as the checkpoint still exists.</p>
+<h2 id="environment-variable-fallback"><a class="header" href="#environment-variable-fallback">Environment variable fallback</a></h2>
+<p>When <code>upstream_proxy</code> is <strong>not</strong> set in <code>moltis.toml</code>, reqwest automatically
+honours the standard proxy environment variables:</p>
+<ul>
+<li><code>HTTP_PROXY</code> / <code>http_proxy</code></li>
+<li><code>HTTPS_PROXY</code> / <code>https_proxy</code></li>
+<li><code>ALL_PROXY</code> / <code>all_proxy</code></li>
+<li><code>NO_PROXY</code> / <code>no_proxy</code></li>
+</ul>
+<p>Setting <code>upstream_proxy</code> in the config takes precedence over these variables
+for all traffic except Telegram (see caveat above).</p>
+<h2 id="interaction-with-trusted-network"><a class="header" href="#interaction-with-trusted-network">Interaction with Trusted Network</a></h2>
+<p>If you use both <code>upstream_proxy</code> and
+<a href="trusted-network.html">trusted network mode</a> (<code>network = "trusted"</code>), they
+serve different purposes:</p>
+<ul>
+<li><strong>Trusted network proxy</strong> is a local domain-filtering proxy for sandbox
+tool execution. It controls <em>which</em> domains tools can reach.</li>
+<li><strong>Upstream proxy</strong> routes traffic through your corporate/network proxy to
+<em>reach</em> the internet.</li>
+</ul>
+<p>When both are active, tool traffic routes through the trusted-network proxy
+(which enforces domain allowlists), while provider and channel traffic routes
+through the upstream proxy.</p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="webhooks.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="configuration.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <i class="fa fa-angle-left"></i>
                             </a>
 
-                            <a rel="next prefetch" href="mobile-pwa.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="local-validation.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <i class="fa fa-angle-right"></i>
                             </a>
 
@@ -294,11 +275,11 @@ any supplementary files written alongside <code>SKILL.md</code>.</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="webhooks.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="configuration.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <i class="fa fa-angle-left"></i>
                     </a>
 
-                    <a rel="next prefetch" href="mobile-pwa.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="local-validation.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <i class="fa fa-angle-right"></i>
                     </a>
             </nav>

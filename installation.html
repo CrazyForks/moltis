@@ -195,37 +195,25 @@
 <pre><code class="language-bash">brew install moltis-org/tap/moltis
 </code></pre>
 <h2 id="linux-packages"><a class="header" href="#linux-packages">Linux Packages</a></h2>
+<p>Package filenames are versioned on every release. Use the installer script below instead of hardcoding GitHub release asset names.</p>
 <h3 id="debian--ubuntu-deb"><a class="header" href="#debian--ubuntu-deb">Debian / Ubuntu (.deb)</a></h3>
-<pre><code class="language-bash"># Download the latest .deb package
-curl -LO https://github.com/moltis-org/moltis/releases/latest/download/moltis_amd64.deb
-
-# Install
-sudo dpkg -i moltis_amd64.deb
+<pre><code class="language-bash"># Install the latest .deb package
+curl -fsSL https://www.moltis.org/install.sh | sh -s -- --method=deb
 </code></pre>
 <h3 id="fedora--rhel-rpm"><a class="header" href="#fedora--rhel-rpm">Fedora / RHEL (.rpm)</a></h3>
-<pre><code class="language-bash"># Download the latest .rpm package
-curl -LO https://github.com/moltis-org/moltis/releases/latest/download/moltis.x86_64.rpm
-
-# Install
-sudo rpm -i moltis.x86_64.rpm
+<pre><code class="language-bash"># Install the latest .rpm package
+curl -fsSL https://www.moltis.org/install.sh | sh -s -- --method=rpm
 </code></pre>
 <h3 id="arch-linux-pkgtarzst"><a class="header" href="#arch-linux-pkgtarzst">Arch Linux (.pkg.tar.zst)</a></h3>
-<pre><code class="language-bash"># Download the latest package
-curl -LO https://github.com/moltis-org/moltis/releases/latest/download/moltis.pkg.tar.zst
-
-# Install
-sudo pacman -U moltis.pkg.tar.zst
+<pre><code class="language-bash"># Install the latest package
+curl -fsSL https://www.moltis.org/install.sh | sh -s -- --method=arch
 </code></pre>
 <h3 id="snap"><a class="header" href="#snap">Snap</a></h3>
 <pre><code class="language-bash">sudo snap install moltis
 </code></pre>
 <h3 id="appimage"><a class="header" href="#appimage">AppImage</a></h3>
-<pre><code class="language-bash"># Download
-curl -LO https://github.com/moltis-org/moltis/releases/latest/download/moltis.AppImage
-chmod +x moltis.AppImage
-
-# Run
-./moltis.AppImage
+<pre><code class="language-bash"># Install the latest AppImage
+curl -fsSL https://www.moltis.org/install.sh | sh -s -- --method=appimage
 </code></pre>
 <h2 id="docker"><a class="header" href="#docker">Docker</a></h2>
 <p>Multi-architecture images (amd64/arm64) are published to GitHub Container Registry:</p>
@@ -237,11 +225,17 @@ chmod +x moltis.AppImage
 <ul>
 <li>Rust 1.91 or later</li>
 <li>A C compiler (for some dependencies)</li>
+<li><a href="https://github.com/casey/just">just</a> (command runner)</li>
+<li>Node.js (for building Tailwind CSS)</li>
 </ul>
 <h3 id="clone-and-build"><a class="header" href="#clone-and-build">Clone and Build</a></h3>
 <pre><code class="language-bash">git clone https://github.com/moltis-org/moltis.git
 cd moltis
-cargo build --release
+just build-css           # Build Tailwind CSS for the web UI
+just build-release       # Build in release mode
+</code></pre>
+<p>For a full release build including WASM sandbox tools:</p>
+<pre><code class="language-bash">just build-release-with-wasm
 </code></pre>
 <p>The binary will be at <code>target/release/moltis</code>.</p>
 <h3 id="install-via-cargo"><a class="header" href="#install-via-cargo">Install via Cargo</a></h3>
@@ -289,7 +283,8 @@ cargo build --release
 <h3 id="from-source"><a class="header" href="#from-source">From Source</a></h3>
 <pre><code class="language-bash">cd moltis
 git pull
-cargo build --release
+just build-css
+just build-release
 </code></pre>
 <h2 id="uninstalling"><a class="header" href="#uninstalling">Uninstalling</a></h2>
 <h3 id="homebrew-1"><a class="header" href="#homebrew-1">Homebrew</a></h3>

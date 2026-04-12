@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Skill Self-Extension - Moltis Documentation</title>
+        <title>Anthropic OAuth (FAQ) - Moltis Documentation</title>
 
 
         <!-- Custom HTML head -->
@@ -149,7 +149,7 @@
                         <a href="https://github.com/moltis-org/moltis" title="Git repository" aria-label="Git repository">
                             <i id="git-repository-button" class="fa fa-github"></i>
                         </a>
-                        <a href="https://github.com/moltis-org/moltis/edit/main/docs/src/src/skill-tools.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                        <a href="https://github.com/moltis-org/moltis/edit/main/docs/src/src/anthropic-oauth.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
                             <i id="git-edit-button" class="fa fa-edit"></i>
                         </a>
 
@@ -183,108 +183,98 @@
 
                 <div id="content" class="content">
                     <main>
-                        <h1 id="skill-self-extension"><a class="header" href="#skill-self-extension">Skill Self-Extension</a></h1>
-<p>Moltis can create, update, and delete personal skills at runtime through agent
-tools, enabling the system to extend its own capabilities during a conversation.</p>
-<h2 id="overview"><a class="header" href="#overview">Overview</a></h2>
-<p>Three agent tools manage personal skills by default:</p>
-<div class="table-wrapper"><table><thead><tr><th>Tool</th><th>Description</th></tr></thead><tbody>
-<tr><td><code>create_skill</code></td><td>Write a new <code>SKILL.md</code> to <code>&lt;data_dir&gt;/skills/&lt;name&gt;/</code></td></tr>
-<tr><td><code>update_skill</code></td><td>Overwrite an existing skill’s <code>SKILL.md</code></td></tr>
-<tr><td><code>delete_skill</code></td><td>Remove a skill directory</td></tr>
-</tbody></table>
-</div>
-<p>When <code>skills.enable_agent_sidecar_files = true</code>, a fourth tool becomes
-available:</p>
-<div class="table-wrapper"><table><thead><tr><th>Tool</th><th>Description</th></tr></thead><tbody>
-<tr><td><code>write_skill_files</code></td><td>Write supplementary UTF-8 text files inside an existing personal skill directory</td></tr>
-</tbody></table>
-</div>
-<p>Skills created this way are personal and stored in the configured data
-directory’s <code>skills/</code> folder. They become available on the next message
-automatically thanks to the skill watcher.</p>
-<p>Before any built-in skill mutation runs, Moltis creates an automatic
-checkpoint. Tool results include a <code>checkpointId</code> you can later restore with
-<code>checkpoint_restore</code>.</p>
-<h2 id="skill-watcher"><a class="header" href="#skill-watcher">Skill Watcher</a></h2>
-<p>The skill watcher (<code>crates/skills/src/watcher.rs</code>) monitors skill directories
-for filesystem changes using debounced notifications. When a <code>SKILL.md</code> file is
-created, modified, or deleted, the watcher emits a <code>skills.changed</code> event via
-the WebSocket event bus so the UI can refresh. Supplementary file writes do not
-change discovery on their own, so the watcher intentionally stays focused on
-<code>SKILL.md</code>.</p>
-<div id="admonition-tip" class="admonition admonish-tip" role="note" aria-labelledby="admonition-tip-title">
-<div class="admonition-title">
-<div id="admonition-tip-title">
-<p>Tip</p>
-</div>
-<a class="admonition-anchor-link" href="#admonition-tip"></a>
-</div>
-<div>
-<p>The watcher uses debouncing to avoid firing multiple events for rapid
-successive edits (e.g. an editor writing a temp file then renaming).</p>
-</div>
-</div>
-<h2 id="creating-a-skill"><a class="header" href="#creating-a-skill">Creating a Skill</a></h2>
-<p>The agent can create a skill by calling the <code>create_skill</code> tool:</p>
-<pre><code class="language-json">{
-  "name": "summarize-pr",
-  "content": "# summarize-pr\n\nSummarize a GitHub pull request...",
-  "description": "Summarize GitHub PRs with key changes and review notes"
-}
-</code></pre>
-<p>This writes <code>&lt;data_dir&gt;/skills/summarize-pr/SKILL.md</code> with the provided content.
-The skill discoverer picks it up on the next message.</p>
-<h2 id="writing-supplementary-files"><a class="header" href="#writing-supplementary-files">Writing Supplementary Files</a></h2>
-<p>When <code>skills.enable_agent_sidecar_files = true</code>, the agent can add sidecar
-files such as shell scripts, templates, <code>_meta.json</code>, or <code>Dockerfile</code>:</p>
-<pre><code class="language-json">{
-  "name": "summarize-pr",
-  "files": [
-    {
-      "path": "script.sh",
-      "content": "#!/usr/bin/env bash\necho summarize\n"
-    },
-    {
-      "path": "templates/prompt.txt",
-      "content": "Summarize the pull request with risks first.\n"
-    }
-  ]
-}
-</code></pre>
-<p>Safety rules:</p>
+                        <h1 id="why-moltis-doesnt-support-anthropic-oauth"><a class="header" href="#why-moltis-doesnt-support-anthropic-oauth">Why Moltis Doesn’t Support Anthropic OAuth</a></h1>
+<p>A common request is browser-based OAuth login for Anthropic, similar to what
+Moltis offers for OpenAI Codex and GitHub Copilot.  This page explains why that
+isn’t possible and what to do instead.</p>
+<h2 id="tldr"><a class="header" href="#tldr">TL;DR</a></h2>
+<p>Anthropic <strong>does not offer an OAuth program for third-party tools</strong>.  Their
+OAuth flow is locked to Claude Code and Claude.ai only.  The only supported way
+to use Anthropic models in Moltis is with an API key from the
+<a href="https://console.anthropic.com">Anthropic Console</a>.</p>
+<h2 id="background"><a class="header" href="#background">Background</a></h2>
+<p>Claude Code (Anthropic’s CLI) authenticates via an OAuth 2.0 PKCE flow against
+<code>console.anthropic.com</code>.  The temporary OAuth token is then exchanged for a
+permanent API key through an internal endpoint
+(<code>/api/oauth/claude_cli/create_api_key</code>).  The path segment <code>/claude_cli/</code>
+signals this is a <strong>CLI-specific, internal endpoint</strong> — not a public API.</p>
+<p>The client ID used by Claude Code (<code>9d1c250a-…</code>) is hard-coded for that single
+application.  Anthropic does not provide a way to register new client IDs for
+third-party projects.</p>
+<h2 id="anthropics-policy"><a class="header" href="#anthropics-policy">Anthropic’s Policy</a></h2>
+<p>In February 2026 Anthropic updated their
+<a href="https://www.anthropic.com/legal">Legal and Compliance</a> page with an explicit
+restriction:</p>
+<blockquote>
+<p>OAuth authentication (used with Free, Pro, and Max plans) is intended
+exclusively for Claude Code and Claude.ai.  Using OAuth tokens obtained
+through Claude Free, Pro, or Max accounts in any other product, tool, or
+service — including the Agent SDK — is not permitted and constitutes a
+violation of the Consumer Terms of Service.</p>
+</blockquote>
+<p>This isn’t just a policy statement — Anthropic deployed <strong>server-side
+enforcement</strong> in January 2026.  OAuth tokens from consumer plans now return
+errors outside of Claude Code and Claude.ai:</p>
+<blockquote>
+<p><em>“This credential is only authorized for use with Claude Code and cannot be
+used for other API requests.”</em></p>
+</blockquote>
+<p>Several projects that attempted this approach — including
+<a href="https://github.com/AndyMik90/Auto-Claude/issues/1871">Auto-Claude</a>,
+<a href="https://github.com/block/goose/issues/3647">Goose</a>, and
+<a href="https://github.com/anthropics/claude-code/issues/28091">OpenCode</a> — were
+forced to drop OAuth and switch to standard API keys.</p>
+<h2 id="what-about-reusing-the-claude-code-client-id"><a class="header" href="#what-about-reusing-the-claude-code-client-id">What About Reusing the Claude Code Client ID?</a></h2>
+<p>Even if the OAuth flow and key creation technically succeed today, using Claude
+Code’s client ID from a different application:</p>
 <ul>
-<li>only writes inside <code>&lt;data_dir&gt;/skills/&lt;name&gt;/</code></li>
-<li>only relative UTF-8 text files</li>
-<li>rejects <code>..</code>, absolute paths, hidden path components, and <code>SKILL.md</code></li>
-<li>rejects symlink escapes and oversized batches</li>
-<li>appends an audit entry to <code>~/.moltis/logs/security-audit.jsonl</code></li>
+<li><strong>Violates the Consumer Terms of Service</strong> (Section 3.7 — no automated
+access through bots or scripts except via official API keys).</li>
+<li><strong>Risks key revocation</strong> — Anthropic reserves the right to revoke credentials
+<em>without prior notice</em>.</li>
+<li><strong>Could break at any time</strong> — the client ID and internal endpoints are not
+part of a public, stable API surface.</li>
 </ul>
-<h2 id="updating-a-skill"><a class="header" href="#updating-a-skill">Updating a Skill</a></h2>
-<pre><code class="language-json">{
-  "name": "summarize-pr",
-  "content": "# summarize-pr\n\nUpdated instructions..."
-}
+<h2 id="how-to-use-anthropic-in-moltis"><a class="header" href="#how-to-use-anthropic-in-moltis">How to Use Anthropic in Moltis</a></h2>
+<ol>
+<li>Go to <a href="https://console.anthropic.com">console.anthropic.com</a> and create an
+account (or sign in).</li>
+<li>Navigate to <strong>Settings → API Keys</strong> and create a new key.</li>
+<li>In Moltis, go to <strong>Settings → Providers → Anthropic</strong> and paste the key.</li>
+</ol>
+<p>Alternatively, set the <code>ANTHROPIC_API_KEY</code> environment variable or add it to
+your <code>moltis.toml</code>:</p>
+<pre><code class="language-toml">[providers.anthropic]
+enabled = true
+api_key = "sk-ant-api03-..."
 </code></pre>
-<h2 id="deleting-a-skill"><a class="header" href="#deleting-a-skill">Deleting a Skill</a></h2>
-<pre><code class="language-json">{
-  "name": "summarize-pr"
-}
-</code></pre>
-<p>This removes the entire <code>&lt;data_dir&gt;/skills/summarize-pr/</code> directory, including
-any supplementary files written alongside <code>SKILL.md</code>.</p>
-<p>Deleted skills can be restored from the returned <code>checkpointId</code> with
-<code>checkpoint_restore</code>, as long as the checkpoint still exists.</p>
+<p>This is the method Anthropic
+<a href="https://docs.anthropic.com/en/api/getting-started">officially recommends</a> for
+all third-party integrations.</p>
+<h2 id="will-this-change"><a class="header" href="#will-this-change">Will This Change?</a></h2>
+<p>If Anthropic introduces a developer OAuth program with client ID registration
+in the future, Moltis will adopt it.  The generic infrastructure for
+OAuth-to-API-key exchange already exists in the codebase (the <code>api_key_endpoint</code>
+field on <code>OAuthConfig</code>), so adding support would be straightforward.</p>
+<h2 id="references"><a class="header" href="#references">References</a></h2>
+<ul>
+<li><a href="https://docs.anthropic.com/en/api/getting-started">Anthropic API — Getting Started</a> — official auth docs (API key only)</li>
+<li><a href="https://www.theregister.com/2026/02/20/anthropic_clarifies_ban_third_party_claude_access/">The Register — Anthropic clarifies ban on third-party tool access</a></li>
+<li><a href="https://news.ycombinator.com/item?id=47069299">HN — Anthropic officially bans subscription auth for third-party use</a></li>
+<li><a href="https://github.com/anthropics/claude-code/issues/28091">Claude Code #28091 — Anthropic disabled OAuth tokens for third-party apps</a></li>
+<li><a href="https://github.com/AndyMik90/Auto-Claude/issues/1871">Auto-Claude #1871 — OAuth policy violation</a></li>
+<li><a href="https://github.com/block/goose/issues/3647">Goose #3647 — Anthropic OAuth for third-party users</a></li>
+</ul>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="webhooks.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="choosing-a-provider.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <i class="fa fa-angle-left"></i>
                             </a>
 
-                            <a rel="next prefetch" href="mobile-pwa.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="mcp.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <i class="fa fa-angle-right"></i>
                             </a>
 
@@ -294,11 +284,11 @@ any supplementary files written alongside <code>SKILL.md</code>.</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="webhooks.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="choosing-a-provider.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <i class="fa fa-angle-left"></i>
                     </a>
 
-                    <a rel="next prefetch" href="mobile-pwa.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="mcp.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <i class="fa fa-angle-right"></i>
                     </a>
             </nav>

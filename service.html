@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Skill Self-Extension - Moltis Documentation</title>
+        <title>Service Management - Moltis Documentation</title>
 
 
         <!-- Custom HTML head -->
@@ -149,7 +149,7 @@
                         <a href="https://github.com/moltis-org/moltis" title="Git repository" aria-label="Git repository">
                             <i id="git-repository-button" class="fa fa-github"></i>
                         </a>
-                        <a href="https://github.com/moltis-org/moltis/edit/main/docs/src/src/skill-tools.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                        <a href="https://github.com/moltis-org/moltis/edit/main/docs/src/src/service.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
                             <i id="git-edit-button" class="fa fa-edit"></i>
                         </a>
 
@@ -183,108 +183,77 @@
 
                 <div id="content" class="content">
                     <main>
-                        <h1 id="skill-self-extension"><a class="header" href="#skill-self-extension">Skill Self-Extension</a></h1>
-<p>Moltis can create, update, and delete personal skills at runtime through agent
-tools, enabling the system to extend its own capabilities during a conversation.</p>
-<h2 id="overview"><a class="header" href="#overview">Overview</a></h2>
-<p>Three agent tools manage personal skills by default:</p>
-<div class="table-wrapper"><table><thead><tr><th>Tool</th><th>Description</th></tr></thead><tbody>
-<tr><td><code>create_skill</code></td><td>Write a new <code>SKILL.md</code> to <code>&lt;data_dir&gt;/skills/&lt;name&gt;/</code></td></tr>
-<tr><td><code>update_skill</code></td><td>Overwrite an existing skill’s <code>SKILL.md</code></td></tr>
-<tr><td><code>delete_skill</code></td><td>Remove a skill directory</td></tr>
+                        <h1 id="service-management"><a class="header" href="#service-management">Service Management</a></h1>
+<p>Moltis can be installed as an OS service so it starts automatically on boot
+and restarts after crashes.</p>
+<h2 id="install"><a class="header" href="#install">Install</a></h2>
+<pre><code class="language-bash">moltis service install
+</code></pre>
+<p>This creates a service definition and starts it immediately:</p>
+<div class="table-wrapper"><table><thead><tr><th>Platform</th><th>Service file</th><th>Init system</th></tr></thead><tbody>
+<tr><td>macOS</td><td><code>~/Library/LaunchAgents/org.moltis.gateway.plist</code></td><td>launchd (user agent)</td></tr>
+<tr><td>Linux</td><td><code>~/.config/systemd/user/moltis.service</code></td><td>systemd (user unit)</td></tr>
 </tbody></table>
 </div>
-<p>When <code>skills.enable_agent_sidecar_files = true</code>, a fourth tool becomes
-available:</p>
-<div class="table-wrapper"><table><thead><tr><th>Tool</th><th>Description</th></tr></thead><tbody>
-<tr><td><code>write_skill_files</code></td><td>Write supplementary UTF-8 text files inside an existing personal skill directory</td></tr>
-</tbody></table>
-</div>
-<p>Skills created this way are personal and stored in the configured data
-directory’s <code>skills/</code> folder. They become available on the next message
-automatically thanks to the skill watcher.</p>
-<p>Before any built-in skill mutation runs, Moltis creates an automatic
-checkpoint. Tool results include a <code>checkpointId</code> you can later restore with
-<code>checkpoint_restore</code>.</p>
-<h2 id="skill-watcher"><a class="header" href="#skill-watcher">Skill Watcher</a></h2>
-<p>The skill watcher (<code>crates/skills/src/watcher.rs</code>) monitors skill directories
-for filesystem changes using debounced notifications. When a <code>SKILL.md</code> file is
-created, modified, or deleted, the watcher emits a <code>skills.changed</code> event via
-the WebSocket event bus so the UI can refresh. Supplementary file writes do not
-change discovery on their own, so the watcher intentionally stays focused on
-<code>SKILL.md</code>.</p>
-<div id="admonition-tip" class="admonition admonish-tip" role="note" aria-labelledby="admonition-tip-title">
-<div class="admonition-title">
-<div id="admonition-tip-title">
-<p>Tip</p>
-</div>
-<a class="admonition-anchor-link" href="#admonition-tip"></a>
-</div>
-<div>
-<p>The watcher uses debouncing to avoid firing multiple events for rapid
-successive edits (e.g. an editor writing a temp file then renaming).</p>
-</div>
-</div>
-<h2 id="creating-a-skill"><a class="header" href="#creating-a-skill">Creating a Skill</a></h2>
-<p>The agent can create a skill by calling the <code>create_skill</code> tool:</p>
-<pre><code class="language-json">{
-  "name": "summarize-pr",
-  "content": "# summarize-pr\n\nSummarize a GitHub pull request...",
-  "description": "Summarize GitHub PRs with key changes and review notes"
-}
-</code></pre>
-<p>This writes <code>&lt;data_dir&gt;/skills/summarize-pr/SKILL.md</code> with the provided content.
-The skill discoverer picks it up on the next message.</p>
-<h2 id="writing-supplementary-files"><a class="header" href="#writing-supplementary-files">Writing Supplementary Files</a></h2>
-<p>When <code>skills.enable_agent_sidecar_files = true</code>, the agent can add sidecar
-files such as shell scripts, templates, <code>_meta.json</code>, or <code>Dockerfile</code>:</p>
-<pre><code class="language-json">{
-  "name": "summarize-pr",
-  "files": [
-    {
-      "path": "script.sh",
-      "content": "#!/usr/bin/env bash\necho summarize\n"
-    },
-    {
-      "path": "templates/prompt.txt",
-      "content": "Summarize the pull request with risks first.\n"
-    }
-  ]
-}
-</code></pre>
-<p>Safety rules:</p>
+<p>Both configurations:</p>
 <ul>
-<li>only writes inside <code>&lt;data_dir&gt;/skills/&lt;name&gt;/</code></li>
-<li>only relative UTF-8 text files</li>
-<li>rejects <code>..</code>, absolute paths, hidden path components, and <code>SKILL.md</code></li>
-<li>rejects symlink escapes and oversized batches</li>
-<li>appends an audit entry to <code>~/.moltis/logs/security-audit.jsonl</code></li>
+<li><strong>Start on boot</strong> (<code>RunAtLoad</code> / <code>WantedBy=default.target</code>)</li>
+<li><strong>Restart on failure</strong> with a 10-second cooldown</li>
+<li><strong>Log to</strong> <code>~/.moltis/moltis.log</code></li>
 </ul>
-<h2 id="updating-a-skill"><a class="header" href="#updating-a-skill">Updating a Skill</a></h2>
-<pre><code class="language-json">{
-  "name": "summarize-pr",
-  "content": "# summarize-pr\n\nUpdated instructions..."
-}
+<h3 id="options"><a class="header" href="#options">Options</a></h3>
+<p>You can pass <code>--bind</code>, <code>--port</code>, and <code>--log-level</code> to bake them into the
+service definition:</p>
+<pre><code class="language-bash">moltis service install --bind 0.0.0.0 --port 8080 --log-level debug
 </code></pre>
-<h2 id="deleting-a-skill"><a class="header" href="#deleting-a-skill">Deleting a Skill</a></h2>
-<pre><code class="language-json">{
-  "name": "summarize-pr"
-}
+<p>These flags are written into the service file. The service reads the rest of
+its configuration from <code>~/.moltis/moltis.toml</code> as usual.</p>
+<h2 id="manage"><a class="header" href="#manage">Manage</a></h2>
+<pre><code class="language-bash">moltis service status     # Show running/stopped/not-installed and PID
+moltis service stop       # Stop the service
+moltis service restart    # Restart the service
+moltis service logs       # Print the log file path
 </code></pre>
-<p>This removes the entire <code>&lt;data_dir&gt;/skills/summarize-pr/</code> directory, including
-any supplementary files written alongside <code>SKILL.md</code>.</p>
-<p>Deleted skills can be restored from the returned <code>checkpointId</code> with
-<code>checkpoint_restore</code>, as long as the checkpoint still exists.</p>
-
+<p>To tail the logs:</p>
+<pre><code class="language-bash">tail -f $(moltis service logs)
+</code></pre>
+<h2 id="uninstall"><a class="header" href="#uninstall">Uninstall</a></h2>
+<pre><code class="language-bash">moltis service uninstall
+</code></pre>
+<p>This stops the service, removes the service file, and cleans up.</p>
+<h2 id="cli-reference"><a class="header" href="#cli-reference">CLI Reference</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>Command</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>moltis service install</code></td><td>Install and start the service</td></tr>
+<tr><td><code>moltis service uninstall</code></td><td>Stop and remove the service</td></tr>
+<tr><td><code>moltis service status</code></td><td>Show service status and PID</td></tr>
+<tr><td><code>moltis service stop</code></td><td>Stop the service</td></tr>
+<tr><td><code>moltis service restart</code></td><td>Restart the service</td></tr>
+<tr><td><code>moltis service logs</code></td><td>Print log file path</td></tr>
+</tbody></table>
+</div>
+<h2 id="how-it-differs-from-moltis-node-add"><a class="header" href="#how-it-differs-from-moltis-node-add">How It Differs from <code>moltis node add</code></a></h2>
+<p><code>moltis service install</code> manages the <strong>gateway</strong> — the main Moltis server
+that hosts the web UI, chat sessions, and API.</p>
+<p><code>moltis node add</code> registers a <strong>headless node</strong> — a client process on a
+remote machine that connects back to a gateway for command execution. See
+<a href="nodes.html">Multi-Node</a> for details.</p>
+<div class="table-wrapper"><table><thead><tr><th></th><th><code>moltis service</code></th><th><code>moltis node</code></th></tr></thead><tbody>
+<tr><td>What it runs</td><td>The gateway server</td><td>A node client</td></tr>
+<tr><td>Needs <code>--host</code>/<code>--token</code></td><td>No</td><td>Yes</td></tr>
+<tr><td>Config source</td><td><code>~/.moltis/moltis.toml</code></td><td><code>~/.moltis/node.json</code></td></tr>
+<tr><td>launchd label</td><td><code>org.moltis.gateway</code></td><td><code>org.moltis.node</code></td></tr>
+<tr><td>systemd unit</td><td><code>moltis.service</code></td><td><code>moltis-node.service</code></td></tr>
+</tbody></table>
+</div>
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="webhooks.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="nodes.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <i class="fa fa-angle-left"></i>
                             </a>
 
-                            <a rel="next prefetch" href="mobile-pwa.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="authentication.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <i class="fa fa-angle-right"></i>
                             </a>
 
@@ -294,11 +263,11 @@ any supplementary files written alongside <code>SKILL.md</code>.</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="webhooks.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="nodes.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <i class="fa fa-angle-left"></i>
                     </a>
 
-                    <a rel="next prefetch" href="mobile-pwa.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="authentication.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <i class="fa fa-angle-right"></i>
                     </a>
             </nav>

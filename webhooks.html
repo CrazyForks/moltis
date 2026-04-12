@@ -1,0 +1,685 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Webhooks - Moltis Documentation</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="Documentation for Moltis - Your AI coding assistant">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon.svg">
+        <link rel="shortcut icon" href="favicon.png">
+        <link rel="stylesheet" href="css/variables.css">
+        <link rel="stylesheet" href="css/general.css">
+        <link rel="stylesheet" href="css/chrome.css">
+        <link rel="stylesheet" href="css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="highlight-css" href="highlight.css">
+        <link rel="stylesheet" id="tomorrow-night-css" href="tomorrow-night.css">
+        <link rel="stylesheet" id="ayu-highlight-css" href="ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+        <link rel="stylesheet" href="theme/admonish.css">
+        <link rel="stylesheet" href="theme/custom.css">
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "searchindex.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Moltis Documentation</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/moltis-org/moltis" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+                        <a href="https://github.com/moltis-org/moltis/edit/main/docs/src/src/webhooks.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                            <i id="git-edit-button" class="fa fa-edit"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <i class="fa fa-spinner fa-spin"></i>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="webhooks"><a class="header" href="#webhooks">Webhooks</a></h1>
+<p>Moltis can receive inbound HTTP webhooks from external services and run AI
+agents in response. Each webhook delivery becomes a persistent chat session
+that can be inspected and continued from the web UI.</p>
+<p>Use webhooks to trigger agents from GitHub PRs, GitLab merge requests, Stripe
+payments, PagerDuty incidents, or any service that can POST JSON to a URL.</p>
+<h2 id="how-it-works"><a class="header" href="#how-it-works">How It Works</a></h2>
+<pre><code>External Service (GitHub, Stripe, …)
+        │
+        ▼  POST /api/webhooks/ingest/{public_id}
+┌──────────────────────────────────┐
+│         Ingress Handler          │
+│  verify → filter → dedup → 202  │
+└──────────────┬───────────────────┘
+               │  delivery_id
+               ▼
+┌──────────────────────────────────┐
+│       Background Worker          │
+│  normalize → create session      │
+│  → inject message → chat.send   │
+└──────────────┬───────────────────┘
+               │
+               ▼
+┌──────────────────────────────────┐
+│       Persistent Session         │
+│  Agent processes event,          │
+│  optionally acts back via tools  │
+└──────────────────────────────────┘
+</code></pre>
+<ol>
+<li>The external service POSTs to the webhook’s public endpoint.</li>
+<li>Moltis verifies authentication, checks the event filter, and deduplicates.</li>
+<li>The request is acknowledged with <code>202 Accepted</code> immediately.</li>
+<li>A background worker normalizes the payload, creates a chat session, and runs
+the bound agent.</li>
+<li>The resulting session is visible in the web UI like any other conversation.</li>
+</ol>
+<h2 id="setup"><a class="header" href="#setup">Setup</a></h2>
+<p>Webhooks are configured exclusively from <strong>Settings → Webhooks</strong> in the web UI.
+They are not part of the onboarding flow.</p>
+<h3 id="creating-a-webhook"><a class="header" href="#creating-a-webhook">Creating a Webhook</a></h3>
+<ol>
+<li>Navigate to <strong>Settings → Webhooks</strong> and click <strong>Create webhook</strong>.</li>
+<li>Choose a <strong>source profile</strong> (GitHub, GitLab, Stripe, or Generic).</li>
+<li>Configure <strong>authentication</strong> — the profile pre-selects a recommended mode.</li>
+<li>Optionally filter which <strong>event types</strong> to process.</li>
+<li>Select a <strong>target agent</strong> and optional model override.</li>
+<li>Click <strong>Create</strong> — the endpoint URL is displayed with a copy button.</li>
+<li>Register this URL in the external service’s webhook settings.</li>
+</ol>
+<h3 id="endpoint-url"><a class="header" href="#endpoint-url">Endpoint URL</a></h3>
+<p>Each webhook gets a stable, high-entropy public URL:</p>
+<pre><code>https://your-moltis-host/api/webhooks/ingest/wh_a1b2c3d4e5f6...
+</code></pre>
+<p>The <code>wh_</code> prefix followed by 36 random hex characters serves as a routing
+identifier — it is <strong>not</strong> authentication. Authentication is handled by the
+configured auth mode.</p>
+<h2 id="source-profiles"><a class="header" href="#source-profiles">Source Profiles</a></h2>
+<p>Source profiles define how to authenticate, parse, and normalize events from a
+specific provider. Selecting a profile pre-fills the recommended auth mode and
+provides an event catalog for filtering.</p>
+<div class="table-wrapper"><table><thead><tr><th>Profile</th><th>Auth Mode</th><th>Event Parsing</th><th>Entity Grouping</th></tr></thead><tbody>
+<tr><td>Generic</td><td>Static header</td><td>Configurable header</td><td>None</td></tr>
+<tr><td>GitHub</td><td>HMAC-SHA256 (<code>X-Hub-Signature-256</code>)</td><td><code>X-GitHub-Event</code> + action</td><td>PR number, issue number</td></tr>
+<tr><td>GitLab</td><td>Token (<code>X-Gitlab-Token</code>)</td><td><code>X-Gitlab-Event</code> + action</td><td>MR iid, issue iid</td></tr>
+<tr><td>Stripe</td><td>Webhook signature (<code>Stripe-Signature</code>)</td><td><code>$.type</code> in body</td><td>Subscription ID</td></tr>
+</tbody></table>
+</div>
+<h3 id="github"><a class="header" href="#github">GitHub</a></h3>
+<p>GitHub webhooks use HMAC-SHA256 signature verification. When you create a
+webhook with the GitHub profile:</p>
+<ol>
+<li>Moltis generates a random secret (or you provide one).</li>
+<li>In your GitHub repo, go to <strong>Settings → Webhooks → Add webhook</strong>.</li>
+<li>Set the payload URL to your Moltis webhook endpoint.</li>
+<li>Set content type to <code>application/json</code>.</li>
+<li>Paste the secret.</li>
+<li>Select the events you want to trigger (or choose “Send me everything” and
+filter in Moltis).</li>
+</ol>
+<p><strong>Event types:</strong></p>
+<div class="table-wrapper"><table><thead><tr><th>Event</th><th>Description</th><th>Use case</th></tr></thead><tbody>
+<tr><td><code>pull_request.opened</code></td><td>New PR</td><td>Code review, labeling</td></tr>
+<tr><td><code>pull_request.synchronize</code></td><td>PR updated</td><td>Re-review</td></tr>
+<tr><td><code>pull_request.closed</code></td><td>PR closed/merged</td><td>Cleanup, changelog</td></tr>
+<tr><td><code>push</code></td><td>Commits pushed</td><td>CI trigger, deploy check</td></tr>
+<tr><td><code>issues.opened</code></td><td>New issue</td><td>Triage, auto-respond</td></tr>
+<tr><td><code>issue_comment.created</code></td><td>Comment on issue/PR</td><td>Answer questions</td></tr>
+<tr><td><code>pull_request_review.submitted</code></td><td>PR review posted</td><td>Respond to feedback</td></tr>
+<tr><td><code>release.published</code></td><td>New release</td><td>Announce, post-release tasks</td></tr>
+<tr><td><code>workflow_run.completed</code></td><td>Actions workflow done</td><td>Post-CI analysis</td></tr>
+</tbody></table>
+</div>
+<p><strong>Payload normalization</strong> extracts key fields (repo, PR number, author, branch,
+description, changed files) instead of dumping the full payload into the agent
+prompt — keeping token usage reasonable.</p>
+<h3 id="gitlab"><a class="header" href="#gitlab">GitLab</a></h3>
+<p>GitLab webhooks use a static token in the <code>X-Gitlab-Token</code> header.</p>
+<ol>
+<li>In your GitLab project, go to <strong>Settings → Webhooks</strong>.</li>
+<li>Set the URL to your Moltis webhook endpoint.</li>
+<li>Paste the secret token.</li>
+<li>Select trigger events.</li>
+</ol>
+<p><strong>Event types:</strong></p>
+<div class="table-wrapper"><table><thead><tr><th>Event</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>merge_request.open</code></td><td>New merge request</td></tr>
+<tr><td><code>merge_request.update</code></td><td>MR updated</td></tr>
+<tr><td><code>merge_request.merge</code></td><td>MR merged</td></tr>
+<tr><td><code>push</code></td><td>Commits pushed</td></tr>
+<tr><td><code>note</code></td><td>Comment on MR or issue</td></tr>
+<tr><td><code>issue.open</code></td><td>New issue</td></tr>
+<tr><td><code>pipeline</code></td><td>Pipeline status change</td></tr>
+</tbody></table>
+</div>
+<h3 id="stripe"><a class="header" href="#stripe">Stripe</a></h3>
+<p>Stripe webhooks use a composite signature in the <code>Stripe-Signature</code> header
+with timestamp validation (5-minute tolerance).</p>
+<ol>
+<li>In the Stripe Dashboard, go to <strong>Developers → Webhooks → Add endpoint</strong>.</li>
+<li>Set the endpoint URL to your Moltis webhook endpoint.</li>
+<li>Select events to listen to.</li>
+<li>Copy the signing secret (<code>whsec_...</code>) into Moltis.</li>
+</ol>
+<p><strong>Event types:</strong></p>
+<div class="table-wrapper"><table><thead><tr><th>Event</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>checkout.session.completed</code></td><td>Successful checkout</td></tr>
+<tr><td><code>payment_intent.succeeded</code></td><td>Payment captured</td></tr>
+<tr><td><code>payment_intent.payment_failed</code></td><td>Payment failed</td></tr>
+<tr><td><code>invoice.paid</code></td><td>Invoice paid</td></tr>
+<tr><td><code>customer.subscription.created</code></td><td>New subscription</td></tr>
+<tr><td><code>customer.subscription.deleted</code></td><td>Subscription canceled</td></tr>
+<tr><td><code>charge.dispute.created</code></td><td>Chargeback opened</td></tr>
+</tbody></table>
+</div>
+<h3 id="generic"><a class="header" href="#generic">Generic</a></h3>
+<p>The generic profile works with any service that can POST JSON. Configure a
+static header or bearer token for authentication. Event type is extracted from
+common headers (<code>X-Event-Type</code>, <code>X-Webhook-Event</code>) if present.</p>
+<h2 id="authentication"><a class="header" href="#authentication">Authentication</a></h2>
+<p>Each webhook is configured with an auth mode that verifies inbound requests.</p>
+<div class="table-wrapper"><table><thead><tr><th>Mode</th><th>Header</th><th>Verification</th></tr></thead><tbody>
+<tr><td><code>none</code></td><td>—</td><td>No verification (testing only)</td></tr>
+<tr><td><code>static_header</code></td><td>Configurable</td><td>Constant-time comparison of header value</td></tr>
+<tr><td><code>bearer</code></td><td><code>Authorization</code></td><td><code>Bearer &lt;token&gt;</code> comparison</td></tr>
+<tr><td><code>github_hmac_sha256</code></td><td><code>X-Hub-Signature-256</code></td><td>HMAC-SHA256 of body against shared secret</td></tr>
+<tr><td><code>gitlab_token</code></td><td><code>X-Gitlab-Token</code></td><td>Constant-time token comparison</td></tr>
+<tr><td><code>stripe_webhook_signature</code></td><td><code>Stripe-Signature</code></td><td>HMAC-SHA256 with timestamp tolerance</td></tr>
+<tr><td><code>linear_webhook_signature</code></td><td><code>Linear-Signature</code></td><td>HMAC-SHA256</td></tr>
+<tr><td><code>pagerduty_v2_signature</code></td><td><code>X-PagerDuty-Signature</code></td><td>HMAC-SHA256</td></tr>
+<tr><td><code>sentry_webhook_signature</code></td><td><code>Sentry-Hook-Signature</code></td><td>HMAC-SHA256</td></tr>
+</tbody></table>
+</div><div id="admonition-auth-mode-none" class="admonition admonish-warning" role="note" aria-labelledby="admonition-auth-mode-none-title">
+<div class="admonition-title">
+<div id="admonition-auth-mode-none-title">
+<p>Auth Mode: None</p>
+</div>
+<a class="admonition-anchor-link" href="#admonition-auth-mode-none"></a>
+</div>
+<div>
+<p>The <code>none</code> auth mode accepts all requests without verification. Use it only for
+local testing. The UI displays a warning when this mode is selected.</p>
+</div>
+</div>
+<p>All secret comparisons use constant-time operations to prevent timing attacks.</p>
+<h2 id="event-filtering"><a class="header" href="#event-filtering">Event Filtering</a></h2>
+<p>Each webhook can filter which event types to process using allow and deny lists.</p>
+<ul>
+<li><strong>Allow list empty, deny list empty</strong> — accept all events.</li>
+<li><strong>Allow list non-empty</strong> — only accept events in the list.</li>
+<li><strong>Deny list</strong> — always applied last, explicitly skips matching events.</li>
+</ul>
+<p>Filtered events are logged with status <code>filtered</code> but not processed. They do
+not count against rate limits.</p>
+<p>When using a source profile, the UI shows the event catalog as checkboxes
+instead of requiring free-form text.</p>
+<h2 id="session-modes"><a class="header" href="#session-modes">Session Modes</a></h2>
+<p>Each delivery creates a chat session. The session mode controls how sessions
+are organized.</p>
+<div class="table-wrapper"><table><thead><tr><th>Mode</th><th>Behaviour</th></tr></thead><tbody>
+<tr><td><code>per_delivery</code> (default)</td><td>One new session per delivery. Best for debugging and clean history.</td></tr>
+<tr><td><code>per_entity</code></td><td>Group deliveries by entity key (e.g., all events for PR #567 in one session). Useful for maintaining context across an entity’s lifecycle.</td></tr>
+<tr><td><code>named_session</code></td><td>All deliveries go to one named session. Use sparingly — can become noisy.</td></tr>
+</tbody></table>
+</div>
+<h3 id="entity-keys"><a class="header" href="#entity-keys">Entity Keys</a></h3>
+<p>In <code>per_entity</code> mode, the source profile extracts a grouping key from the
+payload:</p>
+<div class="table-wrapper"><table><thead><tr><th>Profile</th><th>Entity Key Format</th></tr></thead><tbody>
+<tr><td>GitHub</td><td><code>github:{repo}:pr:{number}</code> or <code>github:{repo}:issue:{number}</code></td></tr>
+<tr><td>GitLab</td><td><code>gitlab:{project}:mr:{iid}</code> or <code>gitlab:{project}:issue:{iid}</code></td></tr>
+<tr><td>Stripe</td><td><code>stripe:{subscription_id}</code> or <code>stripe:dispute:{charge_id}</code></td></tr>
+<tr><td>Generic</td><td>None (falls back to <code>per_delivery</code>)</td></tr>
+</tbody></table>
+</div>
+<h3 id="session-labels"><a class="header" href="#session-labels">Session Labels</a></h3>
+<p>Sessions are labeled for easy identification in the sidebar:</p>
+<ul>
+<li><strong>per_delivery</strong>: <code>webhook:{public_id}:{delivery_id}</code></li>
+<li><strong>per_entity</strong>: <code>webhook:{public_id}:{entity_key}</code></li>
+<li><strong>named_session</strong>: configured key or <code>webhook:{public_id}</code></li>
+</ul>
+<h2 id="agent-execution"><a class="header" href="#agent-execution">Agent Execution</a></h2>
+<p>Each webhook is bound to an agent preset. When a delivery is processed:</p>
+<ol>
+<li>The worker creates a session with the webhook’s session key.</li>
+<li>The configured agent is assigned to the session.</li>
+<li>A normalized message describing the event is injected.</li>
+<li><code>chat.send_sync</code> runs the agent turn.</li>
+<li>The delivery record is updated with status, duration, and token counts.</li>
+</ol>
+<h3 id="execution-overrides"><a class="header" href="#execution-overrides">Execution Overrides</a></h3>
+<p>Webhooks can override specific agent settings without changing the base preset:</p>
+<ul>
+<li><strong>Model</strong> — use a different LLM for webhook processing.</li>
+<li><strong>System prompt suffix</strong> — append extra instructions (e.g., “Focus on security
+issues” for a code review webhook).</li>
+<li><strong>Tool policy</strong> — restrict which tools the agent can use.</li>
+</ul>
+<h3 id="delivery-message-format"><a class="header" href="#delivery-message-format">Delivery Message Format</a></h3>
+<p>The agent receives a structured message with three layers:</p>
+<pre><code>Webhook delivery received.
+
+Webhook: GitHub PR Hook (wh_xxxxx)
+Source: github
+Event: pull_request.opened
+Delivery: abc-123-def
+Received: 2026-04-07T12:34:56Z
+
+---
+
+GitHub event: pull_request.opened
+
+Repository: moltis-org/moltis
+PR #567: "Add webhook support"
+  Author: @penso
+  Branch: feature/webhooks → main
+  URL: https://github.com/moltis-org/moltis/pull/567
+  Draft: false
+
+Description:
+  This PR adds generic webhook support...
+
+Changed files: 42 (+1,203 / -156)
+
+---
+
+Full payload available via webhook_get_full_payload tool.
+</code></pre>
+<p>The full raw payload is stored on the delivery record and available to the
+agent via the <code>webhook_get_full_payload</code> tool, keeping prompt token usage
+manageable for large payloads.</p>
+<h2 id="delivery-lifecycle"><a class="header" href="#delivery-lifecycle">Delivery Lifecycle</a></h2>
+<p>Each delivery goes through a status progression:</p>
+<div class="table-wrapper"><table><thead><tr><th>Status</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>received</code></td><td>Persisted, not yet queued</td></tr>
+<tr><td><code>filtered</code></td><td>Event type not in allow list</td></tr>
+<tr><td><code>deduplicated</code></td><td>Duplicate delivery key</td></tr>
+<tr><td><code>rejected</code></td><td>Auth failure or policy violation</td></tr>
+<tr><td><code>queued</code></td><td>Waiting for worker</td></tr>
+<tr><td><code>processing</code></td><td>Agent running</td></tr>
+<tr><td><code>completed</code></td><td>Agent finished successfully</td></tr>
+<tr><td><code>failed</code></td><td>Agent errored</td></tr>
+</tbody></table>
+</div>
+<h3 id="deduplication"><a class="header" href="#deduplication">Deduplication</a></h3>
+<p>Deliveries are deduplicated by a provider-specific key:</p>
+<ul>
+<li><strong>GitHub</strong>: <code>X-GitHub-Delivery</code> header</li>
+<li><strong>GitLab</strong>: <code>Idempotency-Key</code> header (falls back to body hash)</li>
+<li><strong>Stripe</strong>: <code>$.id</code> field in body</li>
+<li><strong>Generic</strong>: <code>X-Delivery-Id</code> or <code>X-Request-Id</code> header (falls back to body
+SHA-256 hash)</li>
+</ul>
+<p>Duplicate deliveries are logged with status <code>deduplicated</code> and return <code>200 OK</code>.</p>
+<h2 id="rate-limiting"><a class="header" href="#rate-limiting">Rate Limiting</a></h2>
+<p>Two levels of rate limiting protect against abuse:</p>
+<div class="table-wrapper"><table><thead><tr><th>Level</th><th>Default</th><th>Description</th></tr></thead><tbody>
+<tr><td>Per-webhook</td><td>60/minute</td><td>Configurable per webhook</td></tr>
+<tr><td>Global</td><td>300/minute</td><td>Across all webhooks</td></tr>
+</tbody></table>
+</div>
+<p>Rate-limited requests receive <code>429 Too Many Requests</code>. Filtered and
+deduplicated events do not count against rate limits.</p>
+<h2 id="security"><a class="header" href="#security">Security</a></h2>
+<ul>
+<li><strong>Public IDs are routing identifiers, not secrets.</strong> Authentication is
+handled by the configured auth mode.</li>
+<li><strong>Secrets use constant-time comparison</strong> to prevent timing attacks.</li>
+<li><strong>Request body size is limited</strong> (default: 1 MB, configurable per webhook).</li>
+<li><strong>Auth headers are never logged.</strong> Only safe headers (event type, delivery
+ID, content type) are persisted.</li>
+<li><strong>Webhook secrets and source API credentials</strong> are encrypted at rest when
+Vault is enabled.</li>
+</ul>
+<div id="admonition-secret-management" class="admonition admonish-warning" role="note" aria-labelledby="admonition-secret-management-title">
+<div class="admonition-title">
+<div id="admonition-secret-management-title">
+<p>Secret Management</p>
+</div>
+<a class="admonition-anchor-link" href="#admonition-secret-management"></a>
+</div>
+<div>
+<p>Without Vault, webhook secrets and API tokens remain plaintext in the SQLite
+database. Enable Moltis <a href="vault.html">Vault</a> if these secrets are going to live on
+disk. Rotate secrets periodically.</p>
+</div>
+</div>
+<h2 id="delivery-inspector"><a class="header" href="#delivery-inspector">Delivery Inspector</a></h2>
+<p>The web UI provides a delivery inspector for each webhook:</p>
+<ul>
+<li><strong>Deliveries list</strong> with status, event type, timestamp, and duration.</li>
+<li><strong>Per-delivery detail</strong> with normalized metadata, headers, body preview, and
+session link.</li>
+<li><strong>Response actions</strong> (when using profiles with response tools) showing what
+the agent did.</li>
+<li>Click a delivery’s session link to open the full chat conversation.</li>
+</ul>
+<h2 id="editing-and-deleting"><a class="header" href="#editing-and-deleting">Editing and Deleting</a></h2>
+<h3 id="editing"><a class="header" href="#editing">Editing</a></h3>
+<p>Click <strong>Edit</strong> on a webhook card to modify its settings. Changes take effect
+immediately for new deliveries. In-progress deliveries use the configuration
+that was active when they were received.</p>
+<h3 id="disabling"><a class="header" href="#disabling">Disabling</a></h3>
+<p>The toggle on each webhook card pauses it — the endpoint returns <code>404</code> but
+configuration and delivery history are preserved.</p>
+<h3 id="deleting"><a class="header" href="#deleting">Deleting</a></h3>
+<p>Deleting a webhook permanently removes it and all delivery records. Chat
+sessions created by deliveries are <strong>not</strong> deleted — they persist independently
+as normal sessions.</p>
+<h2 id="crash-recovery"><a class="header" href="#crash-recovery">Crash Recovery</a></h2>
+<p>On startup, Moltis scans for deliveries with status <code>received</code> or <code>queued</code> and
+re-queues them for processing. Accepted deliveries are not silently dropped on
+restart.</p>
+<h2 id="testing-webhooks"><a class="header" href="#testing-webhooks">Testing Webhooks</a></h2>
+<p>Use <a href="https://hoppscotch.io">Hoppscotch</a> (free, open source, no signup) to test
+your webhooks. Set the method to POST, paste your webhook endpoint URL, add a
+JSON body, and set any required auth headers.</p>
+<p>Alternatively, use the included test script:</p>
+<pre><code class="language-bash">./scripts/test-webhook.sh &lt;webhook-url&gt; --profile github --secret &lt;your-secret&gt;
+</code></pre>
+<p>Available profiles: <code>generic</code>, <code>github</code>, <code>gitlab</code>, <code>stripe</code>. Each sends a
+realistic sample payload with the correct headers and signature.</p>
+<h2 id="example-github-pr-reviewer"><a class="header" href="#example-github-pr-reviewer">Example: GitHub PR Reviewer</a></h2>
+<p>A complete example of setting up a webhook that reviews pull requests:</p>
+<ol>
+<li>
+<p><strong>Create webhook</strong> in Settings → Webhooks:</p>
+<ul>
+<li>
+<p>Source: <strong>GitHub</strong></p>
+</li>
+<li>
+<p>Auth: <strong>GitHub HMAC-SHA256</strong> (auto-selected)</p>
+</li>
+<li>
+<p>Events: check <code>pull_request.opened</code> and <code>pull_request.synchronize</code></p>
+</li>
+<li>
+<p>Agent: <code>code-reviewer</code> (or your default agent)</p>
+</li>
+<li>
+<p>Session mode: <strong>Per entity</strong> (groups all events for the same PR)</p>
+</li>
+<li>
+<p>System prompt suffix:</p>
+<pre><code>You are reviewing a GitHub pull request. Analyze the PR description and
+changed files. Focus on correctness, security, and maintainability.
+Provide specific, actionable feedback.
+</code></pre>
+</li>
+</ul>
+</li>
+<li>
+<p><strong>Register in GitHub</strong>:</p>
+<ul>
+<li>Repo → Settings → Webhooks → Add webhook</li>
+<li>Payload URL: copy from Moltis</li>
+<li>Content type: <code>application/json</code></li>
+<li>Secret: copy from Moltis</li>
+<li>Events: “Pull requests”</li>
+</ul>
+</li>
+<li>
+<p><strong>Test it</strong>: open a PR — a new session appears in Moltis with the agent’s
+review.</p>
+</li>
+</ol>
+<h2 id="example-stripe-payment-handler"><a class="header" href="#example-stripe-payment-handler">Example: Stripe Payment Handler</a></h2>
+<ol>
+<li>
+<p><strong>Create webhook</strong> in Settings → Webhooks:</p>
+<ul>
+<li>
+<p>Source: <strong>Stripe</strong></p>
+</li>
+<li>
+<p>Auth: <strong>Stripe Signature</strong> (auto-selected)</p>
+</li>
+<li>
+<p>Events: check <code>checkout.session.completed</code>, <code>payment_intent.payment_failed</code></p>
+</li>
+<li>
+<p>Session mode: <strong>Per delivery</strong></p>
+</li>
+<li>
+<p>System prompt suffix:</p>
+<pre><code>Process this Stripe payment event. For successful payments, log the
+details and confirm fulfillment. For failures, summarize the issue
+and suggest next steps.
+</code></pre>
+</li>
+</ul>
+</li>
+<li>
+<p><strong>Register in Stripe</strong>:</p>
+<ul>
+<li>Dashboard → Developers → Webhooks → Add endpoint</li>
+<li>Endpoint URL: copy from Moltis</li>
+<li>Events: select the matching events</li>
+<li>Copy signing secret (<code>whsec_...</code>) into Moltis</li>
+</ul>
+</li>
+</ol>
+<h2 id="metrics"><a class="header" href="#metrics">Metrics</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>Metric</th><th>Type</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>webhooks_deliveries_total</code></td><td>Counter</td><td>Total deliveries by webhook, status, event type</td></tr>
+<tr><td><code>webhooks_deliveries_rejected_total</code></td><td>Counter</td><td>Rejected deliveries by reason</td></tr>
+<tr><td><code>webhooks_deliveries_filtered_total</code></td><td>Counter</td><td>Filtered deliveries</td></tr>
+<tr><td><code>webhooks_processing_duration_seconds</code></td><td>Histogram</td><td>Agent execution time</td></tr>
+<tr><td><code>webhooks_response_actions_total</code></td><td>Counter</td><td>Response actions by tool and status</td></tr>
+<tr><td><code>webhooks_rate_limited_total</code></td><td>Counter</td><td>Rate-limited requests</td></tr>
+<tr><td><code>webhooks_worker_queue_depth</code></td><td>Gauge</td><td>Pending deliveries in worker queue</td></tr>
+</tbody></table>
+</div>
+<h2 id="comparison-with-channels-and-cron"><a class="header" href="#comparison-with-channels-and-cron">Comparison with Channels and Cron</a></h2>
+<div class="table-wrapper"><table><thead><tr><th></th><th>Channels</th><th>Webhooks</th><th>Cron</th></tr></thead><tbody>
+<tr><td><strong>Purpose</strong></td><td>Human messaging</td><td>Machine event ingress</td><td>Scheduled tasks</td></tr>
+<tr><td><strong>Trigger</strong></td><td>User sends message</td><td>External HTTP POST</td><td>Time-based schedule</td></tr>
+<tr><td><strong>Reply</strong></td><td>Back to the channel</td><td>Via response tools (optional)</td><td>Optional channel delivery</td></tr>
+<tr><td><strong>Session</strong></td><td>Per conversation</td><td>Per delivery / entity</td><td>Per job run</td></tr>
+<tr><td><strong>Auth</strong></td><td>Platform account</td><td>Per-webhook (HMAC, token, etc.)</td><td>Internal only</td></tr>
+</tbody></table>
+</div>
+<p>Webhooks are <strong>not channels</strong>. They do not support reply routing, streaming, or
+platform presence semantics. Use channels for human messaging and webhooks for
+machine event ingress.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="scheduling.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="skill-tools.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="scheduling.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="skill-tools.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr.min.js"></script>
+        <script src="mark.min.js"></script>
+        <script src="searcher.js"></script>
+
+        <script src="clipboard.min.js"></script>
+        <script src="highlight.js"></script>
+        <script src="book.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+
+    </div>
+    </body>
+</html>

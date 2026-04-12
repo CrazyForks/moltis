@@ -190,7 +190,7 @@ conversations private.</p>
 <h2 id="backends"><a class="header" href="#backends">Backends</a></h2>
 <p>Moltis supports two backends for local inference:</p>
 <div class="table-wrapper"><table><thead><tr><th>Backend</th><th>Format</th><th>Platform</th><th>GPU Acceleration</th></tr></thead><tbody>
-<tr><td><strong>GGUF</strong> (llama.cpp)</td><td><code>.gguf</code> files</td><td>macOS, Linux, Windows</td><td>Metal (macOS), CUDA (NVIDIA)</td></tr>
+<tr><td><strong>GGUF</strong> (llama.cpp)</td><td><code>.gguf</code> files</td><td>macOS, Linux, Windows</td><td>Metal (macOS), CUDA (NVIDIA), Vulkan (opt-in)</td></tr>
 <tr><td><strong>MLX</strong></td><td>MLX model repos</td><td>macOS (Apple Silicon only)</td><td>Apple Silicon neural engine</td></tr>
 </tbody></table>
 </div>
@@ -202,7 +202,7 @@ memory requirements while maintaining good quality.</p>
 <ul>
 <li>Cross-platform (macOS, Linux, Windows)</li>
 <li>Wide model compatibility (any GGUF model)</li>
-<li>GPU acceleration on both NVIDIA (CUDA) and Apple Silicon (Metal)</li>
+<li>GPU acceleration on Apple Silicon (Metal), NVIDIA (CUDA), and Vulkan-capable GPUs</li>
 <li>Mature and well-tested</li>
 </ul>
 <h3 id="mlx"><a class="header" href="#mlx">MLX</a></h3>
@@ -259,7 +259,7 @@ models = ["qwen2.5-coder-7b-q4_k_m"]
 <p>Save this as <code>~/.config/moltis/local-llm.json</code> (the same file managed by the
 Settings UI).</p>
 <h2 id="model-storage"><a class="header" href="#model-storage">Model Storage</a></h2>
-<p>Downloaded models are cached in <code>~/.cache/moltis/models/</code> by default. This
+<p>Downloaded models are cached in <code>~/.moltis/models/</code> by default. This
 directory can grow large (several GB per model).</p>
 <h2 id="huggingface-integration"><a class="header" href="#huggingface-integration">HuggingFace Integration</a></h2>
 <p>You can search and download models directly from HuggingFace:</p>
@@ -268,7 +268,7 @@ directory can grow large (several GB per model).</p>
 <li>Enter a search term (e.g., “qwen coder”)</li>
 <li>Select GGUF or MLX backend</li>
 <li>Choose a model from the results</li>
-<li>The model will be downloaded on first use</li>
+<li>The model will download immediately after you configure it</li>
 </ol>
 <h3 id="finding-gguf-models"><a class="header" href="#finding-gguf-models">Finding GGUF Models</a></h3>
 <p>Look for repositories with “GGUF” in the name on HuggingFace:</p>
@@ -301,6 +301,24 @@ can be configured:</p>
 <p>Requires building with the <code>local-llm-cuda</code> feature:</p>
 <pre><code class="language-bash">cargo build --release --features local-llm-cuda
 </code></pre>
+<h3 id="vulkan"><a class="header" href="#vulkan">Vulkan</a></h3>
+<p>Vulkan acceleration is available as an opt-in build. It is not enabled by
+default in Moltis release builds.</p>
+<p>Build with:</p>
+<pre><code class="language-bash">cargo build --release --features local-llm-vulkan
+</code></pre>
+<p>Requirements:</p>
+<ul>
+<li>Linux: install Vulkan development packages, for example on Debian/Ubuntu:
+<code>sudo apt-get install libvulkan-dev glslang-tools</code>
+(Ubuntu 24.04+ also has a <code>glslc</code> package; on 22.04 install it from the
+<a href="https://vulkan.lunarg.com/sdk/home">LunarG Vulkan SDK</a> if the build
+requires the <code>glslc</code> binary)</li>
+<li>Windows: install the LunarG Vulkan SDK and set the <code>VULKAN_SDK</code> environment
+variable before building</li>
+</ul>
+<p>If llama.cpp detects a Vulkan device at runtime, Moltis will report GGUF as
+using Vulkan acceleration in the local model setup flow.</p>
 <h2 id="limitations"><a class="header" href="#limitations">Limitations</a></h2>
 <p>Local LLM models have some limitations compared to cloud providers:</p>
 <ol>

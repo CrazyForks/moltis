@@ -233,6 +233,24 @@ whatsapp = ["moltis-gateway/whatsapp"]
 </code></pre>
 <p>When disabled, all WhatsApp code is compiled out — no QR code library, no
 Signal Protocol store, no WhatsApp event handlers.</p>
+<div id="admonition-enable-in-channel-list" class="admonition admonish-tip" role="note" aria-labelledby="admonition-enable-in-channel-list-title">
+<div class="admonition-title">
+<div id="admonition-enable-in-channel-list-title">
+<p>Enable in Channel List</p>
+</div>
+<a class="admonition-anchor-link" href="#admonition-enable-in-channel-list"></a>
+</div>
+<div>
+<p>WhatsApp is not shown in the web UI by default. Add it to the offered
+channels list in <code>moltis.toml</code>:</p>
+<p>```toml
+[channels]
+offered = [“telegram”, “discord”, “slack”, “whatsapp”]
+```</p>
+<p>Restart Moltis after changing this setting. The <strong>+ Add Channel</strong> menu
+will then include the WhatsApp option.</p>
+</div>
+</div>
 <h2 id="quick-start-web-ui"><a class="header" href="#quick-start-web-ui">Quick Start (Web UI)</a></h2>
 <p>The fastest way to connect WhatsApp:</p>
 <ol>
@@ -509,6 +527,21 @@ the bot replies asking the user to send a text message instead.</p>
 <li>View pending OTP challenges with the code displayed</li>
 </ul>
 <h2 id="troubleshooting"><a class="header" href="#troubleshooting">Troubleshooting</a></h2>
+<h3 id="whatsapp-not-in-add-channel-menu"><a class="header" href="#whatsapp-not-in-add-channel-menu">WhatsApp Not in Add Channel Menu</a></h3>
+<ul>
+<li>WhatsApp is not offered by default. Add <code>"whatsapp"</code> to the <code>offered</code> list in <code>moltis.toml</code>:
+<pre><code class="language-toml">[channels]
+offered = ["telegram", "discord", "slack", "whatsapp"]
+</code></pre>
+</li>
+<li>Restart Moltis after changing this setting</li>
+</ul>
+<h3 id="cant-understand-that-message-type"><a class="header" href="#cant-understand-that-message-type">“Can’t Understand That Message Type”</a></h3>
+<ul>
+<li>This means the bot received a message type it doesn’t handle (e.g. stickers, reactions, polls)</li>
+<li>Check the server logs for an <code>info</code> entry that lists which message fields were present</li>
+<li>Supported types: text, images, audio, voice notes, video, documents, and locations</li>
+</ul>
 <h3 id="qr-code-not-appearing"><a class="header" href="#qr-code-not-appearing">QR Code Not Appearing</a></h3>
 <ul>
 <li>Ensure the <code>whatsapp</code> feature is enabled (it is by default)</li>
@@ -555,7 +588,7 @@ arrive before the message ID buffer is rebuilt</li>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="discord.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="matrix.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <i class="fa fa-angle-left"></i>
                             </a>
 
@@ -569,7 +602,7 @@ arrive before the message ID buffer is rebuilt</li>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="discord.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="matrix.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <i class="fa fa-angle-left"></i>
                     </a>
 

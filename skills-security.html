@@ -194,6 +194,19 @@ untrusted code until reviewed.</p>
 <li><code>enabled</code> - skill is active for agent use</li>
 </ul>
 <p>You cannot enable untrusted skills.</p>
+<p>Portable bundle imports add one more step:</p>
+<ul>
+<li><code>quarantined</code> - imported from a portable bundle and blocked from enable until explicitly cleared</li>
+</ul>
+<p>Imported bundles keep provenance metadata (original source, commit SHA when
+available, bundle path, export time) so you can review where they came from
+before clearing quarantine.</p>
+<p>The Skills page exposes these bundle flows directly:</p>
+<ul>
+<li>import a <code>.tar.gz</code> bundle from disk</li>
+<li>export an installed repo back to a portable bundle</li>
+<li>clear quarantine after reviewing provenance and contents</li>
+</ul>
 <h2 id="provenance-pinning"><a class="header" href="#provenance-pinning">Provenance Pinning</a></h2>
 <p>Moltis records a pinned <code>commit_sha</code> for installed repos:</p>
 <ul>
@@ -238,6 +251,7 @@ dependency install attempts, and source drift detection.</p>
 <li>Review SKILL.md and linked scripts before trust.</li>
 <li>Prefer pinned, known repos over ad-hoc installs.</li>
 <li>Monitor <code>security-audit.jsonl</code> for unusual events.</li>
+<li>Keep imported bundles quarantined until you review their contents locally.</li>
 </ol>
 
                     </main>
@@ -248,7 +262,7 @@ dependency install attempts, and source drift detection.</p>
                                 <i class="fa fa-angle-left"></i>
                             </a>
 
-                            <a rel="next prefetch" href="docker.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="release-verification.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <i class="fa fa-angle-right"></i>
                             </a>
 
@@ -262,7 +276,7 @@ dependency install attempts, and source drift detection.</p>
                         <i class="fa fa-angle-left"></i>
                     </a>
 
-                    <a rel="next prefetch" href="docker.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="release-verification.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <i class="fa fa-angle-right"></i>
                     </a>
             </nav>

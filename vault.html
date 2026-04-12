@@ -297,12 +297,18 @@ password:</p>
 <p>Currently encrypted:</p>
 <div class="table-wrapper"><table><thead><tr><th>Data</th><th>Storage</th><th>AAD</th></tr></thead><tbody>
 <tr><td>Environment variables (<code>env_variables</code> table)</td><td>SQLite</td><td><code>env:{key}</code></td></tr>
+<tr><td>Managed SSH private keys (<code>ssh_keys</code> table)</td><td>SQLite</td><td><code>ssh-key:{name}</code></td></tr>
 </tbody></table>
 </div>
-<p>The <code>encrypted</code> column in <code>env_variables</code> tracks whether each row is
-encrypted (1) or plaintext (0). When the vault is unsealed, new env vars
-are written encrypted. When sealed or uninitialized, they are written as
-plaintext.</p>
+<p>The <code>encrypted</code> column in <code>env_variables</code> and <code>ssh_keys</code> tracks whether each
+row is encrypted (1) or plaintext (0). When the vault is unsealed, new env vars
+and managed SSH private keys are written encrypted. Imported passphrase-protected
+SSH keys are decrypted during import and then stored under the vault-managed
+key hierarchy. When sealed or
+uninitialized, they are written as plaintext.</p>
+<p>On the first successful vault unseal after enabling the feature, Moltis also
+migrates any previously stored plaintext env vars and managed SSH private keys
+to encrypted storage in-place.</p>
 <div id="admonition-planned" class="admonition admonish-info" role="note" aria-labelledby="admonition-planned-title">
 <div class="admonition-title">
 <div id="admonition-planned-title">
@@ -318,18 +324,21 @@ planned after an async refactor.</p>
 </div>
 </div>
 <h2 id="vault-guard-middleware"><a class="header" href="#vault-guard-middleware">Vault Guard Middleware</a></h2>
-<p>When the vault is in the <strong>Sealed</strong> state, a middleware layer blocks API
-requests (except auth and bootstrap endpoints) with <code>423 Locked</code>:</p>
+<p>When the vault is in the <strong>Sealed</strong> state, a middleware layer blocks
+vault-protected API requests with <code>423 Locked</code>:</p>
 <pre><code class="language-json">{"error": "vault is sealed", "status": "sealed"}
 </code></pre>
-<p>This prevents the application from serving stale or unreadable data when
-the vault needs to be unlocked.</p>
+<p>This prevents the application from serving unreadable encrypted data while
+still allowing access to session history and bootstrap payloads that are not
+yet stored in the vault.</p>
 <p>The guard does <strong>not</strong> block when the vault is <strong>Uninitialized</strong> — there’s
 nothing to protect yet, and the application needs to function normally for
 initial setup.</p>
 <p>Allowed through regardless of vault state:</p>
 <ul>
 <li><code>/api/auth/*</code> — authentication endpoints (including vault unlock)</li>
+<li><code>/api/bootstrap</code> — UI bootstrap payload</li>
+<li><code>/api/sessions*</code> — session history and media endpoints</li>
 <li><code>/api/gon</code> — server-injected bootstrap data</li>
 <li>Non-API routes — static assets, HTML pages, health check</li>
 </ul>
@@ -366,6 +375,8 @@ const vaultStatus = gon.get("vault_status");
 <li>On the login page (<code>/login</code>): a banner that explains the vault is locked
 and will unlock after successful sign-in.</li>
 </ul>
+<p>The chat/session UI remains visible while sealed because chat history is not
+yet encrypted by the vault.</p>
 <h3 id="onboarding-and-localhost"><a class="header" href="#onboarding-and-localhost">Onboarding and localhost</a></h3>
 <p>The onboarding wizard’s Security step explains that setting a password
 also enables the encryption vault for stored secrets. The password
