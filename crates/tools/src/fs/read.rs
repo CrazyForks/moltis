@@ -412,8 +412,57 @@ impl AgentTool for ReadTool {
         let session_key = session_key_from(&params).to_string();
 
         let lower = file_path.to_ascii_lowercase();
+        let is_special = lower.ends_with(".pdf") || is_image_extension(&lower);
 
-        // PDF dispatch: intercept .pdf before the normal read path.
+        // PDF and image dispatches bypass read_impl, so the three
+        // gates that live inside read_impl must run here first:
+        //  1. Path policy
+        //  2. Sandbox routing (PDF/image extraction is host-only for
+        //     now — return a typed payload if sandboxed)
+        //  3. FsState read recording (so must-read-before-write works)
+        if is_special {
+            if let Some(ref policy) = self.path_policy {
+                let p = Path::new(file_path);
+                let canonical = fs::canonicalize(p)
+                    .await
+                    .unwrap_or_else(|_| p.to_path_buf());
+                if let Some(payload) = enforce_path_policy(policy, &canonical) {
+                    return Ok(payload);
+                }
+            }
+            if let Some(ref router) = self.sandbox_router
+                && router.is_sandboxed(&session_key).await
+            {
+                // PDF extraction and image resize run host-side; we
+                // can't invoke them inside a container. Return a clear
+                // typed payload so the LLM knows to fall back to the
+                // raw binary Read path.
+                return Ok(json!({
+                    "kind": "unsupported_in_sandbox",
+                    "file_path": file_path,
+                    "error": "PDF and image processing is not available for sandboxed sessions. \
+                              Use Read without a .pdf/.png/.jpg extension or access the file \
+                              from a non-sandboxed session.",
+                }));
+            }
+            // Record in FsState so must-read-before-write passes for
+            // subsequent writes to this path.
+            if let Some(ref state) = self.fs_state {
+                let canonical = fs::canonicalize(file_path)
+                    .await
+                    .unwrap_or_else(|_| std::path::PathBuf::from(file_path));
+                let mtime = fs::metadata(file_path)
+                    .await
+                    .ok()
+                    .and_then(|m| m.modified().ok());
+                let mut guard = state
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                guard.record_read(&session_key, canonical, offset, limit, mtime);
+            }
+        }
+
+        // PDF dispatch.
         if lower.ends_with(".pdf") {
             return match read_pdf(file_path, pages.as_deref()).await {
                 Ok(value) => Ok(value),
@@ -429,8 +478,7 @@ impl AgentTool for ReadTool {
             };
         }
 
-        // Image dispatch: intercept known image extensions before binary
-        // rejection and return optimized base64 with dimension info.
+        // Image dispatch.
         if is_image_extension(&lower) {
             return match read_image(file_path).await {
                 Ok(value) => Ok(value),
