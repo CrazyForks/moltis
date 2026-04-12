@@ -210,6 +210,115 @@ fn workspace_file_limit_chars(ctx: &MethodContext) -> usize {
     ctx.state.config.chat.workspace_file_max_chars
 }
 
+fn invalid_memory_config_value(field: &str, value: &str) -> ErrorShape {
+    ErrorShape::new(
+        error_codes::INVALID_REQUEST,
+        format!("invalid memory config value for '{field}': '{value}'"),
+    )
+}
+
+fn parse_memory_style(value: &str) -> Result<moltis_config::MemoryStyle, ErrorShape> {
+    match value {
+        "hybrid" => Ok(moltis_config::MemoryStyle::Hybrid),
+        "prompt-only" => Ok(moltis_config::MemoryStyle::PromptOnly),
+        "search-only" => Ok(moltis_config::MemoryStyle::SearchOnly),
+        "off" => Ok(moltis_config::MemoryStyle::Off),
+        _ => Err(invalid_memory_config_value("style", value)),
+    }
+}
+
+fn parse_agent_memory_write_mode(
+    value: &str,
+) -> Result<moltis_config::AgentMemoryWriteMode, ErrorShape> {
+    match value {
+        "hybrid" => Ok(moltis_config::AgentMemoryWriteMode::Hybrid),
+        "prompt-only" => Ok(moltis_config::AgentMemoryWriteMode::PromptOnly),
+        "search-only" => Ok(moltis_config::AgentMemoryWriteMode::SearchOnly),
+        "off" => Ok(moltis_config::AgentMemoryWriteMode::Off),
+        _ => Err(invalid_memory_config_value("agent_write_mode", value)),
+    }
+}
+
+fn parse_user_profile_write_mode(
+    value: &str,
+) -> Result<moltis_config::UserProfileWriteMode, ErrorShape> {
+    match value {
+        "explicit-and-auto" => Ok(moltis_config::UserProfileWriteMode::ExplicitAndAuto),
+        "explicit-only" => Ok(moltis_config::UserProfileWriteMode::ExplicitOnly),
+        "off" => Ok(moltis_config::UserProfileWriteMode::Off),
+        _ => Err(invalid_memory_config_value(
+            "user_profile_write_mode",
+            value,
+        )),
+    }
+}
+
+fn parse_memory_backend(value: &str) -> Result<moltis_config::MemoryBackend, ErrorShape> {
+    match value {
+        "builtin" => Ok(moltis_config::MemoryBackend::Builtin),
+        "qmd" => Ok(moltis_config::MemoryBackend::Qmd),
+        _ => Err(invalid_memory_config_value("backend", value)),
+    }
+}
+
+fn parse_memory_provider(value: &str) -> Result<Option<moltis_config::MemoryProvider>, ErrorShape> {
+    match value {
+        "auto" => Ok(None),
+        "local" => Ok(Some(moltis_config::MemoryProvider::Local)),
+        "ollama" => Ok(Some(moltis_config::MemoryProvider::Ollama)),
+        "openai" => Ok(Some(moltis_config::MemoryProvider::OpenAi)),
+        "custom" => Ok(Some(moltis_config::MemoryProvider::Custom)),
+        _ => Err(invalid_memory_config_value("provider", value)),
+    }
+}
+
+fn parse_memory_citations_mode(
+    value: &str,
+) -> Result<moltis_config::MemoryCitationsMode, ErrorShape> {
+    match value {
+        "on" => Ok(moltis_config::MemoryCitationsMode::On),
+        "off" => Ok(moltis_config::MemoryCitationsMode::Off),
+        "auto" => Ok(moltis_config::MemoryCitationsMode::Auto),
+        _ => Err(invalid_memory_config_value("citations", value)),
+    }
+}
+
+fn parse_memory_search_merge_strategy(
+    value: &str,
+) -> Result<moltis_config::MemorySearchMergeStrategy, ErrorShape> {
+    match value {
+        "rrf" => Ok(moltis_config::MemorySearchMergeStrategy::Rrf),
+        "linear" => Ok(moltis_config::MemorySearchMergeStrategy::Linear),
+        _ => Err(invalid_memory_config_value("search_merge_strategy", value)),
+    }
+}
+
+fn parse_session_export_mode(
+    value: &serde_json::Value,
+) -> Result<moltis_config::SessionExportMode, ErrorShape> {
+    match value {
+        serde_json::Value::Bool(false) => Ok(moltis_config::SessionExportMode::Off),
+        serde_json::Value::Bool(true) => Ok(moltis_config::SessionExportMode::OnNewOrReset),
+        serde_json::Value::String(string) => match string.as_str() {
+            "off" => Ok(moltis_config::SessionExportMode::Off),
+            "on-new-or-reset" => Ok(moltis_config::SessionExportMode::OnNewOrReset),
+            _ => Err(invalid_memory_config_value("session_export", string)),
+        },
+        _ => Err(ErrorShape::new(
+            error_codes::INVALID_REQUEST,
+            "invalid memory config value for 'session_export': expected bool or string",
+        )),
+    }
+}
+
+fn parse_prompt_memory_mode(value: &str) -> Result<moltis_config::PromptMemoryMode, ErrorShape> {
+    match value {
+        "live-reload" => Ok(moltis_config::PromptMemoryMode::LiveReload),
+        "frozen-at-session-start" => Ok(moltis_config::PromptMemoryMode::FrozenAtSessionStart),
+        _ => Err(invalid_memory_config_value("prompt_memory_mode", value)),
+    }
+}
+
 fn should_fallback_agent_file_to_root(agent_id: &str, relative_path: &Path) -> bool {
     if agent_id == "main" {
         return true;
@@ -4640,19 +4749,19 @@ pub(super) fn register(reg: &mut MethodRegistry) {
                         moltis_config::MemorySearchMergeStrategy::Rrf => "rrf",
                         moltis_config::MemorySearchMergeStrategy::Linear => "linear",
                     });
+                let style_value = parse_memory_style(style)?;
+                let backend_value = parse_memory_backend(backend)?;
+                let agent_write_mode_value = parse_agent_memory_write_mode(agent_write_mode)?;
+                let user_profile_write_mode_value =
+                    parse_user_profile_write_mode(user_profile_write_mode)?;
+                let citations_value = parse_memory_citations_mode(citations)?;
+                let provider_value = parse_memory_provider(provider)?;
+                let search_merge_strategy_value =
+                    parse_memory_search_merge_strategy(search_merge_strategy)?;
                 let disable_rag = ctx.params.get("disable_rag").and_then(|v| v.as_bool());
                 let session_export = match ctx.params.get("session_export") {
-                    Some(serde_json::Value::Bool(false)) => moltis_config::SessionExportMode::Off,
-                    Some(serde_json::Value::Bool(true)) => {
-                        moltis_config::SessionExportMode::OnNewOrReset
-                    },
-                    Some(serde_json::Value::String(value)) if value == "off" => {
-                        moltis_config::SessionExportMode::Off
-                    },
-                    Some(serde_json::Value::String(_)) => {
-                        moltis_config::SessionExportMode::OnNewOrReset
-                    },
-                    _ => current_memory.session_export,
+                    Some(value) => parse_session_export_mode(value)?,
+                    None => current_memory.session_export,
                 };
                 let prompt_memory_mode = ctx
                     .params
@@ -4664,51 +4773,7 @@ pub(super) fn register(reg: &mut MethodRegistry) {
                             "frozen-at-session-start"
                         },
                     });
-
-                // Persist to moltis.toml so the config survives restarts.
-                let style_value = match style {
-                    "prompt-only" => moltis_config::MemoryStyle::PromptOnly,
-                    "search-only" => moltis_config::MemoryStyle::SearchOnly,
-                    "off" => moltis_config::MemoryStyle::Off,
-                    _ => moltis_config::MemoryStyle::Hybrid,
-                };
-                let citations_value = match citations {
-                    "on" => moltis_config::MemoryCitationsMode::On,
-                    "off" => moltis_config::MemoryCitationsMode::Off,
-                    _ => moltis_config::MemoryCitationsMode::Auto,
-                };
-                let provider_value = match provider {
-                    "local" => Some(moltis_config::MemoryProvider::Local),
-                    "ollama" => Some(moltis_config::MemoryProvider::Ollama),
-                    "openai" => Some(moltis_config::MemoryProvider::OpenAi),
-                    "custom" => Some(moltis_config::MemoryProvider::Custom),
-                    _ => None,
-                };
-                let search_merge_strategy_value = match search_merge_strategy {
-                    "linear" => moltis_config::MemorySearchMergeStrategy::Linear,
-                    _ => moltis_config::MemorySearchMergeStrategy::Rrf,
-                };
-                let backend_value = match backend {
-                    "qmd" => moltis_config::MemoryBackend::Qmd,
-                    _ => moltis_config::MemoryBackend::Builtin,
-                };
-                let agent_write_mode_value = match agent_write_mode {
-                    "prompt-only" => moltis_config::AgentMemoryWriteMode::PromptOnly,
-                    "search-only" => moltis_config::AgentMemoryWriteMode::SearchOnly,
-                    "off" => moltis_config::AgentMemoryWriteMode::Off,
-                    _ => moltis_config::AgentMemoryWriteMode::Hybrid,
-                };
-                let user_profile_write_mode_value = match user_profile_write_mode {
-                    "explicit-only" => moltis_config::UserProfileWriteMode::ExplicitOnly,
-                    "off" => moltis_config::UserProfileWriteMode::Off,
-                    _ => moltis_config::UserProfileWriteMode::ExplicitAndAuto,
-                };
-                let prompt_memory_mode_value = match prompt_memory_mode {
-                    "frozen-at-session-start" => {
-                        moltis_config::PromptMemoryMode::FrozenAtSessionStart
-                    },
-                    _ => moltis_config::PromptMemoryMode::LiveReload,
-                };
+                let prompt_memory_mode_value = parse_prompt_memory_mode(prompt_memory_mode)?;
                 let mut effective_disable_rag = current_memory.disable_rag;
                 if let Err(e) = moltis_config::update_config(|cfg| {
                     cfg.memory.style = style_value;
@@ -5156,6 +5221,32 @@ mod tests {
         }
     }
 
+    async fn dispatch_memory_method_response(
+        method: &str,
+        params: serde_json::Value,
+    ) -> moltis_protocol::ResponseFrame {
+        let mut reg = MethodRegistry::default();
+        register(&mut reg);
+        reg.dispatch(MethodContext {
+            request_id: "test".into(),
+            method: method.to_string(),
+            params,
+            client_conn_id: "conn-1".into(),
+            client_role: "operator".into(),
+            client_scopes: vec!["operator.write".into(), "operator.read".into()],
+            state: GatewayState::new(
+                ResolvedAuth {
+                    mode: AuthMode::Token,
+                    token: None,
+                    password: None,
+                },
+                GatewayServices::noop(),
+            ),
+            channel: None,
+        })
+        .await
+    }
+
     #[tokio::test]
     async fn memory_config_get_reports_typed_memory_fields() {
         let _guard = MemoryConfigTestGuard::new();
@@ -5254,6 +5345,29 @@ mod tests {
         assert_eq!(
             config.chat.prompt_memory_mode,
             moltis_config::PromptMemoryMode::FrozenAtSessionStart
+        );
+    }
+
+    #[tokio::test]
+    async fn memory_config_update_rejects_unknown_enum_values() {
+        let _guard = MemoryConfigTestGuard::new();
+        let response = dispatch_memory_method_response(
+            "memory.config.update",
+            serde_json::json!({
+                "style": "surprise-mode",
+            }),
+        )
+        .await;
+
+        assert!(!response.ok, "invalid enum value should fail");
+        let error = match response.error {
+            Some(error) => error,
+            None => panic!("expected invalid request error"),
+        };
+        assert_eq!(error.code, error_codes::INVALID_REQUEST);
+        assert_eq!(
+            error.message,
+            "invalid memory config value for 'style': 'surprise-mode'"
         );
     }
 }

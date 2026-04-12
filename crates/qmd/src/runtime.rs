@@ -90,7 +90,22 @@ impl QmdMemoryRuntime {
 }
 
 fn qmd_source_for_path(path: &str) -> String {
-    if path.contains("MEMORY") {
+    let normalized_components: Vec<String> = Path::new(path)
+        .components()
+        .filter_map(|component| match component {
+            std::path::Component::Normal(segment) => {
+                Some(segment.to_string_lossy().to_ascii_lowercase())
+            },
+            _ => None,
+        })
+        .collect();
+    if normalized_components
+        .iter()
+        .any(|segment| segment == "memory")
+        || normalized_components
+            .last()
+            .is_some_and(|segment| segment == "memory.md")
+    {
         "longterm".into()
     } else {
         "daily".into()
@@ -308,6 +323,20 @@ exit 0
             Some(("#abc123".into(), 42))
         );
         assert_eq!(QmdMemoryRuntime::parse_chunk_id("builtin:1"), None);
+    }
+
+    #[test]
+    fn classifies_memory_paths_case_insensitively() {
+        assert_eq!(qmd_source_for_path("/tmp/moltis/MEMORY.md"), "longterm");
+        assert_eq!(
+            qmd_source_for_path("/tmp/moltis/agents/ops/memory/notes.md"),
+            "longterm"
+        );
+        assert_eq!(
+            qmd_source_for_path("/tmp/moltis/agents/ops/Memory/notes.md"),
+            "longterm"
+        );
+        assert_eq!(qmd_source_for_path("/tmp/moltis/daily/journal.md"), "daily");
     }
 
     #[tokio::test]

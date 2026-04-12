@@ -70,11 +70,19 @@ async fn start_skill_hot_reload_watcher() -> anyhow::Result<(
 
 #[cfg(feature = "qmd")]
 fn sanitize_qmd_index_name(root: &FsPath) -> String {
-    let sanitized = root
-        .to_string_lossy()
-        .replace(['/', '\\'], "_")
-        .trim_start_matches('_')
-        .to_string();
+    let mut sanitized = String::new();
+    let mut previous_was_separator = false;
+    for character in root.to_string_lossy().chars() {
+        let normalized = character.to_ascii_lowercase();
+        if normalized.is_ascii_alphanumeric() {
+            sanitized.push(normalized);
+            previous_was_separator = false;
+        } else if !previous_was_separator {
+            sanitized.push('_');
+            previous_was_separator = true;
+        }
+    }
+    let sanitized = sanitized.trim_matches('_').to_string();
     if sanitized.is_empty() {
         "moltis".into()
     } else {
@@ -5351,6 +5359,22 @@ mod tests {
             gateway.passkey_host_update_pending().await.is_empty(),
             "passkey warning should not be queued without existing passkeys"
         );
+    }
+
+    #[cfg(feature = "qmd")]
+    #[test]
+    fn sanitize_qmd_index_name_normalizes_non_alphanumeric_segments() {
+        let path = FsPath::new("/Users/Penso/.moltis/data///");
+        assert_eq!(
+            sanitize_qmd_index_name(path),
+            "moltis-users_penso_moltis_data"
+        );
+    }
+
+    #[cfg(feature = "qmd")]
+    #[test]
+    fn sanitize_qmd_index_name_falls_back_for_empty_root() {
+        assert_eq!(sanitize_qmd_index_name(FsPath::new("///")), "moltis");
     }
 
     #[tokio::test]
