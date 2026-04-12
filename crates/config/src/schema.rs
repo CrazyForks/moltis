@@ -1566,9 +1566,6 @@ pub struct ChannelsConfig {
     /// Slack bot accounts, keyed by account ID.
     #[serde(default)]
     pub slack: HashMap<String, serde_json::Value>,
-    /// Matrix bot accounts, keyed by account ID.
-    #[serde(default)]
-    pub matrix: HashMap<String, serde_json::Value>,
     /// Nostr DM accounts, keyed by account ID.
     #[serde(default)]
     pub nostr: HashMap<String, serde_json::Value>,
@@ -1585,14 +1582,13 @@ impl ChannelsConfig {
     ///
     /// This is the single source of truth for the set of named channel types.
     /// Keep in sync with the struct fields.
-    fn named_fields(&self) -> [(&str, &HashMap<String, serde_json::Value>); 7] {
+    fn named_fields(&self) -> [(&str, &HashMap<String, serde_json::Value>); 6] {
         [
             ("telegram", &self.telegram),
             ("whatsapp", &self.whatsapp),
             ("msteams", &self.msteams),
             ("discord", &self.discord),
             ("slack", &self.slack),
-            ("matrix", &self.matrix),
             ("nostr", &self.nostr),
         ]
     }
@@ -1628,7 +1624,6 @@ impl Default for ChannelsConfig {
             msteams: HashMap::new(),
             discord: HashMap::new(),
             slack: HashMap::new(),
-            matrix: HashMap::new(),
             nostr: HashMap::new(),
             extra: HashMap::new(),
         }
