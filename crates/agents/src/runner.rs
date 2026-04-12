@@ -1487,11 +1487,15 @@ pub async fn run_agent_loop_with_context(
                 warn!(tool = %tc.name, id = %tc.id, error = %error.as_deref().unwrap_or(""), "tool execution failed");
             }
 
-            // Record outcome in the loop detector. Feed the LLM-visible error
-            // text so variants like "missing 'command' parameter" repeated
-            // three times fire the detector even when args differ slightly.
+            // Record outcome in the loop detector. Use explicit success/failure
+            // constructors so tools returning `{success: false}` without an
+            // `error` field still register as failures.
             if loop_detector.is_enabled() {
-                let fp = ToolCallFingerprint::new(&tc.name, &tc.arguments, error.as_deref());
+                let fp = if success {
+                    ToolCallFingerprint::success(&tc.name, &tc.arguments)
+                } else {
+                    ToolCallFingerprint::failure(&tc.name, &tc.arguments, error.as_deref())
+                };
                 let _ = loop_detector.record(fp);
             }
 
@@ -2389,7 +2393,11 @@ pub async fn run_agent_loop_streaming(
 
             // Record outcome in the loop detector (issue #658).
             if loop_detector.is_enabled() {
-                let fp = ToolCallFingerprint::new(&tc.name, &tc.arguments, error.as_deref());
+                let fp = if success {
+                    ToolCallFingerprint::success(&tc.name, &tc.arguments)
+                } else {
+                    ToolCallFingerprint::failure(&tc.name, &tc.arguments, error.as_deref())
+                };
                 let _ = loop_detector.record(fp);
             }
 

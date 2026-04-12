@@ -25,7 +25,11 @@ use serde_json::Value;
 pub struct ToolCallFingerprint {
     pub tool_name: String,
     pub args_hash: u64,
-    /// Hash of the tool error string, `None` on success.
+    /// Whether this call failed (tool error, validation rejection, or
+    /// `{success: false}` even without an `error` key).
+    pub failed: bool,
+    /// Hash of the tool error string, `None` when the tool returned a
+    /// logical failure without an error message.
     pub error_hash: Option<u64>,
     /// Raw error string (kept for formatting the intervention message).
     pub error_text: Option<String>,
@@ -34,14 +38,31 @@ pub struct ToolCallFingerprint {
 }
 
 impl ToolCallFingerprint {
+    /// Create a fingerprint for a **successful** tool call.
     #[must_use]
-    pub fn new(tool_name: &str, arguments: &Value, error: Option<&str>) -> Self {
-        let args_hash = hash_value(arguments);
-        let error_hash = error.map(hash_str);
+    pub fn success(tool_name: &str, arguments: &Value) -> Self {
         Self {
             tool_name: tool_name.to_string(),
-            args_hash,
-            error_hash,
+            args_hash: hash_value(arguments),
+            failed: false,
+            error_hash: None,
+            error_text: None,
+            arguments: arguments.clone(),
+        }
+    }
+
+    /// Create a fingerprint for a **failed** tool call.
+    ///
+    /// `error` may be `None` when the tool returned `{success: false}` but
+    /// no `error` field — the call is still treated as a failure by the
+    /// detector so it contributes to the reflex-loop window.
+    #[must_use]
+    pub fn failure(tool_name: &str, arguments: &Value, error: Option<&str>) -> Self {
+        Self {
+            tool_name: tool_name.to_string(),
+            args_hash: hash_value(arguments),
+            failed: true,
+            error_hash: error.map(hash_str),
             error_text: error.map(String::from),
             arguments: arguments.clone(),
         }
@@ -49,7 +70,7 @@ impl ToolCallFingerprint {
 
     #[must_use]
     pub fn is_failure(&self) -> bool {
-        self.error_hash.is_some()
+        self.failed
     }
 }
 
@@ -358,7 +379,10 @@ mod tests {
     use {super::*, serde_json::json};
 
     fn fp(tool: &str, args: Value, err: Option<&str>) -> ToolCallFingerprint {
-        ToolCallFingerprint::new(tool, &args, err)
+        match err {
+            Some(_) => ToolCallFingerprint::failure(tool, &args, err),
+            None => ToolCallFingerprint::success(tool, &args),
+        }
     }
 
     #[test]
@@ -625,6 +649,23 @@ mod tests {
         let _ = d.record(fp("exec", json!({}), Some("err")));
         assert_eq!(d.stage(), InterventionStage::StripTools);
         assert_eq!(d.consume_pending_action(), LoopDetectorAction::StripTools);
+    }
+
+    #[test]
+    fn failure_without_error_string_still_counts_as_failure() {
+        // Greptile P2: a tool returning `{success: false}` without an `error`
+        // field was previously treated as success because is_failure derived
+        // from error_hash.is_some(). Now `failed` is an explicit field, so
+        // Fingerprint::failure with error=None is still a failure.
+        let mut d = ToolLoopDetector::new(3, true);
+        let _ = d.record(ToolCallFingerprint::failure("browser", &json!({}), None));
+        let _ = d.record(ToolCallFingerprint::failure("browser", &json!({}), None));
+        let action = d.record(ToolCallFingerprint::failure("browser", &json!({}), None));
+        // Must fire because all three are failures with matching args.
+        assert_eq!(action, LoopDetectorAction::InjectNudge);
+        // Conversely, a success resets as expected.
+        let _ = d.record(ToolCallFingerprint::success("browser", &json!({})));
+        assert_eq!(d.stage(), InterventionStage::None);
     }
 
     #[test]
