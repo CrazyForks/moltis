@@ -25,7 +25,7 @@ url             = { workspace = true }
 urlencoding     = { workspace = true }
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tokio = { features = ["macros", "rt-multi-thread"], workspace = true }
 
 [features]
 metrics = ["dep:moltis-metrics"]

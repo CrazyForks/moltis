@@ -18,7 +18,7 @@ const LANGUAGES = {
     langBtn: "中文", langTitle: "切换语言",
     highlightLang: "中文",
     title: "Moltis — 安全、持久的 Rust 个人代理服务器",
-    metaDesc: "安全、持久的 Rust 个人代理服务器。单一二进制文件，沙盒执行，多提供商大语言模型，语音，记忆，Telegram、WhatsApp、Discord、Teams 和 MCP 工具。安全设计，运行在您的硬件上。",
+    metaDesc: "安全、持久的 Rust 个人代理服务器。单一二进制文件，沙盒执行，多提供商大语言模型，语音，记忆，Telegram、WhatsApp、Discord、Slack、Matrix、Nostr、Teams 和 MCP 工具。安全设计，运行在您的硬件上。",
     strings: [
       // Nav tabs
       [">Home<", ">首页<"],
@@ -70,7 +70,7 @@ const LANGUAGES = {
       ["Local & Bring Your Own", "本地 & 自带模型"],
       ["OAuth &mdash; Zero Config", "OAuth &mdash; 零配置"],
       ["Channels", "频道"],
-      ["Web UI, Telegram, WhatsApp, Discord, Teams — one instance, all your channels.", "Web 界面、Telegram、WhatsApp、Discord、Teams — 一个实例，所有频道。"],
+      ["Web UI, Telegram, WhatsApp, Discord, Slack, Matrix, Nostr, Teams — one instance, all your channels.", "Web 界面、Telegram、WhatsApp、Discord、Slack、Matrix、Nostr、Teams — 一个实例，所有频道。"],
       ["Hooks &amp; workflows", "钩子与工作流"],
       ["15 event types to inspect, modify, or block actions. Build approval flows, audit logs, custom guardrails.", "15 种事件类型用于检查、修改或阻止操作。构建审批流程、审计日志、自定义护栏。"],
       ["OpenClaw import", "OpenClaw 导入"],
@@ -186,7 +186,7 @@ const LANGUAGES = {
     langBtn: "FR", langTitle: "Changer de langue",
     highlightLang: "Fran&#231;ais",
     title: "Moltis — Un serveur d'agent personnel sécurisé et persistant en Rust",
-    metaDesc: "Un serveur d'agent personnel sécurisé et persistant en Rust. Un seul binaire, exécution en sandbox, LLM multi-fournisseurs, voix, mémoire, Telegram, WhatsApp, Discord, Teams et outils MCP. Sécurisé par conception, fonctionne sur votre matériel.",
+    metaDesc: "Un serveur d'agent personnel sécurisé et persistant en Rust. Un seul binaire, exécution en sandbox, LLM multi-fournisseurs, voix, mémoire, Telegram, WhatsApp, Discord, Slack, Matrix, Nostr, Teams et outils MCP. Sécurisé par conception, fonctionne sur votre matériel.",
     strings: [
       [">Home<", ">Accueil<"],
       [">Install<", ">Installer<"],
@@ -214,7 +214,7 @@ const LANGUAGES = {
       ["Your hardware", "Votre matériel"],
       ["Mac Mini, a Raspberry Pi, or any server you own. Always on, always local — like a house elf for your digital life.", "Mac Mini, un Raspberry Pi ou tout serveur que vous possédez. Toujours actif, toujours local — comme un elfe de maison pour votre vie numérique."],
       ["Full-featured", "Complet"],
-      ["Telegram, WhatsApp, Discord, Teams, voice, memory, scheduling, tools — all built-in. No plugin marketplace to get supply-chain attacked through.", "Telegram, WhatsApp, Discord, Teams, voix, mémoire, planification, outils — tout intégré. Pas de marketplace de plugins à compromettre."],
+      ["Telegram, WhatsApp, Discord, Slack, Matrix, Nostr, Teams, voice, memory, scheduling, tools — all built-in. No plugin marketplace to get supply-chain attacked through.", "Telegram, WhatsApp, Discord, Slack, Matrix, Nostr, Teams, voix, mémoire, planification, outils — tout intégré. Pas de marketplace de plugins à compromettre."],
       ["What your agent actually does", "Ce que votre agent fait vraiment"],
       ["Not a demo. These run today.", "Pas une démo. Ça fonctionne aujourd'hui."],
       ["Schedules tasks", "Planifie des tâches"],
@@ -264,7 +264,7 @@ const LANGUAGES = {
       ["Connect any MCP server (stdio or HTTP/SSE). Use community tools or build your own.", "Connectez n'importe quel serveur MCP (stdio ou HTTP/SSE). Utilisez les outils communautaires ou créez les vôtres."],
       ["Memory &amp; RAG", "Mémoire et RAG"],
       ["SQLite-backed memory with full-text search and vector embeddings. Your AI remembers context.", "Mémoire SQLite avec recherche texte intégral et embeddings vectoriels. Votre IA se souvient du contexte."],
-      ["Web UI, Telegram, WhatsApp, Discord, Teams — one instance, all your channels.", "Interface web, Telegram, WhatsApp, Discord, Teams — une instance, tous vos canaux."],
+      ["Web UI, Telegram, WhatsApp, Discord, Slack, Matrix, Nostr, Teams — one instance, all your channels.", "Interface web, Telegram, WhatsApp, Discord, Slack, Matrix, Nostr, Teams — une instance, tous vos canaux."],
       ["Hooks &amp; workflows", "Hooks et workflows"],
       ["15 event types to inspect, modify, or block actions. Build approval flows, audit logs, custom guardrails.", "15 types d'événements pour inspecter, modifier ou bloquer des actions. Construisez des flux d'approbation, journaux d'audit, garde-fous personnalisés."],
       ["OpenClaw import", "Import OpenClaw"],
@@ -371,7 +371,7 @@ const LANGUAGES = {
     langBtn: "ES", langTitle: "Cambiar idioma",
     highlightLang: "Espa&#241;ol",
     title: "Moltis — Un servidor de agente personal seguro y persistente en Rust",
-    metaDesc: "Un servidor de agente personal seguro y persistente en Rust. Un solo binario, ejecución en sandbox, LLMs multi-proveedor, voz, memoria, Telegram, WhatsApp, Discord, Teams y herramientas MCP. Seguro por diseño, se ejecuta en tu hardware.",
+    metaDesc: "Un servidor de agente personal seguro y persistente en Rust. Un solo binario, ejecución en sandbox, LLMs multi-proveedor, voz, memoria, Telegram, WhatsApp, Discord, Slack, Matrix, Nostr, Teams y herramientas MCP. Seguro por diseño, se ejecuta en tu hardware.",
     strings: [
       [">Home<", ">Inicio<"],
       [">Install<", ">Instalar<"],
@@ -414,7 +414,7 @@ const LANGUAGES = {
       ["Local & Bring Your Own", "Local & trae el tuyo"],
       ["OAuth &mdash; Zero Config", "OAuth &mdash; Sin configuración"],
       ["Channels", "Canales"],
-      ["Web UI, Telegram, WhatsApp, Discord, Teams — one instance, all your channels.", "Interfaz web, Telegram, WhatsApp, Discord, Teams — una instancia, todos tus canales."],
+      ["Web UI, Telegram, WhatsApp, Discord, Slack, Matrix, Nostr, Teams — one instance, all your channels.", "Interfaz web, Telegram, WhatsApp, Discord, Slack, Matrix, Nostr, Teams — una instancia, todos tus canales."],
       ["Hooks &amp; workflows", "Hooks y flujos de trabajo"],
       ["15 event types to inspect, modify, or block actions. Build approval flows, audit logs, custom guardrails.", "15 tipos de eventos para inspeccionar, modificar o bloquear acciones. Construye flujos de aprobación, registros de auditoría, barandillas personalizadas."],
       ["OpenClaw import", "Importación de OpenClaw"],
@@ -521,7 +521,7 @@ const LANGUAGES = {
     langBtn: "DE", langTitle: "Sprache ändern",
     highlightLang: "Deutsch",
     title: "Moltis — Ein sicherer, persistenter persönlicher Agent-Server in Rust",
-    metaDesc: "Ein sicherer, persistenter persönlicher Agent-Server in Rust. Ein Binary, Sandbox-Ausführung, Multi-Provider-LLMs, Sprache, Gedächtnis, Telegram, WhatsApp, Discord, Teams und MCP-Tools. Sicher konzipiert, läuft auf Ihrer Hardware.",
+    metaDesc: "Ein sicherer, persistenter persönlicher Agent-Server in Rust. Ein Binary, Sandbox-Ausführung, Multi-Provider-LLMs, Sprache, Gedächtnis, Telegram, WhatsApp, Discord, Slack, Matrix, Nostr, Teams und MCP-Tools. Sicher konzipiert, läuft auf Ihrer Hardware.",
     strings: [
       [">Home<", ">Startseite<"],
       [">Install<", ">Installieren<"],
@@ -564,7 +564,7 @@ const LANGUAGES = {
       ["Local & Bring Your Own", "Lokal & eigene Modelle"],
       ["OAuth &mdash; Zero Config", "OAuth &mdash; Zero Config"],
       ["Channels", "Kanäle"],
-      ["Web UI, Telegram, WhatsApp, Discord, Teams — one instance, all your channels.", "Web-UI, Telegram, WhatsApp, Discord, Teams — eine Instanz, alle Ihre Kanäle."],
+      ["Web UI, Telegram, WhatsApp, Discord, Slack, Matrix, Nostr, Teams — one instance, all your channels.", "Web-UI, Telegram, WhatsApp, Discord, Slack, Matrix, Nostr, Teams — eine Instanz, alle Ihre Kanäle."],
       ["Hooks &amp; workflows", "Hooks &amp; Workflows"],
       ["15 event types to inspect, modify, or block actions. Build approval flows, audit logs, custom guardrails.", "15 Event-Typen zum Prüfen, Ändern oder Blockieren von Aktionen. Erstellen Sie Genehmigungsabläufe, Audit-Logs, individuelle Leitplanken."],
       ["OpenClaw import", "OpenClaw-Import"],
@@ -672,7 +672,7 @@ LANGUAGES.it = {
   langBtn: "IT", langTitle: "Cambia lingua",
   highlightLang: "Italiano",
   title: "Moltis — Un server agente personale sicuro e persistente in Rust",
-  metaDesc: "Un server agente personale sicuro e persistente in Rust. Un solo binario, esecuzione in sandbox, LLM multi-provider, voce, memoria, Telegram, WhatsApp, Discord, Teams e strumenti MCP. Sicuro per progettazione, gira sul tuo hardware.",
+  metaDesc: "Un server agente personale sicuro e persistente in Rust. Un solo binario, esecuzione in sandbox, LLM multi-provider, voce, memoria, Telegram, WhatsApp, Discord, Slack, Matrix, Nostr, Teams e strumenti MCP. Sicuro per progettazione, gira sul tuo hardware.",
   strings: [
     [">Home<", ">Home<"],
     [">Install<", ">Installa<"],
@@ -777,7 +777,7 @@ LANGUAGES.pt = {
   langBtn: "PT", langTitle: "Mudar idioma",
   highlightLang: "Portugu&#234;s",
   title: "Moltis — Um servidor de agente pessoal seguro e persistente em Rust",
-  metaDesc: "Um servidor de agente pessoal seguro e persistente em Rust. Um binário, execução em sandbox, LLMs multi-provedor, voz, memória, Telegram, WhatsApp, Discord, Teams e ferramentas MCP. Seguro por design, roda no seu hardware.",
+  metaDesc: "Um servidor de agente pessoal seguro e persistente em Rust. Um binário, execução em sandbox, LLMs multi-provedor, voz, memória, Telegram, WhatsApp, Discord, Slack, Matrix, Nostr, Teams e ferramentas MCP. Seguro por design, roda no seu hardware.",
   strings: [
     [">Home<", ">Início<"], [">Install<", ">Instalar<"], [">Features<", ">Recursos<"], [">Security<", ">Segurança<"], [">Compare<", ">Comparar<"],
     ["Fly command copied", "Comando Fly copiado"],
@@ -809,7 +809,7 @@ LANGUAGES.pt = {
     ["Local & Bring Your Own", "Local & traga o seu"],
     ["OAuth &mdash; Zero Config", "OAuth &mdash; Sem configuração"],
     ["Channels", "Canais"],
-    ["Web UI, Telegram, WhatsApp, Discord, Teams — one instance, all your channels.", "Interface web, Telegram, WhatsApp, Discord, Teams — uma instância, todos os seus canais."],
+    ["Web UI, Telegram, WhatsApp, Discord, Slack, Matrix, Nostr, Teams — one instance, all your channels.", "Interface web, Telegram, WhatsApp, Discord, Slack, Matrix, Nostr, Teams — uma instância, todos os seus canais."],
     ["Hooks &amp; workflows", "Hooks e fluxos de trabalho"],
     ["15 event types to inspect, modify, or block actions. Build approval flows, audit logs, custom guardrails.", "15 tipos de eventos para inspecionar, modificar ou bloquear ações. Crie fluxos de aprovação, logs de auditoria, proteções personalizadas."],
     ["OpenClaw import", "Importação OpenClaw"],
@@ -893,7 +893,7 @@ LANGUAGES.ja = {
   langBtn: "JA", langTitle: "言語を変更",
   highlightLang: "&#26085;&#26412;&#35486;",
   title: "Moltis — Rustで構築された安全で永続的なパーソナルエージェントサーバー",
-  metaDesc: "Rustで構築された安全で永続的なパーソナルエージェントサーバー。単一バイナリ、サンドボックス実行、マルチプロバイダーLLM、音声、メモリ、Telegram、WhatsApp、Discord、Teams、MCPツール。セキュアな設計、あなたのハードウェアで実行。",
+  metaDesc: "Rustで構築された安全で永続的なパーソナルエージェントサーバー。単一バイナリ、サンドボックス実行、マルチプロバイダーLLM、音声、メモリ、Telegram、WhatsApp、Discord、Slack、Matrix、Nostr、Teams、MCPツール。セキュアな設計、あなたのハードウェアで実行。",
   strings: [
     [">Home<", ">ホーム<"], [">Install<", ">インストール<"], [">Features<", ">機能<"], [">Security<", ">セキュリティ<"], [">Compare<", ">比較<"],
     ["Fly command copied", "Flyコマンドをコピーしました"],
@@ -925,7 +925,7 @@ LANGUAGES.ja = {
     ["Local & Bring Your Own", "ローカル & 自前モデル"],
     ["OAuth &mdash; Zero Config", "OAuth &mdash; 設定不要"],
     ["Channels", "チャンネル"],
-    ["Web UI, Telegram, WhatsApp, Discord, Teams — one instance, all your channels.", "Web UI、Telegram、WhatsApp、Discord、Teams — 1つのインスタンスで全チャンネル。"],
+    ["Web UI, Telegram, WhatsApp, Discord, Slack, Matrix, Nostr, Teams — one instance, all your channels.", "Web UI、Telegram、WhatsApp、Discord、Slack、Matrix、Nostr、Teams — 1つのインスタンスで全チャンネル。"],
     ["Hooks &amp; workflows", "フック &amp; ワークフロー"],
     ["15 event types to inspect, modify, or block actions. Build approval flows, audit logs, custom guardrails.", "15種類のイベントタイプでアクションを検査、変更、ブロック。承認フロー、監査ログ、カスタムガードレールを構築。"],
     ["OpenClaw import", "OpenClawインポート"],
@@ -1009,7 +1009,7 @@ LANGUAGES.ko = {
   langBtn: "KO", langTitle: "언어 변경",
   highlightLang: "&#54620;&#44397;&#50612;",
   title: "Moltis — Rust로 구축된 안전하고 영구적인 개인 에이전트 서버",
-  metaDesc: "Rust로 구축된 안전하고 영구적인 개인 에이전트 서버. 단일 바이너리, 샌드박스 실행, 멀티 프로바이더 LLM, 음성, 메모리, Telegram, WhatsApp, Discord, Teams, MCP 도구. 보안 설계, 당신의 하드웨어에서 실행.",
+  metaDesc: "Rust로 구축된 안전하고 영구적인 개인 에이전트 서버. 단일 바이너리, 샌드박스 실행, 멀티 프로바이더 LLM, 음성, 메모리, Telegram, WhatsApp, Discord, Slack, Matrix, Nostr, Teams, MCP 도구. 보안 설계, 당신의 하드웨어에서 실행.",
   strings: [
     [">Home<", ">홈<"], [">Install<", ">설치<"], [">Features<", ">기능<"], [">Security<", ">보안<"], [">Compare<", ">비교<"],
     ["Fly command copied", "Fly 명령어가 복사되었습니다"],
@@ -1041,7 +1041,7 @@ LANGUAGES.ko = {
     ["Local & Bring Your Own", "로컬 & 직접 가져오기"],
     ["OAuth &mdash; Zero Config", "OAuth &mdash; 설정 불필요"],
     ["Channels", "채널"],
-    ["Web UI, Telegram, WhatsApp, Discord, Teams — one instance, all your channels.", "Web UI, Telegram, WhatsApp, Discord, Teams — 하나의 인스턴스로 모든 채널."],
+    ["Web UI, Telegram, WhatsApp, Discord, Slack, Matrix, Nostr, Teams — one instance, all your channels.", "Web UI, Telegram, WhatsApp, Discord, Slack, Matrix, Nostr, Teams — 하나의 인스턴스로 모든 채널."],
     ["Hooks &amp; workflows", "훅 &amp; 워크플로우"],
     ["15 event types to inspect, modify, or block actions. Build approval flows, audit logs, custom guardrails.", "15가지 이벤트 유형으로 작업 검사, 수정, 차단. 승인 플로우, 감사 로그, 맞춤 가드레일 구축."],
     ["OpenClaw import", "OpenClaw 가져오기"],
@@ -1125,7 +1125,7 @@ LANGUAGES.ru = {
   langBtn: "RU", langTitle: "Сменить язык",
   highlightLang: "&#1056;&#1091;&#1089;&#1089;&#1082;&#1080;&#1081;",
   title: "Moltis — Безопасный персональный агент-сервер на Rust",
-  metaDesc: "Безопасный персональный агент-сервер на Rust. Один бинарник, песочница, мульти-провайдерные LLM, голос, память, Telegram, WhatsApp, Discord, Teams и MCP-инструменты. Безопасность по умолчанию, работает на вашем оборудовании.",
+  metaDesc: "Безопасный персональный агент-сервер на Rust. Один бинарник, песочница, мульти-провайдерные LLM, голос, память, Telegram, WhatsApp, Discord, Slack, Matrix, Nostr, Teams и MCP-инструменты. Безопасность по умолчанию, работает на вашем оборудовании.",
   strings: [
     [">Home<", ">Главная<"], [">Install<", ">Установка<"], [">Features<", ">Возможности<"], [">Security<", ">Безопасность<"], [">Compare<", ">Сравнение<"],
     ["Fly command copied", "Команда Fly скопирована"],
@@ -1157,7 +1157,7 @@ LANGUAGES.ru = {
     ["Local & Bring Your Own", "Локальные & свои модели"],
     ["OAuth &mdash; Zero Config", "OAuth &mdash; Без настройки"],
     ["Channels", "Каналы"],
-    ["Web UI, Telegram, WhatsApp, Discord, Teams — one instance, all your channels.", "Веб-интерфейс, Telegram, WhatsApp, Discord, Teams — один экземпляр, все ваши каналы."],
+    ["Web UI, Telegram, WhatsApp, Discord, Slack, Matrix, Nostr, Teams — one instance, all your channels.", "Веб-интерфейс, Telegram, WhatsApp, Discord, Slack, Matrix, Nostr, Teams — один экземпляр, все ваши каналы."],
     ["Hooks &amp; workflows", "Хуки и рабочие процессы"],
     ["15 event types to inspect, modify, or block actions. Build approval flows, audit logs, custom guardrails.", "15 типов событий для проверки, изменения или блокировки действий. Создавайте процессы согласования, журналы аудита, пользовательские ограждения."],
     ["OpenClaw import", "Импорт OpenClaw"],
@@ -1254,7 +1254,7 @@ function buildLang(lang) {
   );
 
   // 4. meta description (content attribute)
-  const enDesc = "A secure persistent personal agent server in Rust. One binary, sandboxed execution, multi-provider LLMs, voice, memory, Telegram, WhatsApp, Discord, Teams, and MCP tools. Secure by design, runs on your hardware.";
+  const enDesc = "A secure persistent personal agent server in Rust. One binary, sandboxed execution, multi-provider LLMs, voice, memory, Telegram, WhatsApp, Discord, Slack, Matrix, Nostr, Teams, and MCP tools. Secure by design, runs on your hardware.";
   html = html.replaceAll(enDesc, lang.metaDesc);
 
   // 5. og:title / twitter:title
