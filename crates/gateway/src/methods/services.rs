@@ -5150,16 +5150,8 @@ mod tests {
             services::GatewayServices,
             state::GatewayState,
         },
-        std::sync::{Mutex, OnceLock},
         tempfile::TempDir,
     };
-
-    fn memory_config_test_lock() -> std::sync::MutexGuard<'static, ()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
-            .lock()
-            .unwrap_or_else(|error| error.into_inner())
-    }
 
     struct MemoryConfigTestGuard {
         _lock: std::sync::MutexGuard<'static, ()>,
@@ -5169,7 +5161,7 @@ mod tests {
 
     impl MemoryConfigTestGuard {
         fn new() -> Self {
-            let lock = memory_config_test_lock();
+            let lock = crate::config_override_test_lock();
             let config_dir = tempfile::tempdir()
                 .unwrap_or_else(|error| panic!("config tempdir should be created: {error}"));
             let data_dir = tempfile::tempdir()

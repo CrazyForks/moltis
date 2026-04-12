@@ -5157,19 +5157,9 @@ mod tests {
         moltis_providers::raw_model_id,
         secrecy::Secret,
         sqlx::SqlitePool,
-        std::{
-            collections::{HashMap, HashSet},
-            sync::OnceLock,
-        },
+        std::collections::{HashMap, HashSet},
         tokio::sync::Mutex,
     };
-
-    fn local_model_config_test_lock() -> std::sync::MutexGuard<'static, ()> {
-        static LOCK: OnceLock<std::sync::Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| std::sync::Mutex::new(()))
-            .lock()
-            .unwrap()
-    }
 
     struct LocalModelConfigTestGuard {
         _lock: std::sync::MutexGuard<'static, ()>,
@@ -5178,7 +5168,7 @@ mod tests {
     impl LocalModelConfigTestGuard {
         fn new() -> Self {
             Self {
-                _lock: local_model_config_test_lock(),
+                _lock: crate::config_override_test_lock(),
             }
         }
     }
