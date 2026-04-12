@@ -21,7 +21,10 @@ use {
     tracing::{debug, info, warn},
 };
 
-use moltis_config::{MessageQueueMode, ToolMode};
+use moltis_config::{
+    AgentMemoryWriteMode, LoadedWorkspaceMarkdown, MemoryStyle, MessageQueueMode, PromptMemoryMode,
+    ToolMode,
+};
 
 use {
     moltis_agents::{
@@ -42,6 +45,7 @@ use {
         ContentBlock, MessageContent, PersistedMessage,
         message::{PersistedFunction, PersistedToolCall},
         metadata::{SessionEntry, SqliteSessionMetadata},
+        state_store::SessionStateStore,
         store::SessionStore,
     },
     moltis_skills::discover::SkillDiscoverer,
@@ -1073,6 +1077,127 @@ struct PromptPersona {
     agents_text: Option<String>,
     tools_text: Option<String>,
     memory_text: Option<String>,
+    memory_status: PromptMemoryStatus,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PromptMemoryStatus {
+    style: MemoryStyle,
+    mode: PromptMemoryMode,
+    write_mode: AgentMemoryWriteMode,
+    snapshot_active: bool,
+    present: bool,
+    chars: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    file_source: Option<moltis_config::WorkspaceMarkdownSource>,
+}
+
+const PROMPT_MEMORY_NAMESPACE: &str = "__prompt_memory";
+
+fn prompt_memory_snapshot_key(agent_id: &str) -> String {
+    format!("snapshot:{agent_id}")
+}
+
+async fn clear_prompt_memory_snapshot(
+    session_key: &str,
+    agent_id: &str,
+    state_store: Option<&SessionStateStore>,
+) -> bool {
+    let Some(store) = state_store else {
+        return false;
+    };
+    let key = prompt_memory_snapshot_key(agent_id);
+    match store
+        .delete(session_key, PROMPT_MEMORY_NAMESPACE, &key)
+        .await
+    {
+        Ok(deleted) => deleted,
+        Err(error) => {
+            warn!(
+                session = %session_key,
+                agent_id,
+                error = %error,
+                "failed to clear prompt memory snapshot"
+            );
+            false
+        },
+    }
+}
+
+fn prompt_memory_status(
+    style: MemoryStyle,
+    mode: PromptMemoryMode,
+    write_mode: AgentMemoryWriteMode,
+    snapshot_active: bool,
+    memory: Option<&LoadedWorkspaceMarkdown>,
+) -> PromptMemoryStatus {
+    PromptMemoryStatus {
+        style,
+        mode,
+        write_mode,
+        snapshot_active,
+        present: memory.is_some(),
+        chars: memory.map_or(0, |entry| entry.content.chars().count()),
+        path: memory.map(|entry| entry.path.to_string_lossy().into_owned()),
+        file_source: memory.map(|entry| entry.source),
+    }
+}
+
+fn memory_write_mode_allows_save(mode: AgentMemoryWriteMode) -> bool {
+    !matches!(mode, AgentMemoryWriteMode::Off)
+}
+
+fn default_agent_memory_file_for_mode(mode: AgentMemoryWriteMode) -> &'static str {
+    match mode {
+        AgentMemoryWriteMode::SearchOnly => "memory/notes.md",
+        AgentMemoryWriteMode::Hybrid
+        | AgentMemoryWriteMode::PromptOnly
+        | AgentMemoryWriteMode::Off => "MEMORY.md",
+    }
+}
+
+fn is_prompt_memory_file(file: &str) -> bool {
+    matches!(file.trim(), "MEMORY.md" | "memory.md")
+}
+
+fn validate_agent_memory_target_for_mode(
+    mode: AgentMemoryWriteMode,
+    file: &str,
+) -> anyhow::Result<()> {
+    match mode {
+        AgentMemoryWriteMode::Hybrid => Ok(()),
+        AgentMemoryWriteMode::PromptOnly => {
+            if is_prompt_memory_file(file) {
+                Ok(())
+            } else {
+                anyhow::bail!(
+                    "memory.agent_write_mode = \"prompt-only\" only allows MEMORY.md writes"
+                );
+            }
+        },
+        AgentMemoryWriteMode::SearchOnly => {
+            if is_prompt_memory_file(file) {
+                anyhow::bail!(
+                    "memory.agent_write_mode = \"search-only\" only allows memory/<name>.md writes"
+                );
+            }
+            Ok(())
+        },
+        AgentMemoryWriteMode::Off => {
+            anyhow::bail!("agent-authored memory writes are disabled by memory.agent_write_mode");
+        },
+    }
+}
+
+fn memory_style_allows_prompt(style: MemoryStyle) -> bool {
+    matches!(style, MemoryStyle::Hybrid | MemoryStyle::PromptOnly)
+}
+
+fn memory_style_allows_tools(style: MemoryStyle) -> bool {
+    matches!(style, MemoryStyle::Hybrid | MemoryStyle::SearchOnly)
 }
 
 fn resolve_prompt_agent_id(session_entry: Option<&SessionEntry>) -> String {
@@ -1102,11 +1227,11 @@ fn resolve_prompt_agent_id(session_entry: Option<&SessionEntry>) -> String {
 }
 
 /// Load identity, user profile, soul, and workspace text for one agent.
-///
-/// Both `run_with_tools` and `run_streaming` need the same persona data;
-/// this function avoids duplicating the merge logic.
-fn load_prompt_persona_for_agent(agent_id: &str) -> PromptPersona {
+fn load_prompt_persona_base_for_agent(agent_id: &str) -> PromptPersona {
     let config = moltis_config::discover_and_load();
+    let prompt_memory_mode = config.chat.prompt_memory_mode;
+    let agent_write_mode = config.memory.agent_write_mode;
+    let memory_style = config.memory.style;
     let mut identity = config.identity.clone();
     if let Some(file_identity) = moltis_config::load_identity_for_agent(agent_id) {
         if file_identity.name.is_some() {
@@ -1119,15 +1244,7 @@ fn load_prompt_persona_for_agent(agent_id: &str) -> PromptPersona {
             identity.theme = file_identity.theme;
         }
     }
-    let mut user = config.user.clone();
-    if let Some(file_user) = moltis_config::load_user() {
-        if file_user.name.is_some() {
-            user.name = file_user.name;
-        }
-        if file_user.timezone.is_some() {
-            user.timezone = file_user.timezone;
-        }
-    }
+    let user = moltis_config::resolve_user_profile_from_config(&config);
     PromptPersona {
         config,
         identity,
@@ -1136,13 +1253,116 @@ fn load_prompt_persona_for_agent(agent_id: &str) -> PromptPersona {
         boot_text: moltis_config::load_boot_md_for_agent(agent_id),
         agents_text: moltis_config::load_agents_md_for_agent(agent_id),
         tools_text: moltis_config::load_tools_md_for_agent(agent_id),
-        memory_text: moltis_config::load_memory_md_for_agent(agent_id),
+        memory_text: None,
+        memory_status: prompt_memory_status(
+            memory_style,
+            prompt_memory_mode,
+            agent_write_mode,
+            false,
+            None,
+        ),
     }
 }
 
-fn load_prompt_persona_for_session(session_entry: Option<&SessionEntry>) -> PromptPersona {
+fn load_prompt_persona_for_agent(agent_id: &str) -> PromptPersona {
+    let mut persona = load_prompt_persona_base_for_agent(agent_id);
+    let style = persona.config.memory.style;
+    let mode = persona.config.chat.prompt_memory_mode;
+    let write_mode = persona.config.memory.agent_write_mode;
+    let memory = if memory_style_allows_prompt(style) {
+        moltis_config::load_memory_md_for_agent_with_source(agent_id)
+    } else {
+        None
+    };
+    persona.memory_text = memory.as_ref().map(|entry| entry.content.clone());
+    persona.memory_status = prompt_memory_status(style, mode, write_mode, false, memory.as_ref());
+    persona
+}
+
+async fn load_prompt_memory_for_session(
+    session_key: &str,
+    agent_id: &str,
+    mode: PromptMemoryMode,
+    state_store: Option<&SessionStateStore>,
+) -> (Option<LoadedWorkspaceMarkdown>, bool) {
+    let live_memory = || moltis_config::load_memory_md_for_agent_with_source(agent_id);
+
+    if !matches!(mode, PromptMemoryMode::FrozenAtSessionStart) {
+        return (live_memory(), false);
+    }
+
+    let Some(store) = state_store else {
+        return (live_memory(), false);
+    };
+
+    let key = prompt_memory_snapshot_key(agent_id);
+    match store.get(session_key, PROMPT_MEMORY_NAMESPACE, &key).await {
+        Ok(Some(raw)) => match serde_json::from_str::<Option<LoadedWorkspaceMarkdown>>(&raw) {
+            Ok(snapshot) => return (snapshot, true),
+            Err(error) => warn!(
+                session = %session_key,
+                agent_id,
+                error = %error,
+                "failed to deserialize prompt memory snapshot, rebuilding"
+            ),
+        },
+        Ok(None) => {},
+        Err(error) => warn!(
+            session = %session_key,
+            agent_id,
+            error = %error,
+            "failed to read prompt memory snapshot, falling back to live memory"
+        ),
+    }
+
+    let memory = live_memory();
+    match serde_json::to_string(&memory) {
+        Ok(serialized) => {
+            if let Err(error) = store
+                .set(session_key, PROMPT_MEMORY_NAMESPACE, &key, &serialized)
+                .await
+            {
+                warn!(
+                    session = %session_key,
+                    agent_id,
+                    error = %error,
+                    "failed to persist prompt memory snapshot"
+                );
+                return (memory, false);
+            }
+            (memory, true)
+        },
+        Err(error) => {
+            warn!(
+                session = %session_key,
+                agent_id,
+                error = %error,
+                "failed to serialize prompt memory snapshot"
+            );
+            (memory, false)
+        },
+    }
+}
+
+async fn load_prompt_persona_for_session(
+    session_key: &str,
+    session_entry: Option<&SessionEntry>,
+    state_store: Option<&SessionStateStore>,
+) -> PromptPersona {
     let agent_id = resolve_prompt_agent_id(session_entry);
-    load_prompt_persona_for_agent(&agent_id)
+    let mut persona = load_prompt_persona_base_for_agent(&agent_id);
+    let style = persona.config.memory.style;
+    let mode = persona.config.chat.prompt_memory_mode;
+    let write_mode = persona.config.memory.agent_write_mode;
+    let (memory, snapshot_active) = if memory_style_allows_prompt(style) {
+        load_prompt_memory_for_session(session_key, &agent_id, mode, state_store).await
+    } else {
+        (None, false)
+    };
+    persona.memory_text = memory.as_ref().map(|entry| entry.content.clone());
+    persona.memory_status =
+        prompt_memory_status(style, mode, write_mode, snapshot_active, memory.as_ref());
+    persona
 }
 
 fn prompt_build_limits_from_config(config: &moltis_config::MoltisConfig) -> PromptBuildLimits {
@@ -1423,8 +1643,8 @@ fn normalized_iana_timezone(timezone: Option<&str>) -> Option<String> {
 }
 
 fn default_user_prompt_timezone() -> Option<String> {
-    let user = moltis_config::load_user()?;
-    user.timezone
+    moltis_config::resolve_user_profile()
+        .timezone
         .as_ref()
         .map(|timezone| timezone.name().to_string())
         .and_then(|timezone| normalized_iana_timezone(Some(&timezone)))
@@ -2658,6 +2878,7 @@ pub struct LiveChatService {
     tool_registry: Arc<RwLock<ToolRegistry>>,
     session_store: Arc<SessionStore>,
     session_metadata: Arc<SqliteSessionMetadata>,
+    session_state_store: Option<Arc<SessionStateStore>>,
     hook_registry: Option<Arc<moltis_common::hooks::HookRegistry>>,
     /// Per-session semaphore ensuring only one agent run executes per session at a time.
     session_locks: Arc<RwLock<HashMap<String, Arc<Semaphore>>>>,
@@ -2699,6 +2920,7 @@ impl LiveChatService {
             tool_registry: Arc::new(RwLock::new(ToolRegistry::new())),
             session_store,
             session_metadata,
+            session_state_store: None,
             hook_registry: None,
             session_locks: Arc::new(RwLock::new(HashMap::new())),
             message_queue: Arc::new(RwLock::new(HashMap::new())),
@@ -2718,6 +2940,11 @@ impl LiveChatService {
 
     pub fn with_tools(mut self, registry: Arc<RwLock<ToolRegistry>>) -> Self {
         self.tool_registry = registry;
+        self
+    }
+
+    pub fn with_session_state_store(mut self, store: Arc<SessionStateStore>) -> Self {
+        self.session_state_store = Some(store);
         self
     }
 
@@ -3738,6 +3965,12 @@ impl ChatService for LiveChatService {
         // per-session sandbox override details for prompt runtime context.
         let session_entry = self.session_metadata.get(&session_key).await;
         let session_agent_id = resolve_prompt_agent_id(session_entry.as_ref());
+        let persona = load_prompt_persona_for_session(
+            &session_key,
+            session_entry.as_ref(),
+            self.session_state_store.as_deref(),
+        )
+        .await;
         let mcp_disabled = session_entry
             .as_ref()
             .and_then(|entry| entry.mcp_disabled)
@@ -4011,6 +4244,7 @@ impl ChatService for LiveChatService {
             let agent_fut = async {
                 if stream_only {
                     run_streaming(
+                        persona,
                         &state,
                         &model_store,
                         &run_id_clone,
@@ -4034,6 +4268,7 @@ impl ChatService for LiveChatService {
                     .await
                 } else {
                     run_with_tools(
+                        persona,
                         &state,
                         &model_store,
                         &run_id_clone,
@@ -4318,6 +4553,12 @@ impl ChatService for LiveChatService {
 
         let session_entry = self.session_metadata.get(&session_key).await;
         let session_agent_id = resolve_prompt_agent_id(session_entry.as_ref());
+        let persona = load_prompt_persona_for_session(
+            &session_key,
+            session_entry.as_ref(),
+            self.session_state_store.as_deref(),
+        )
+        .await;
         let mut runtime_context = build_prompt_runtime_context(
             &self.state,
             &provider,
@@ -4383,6 +4624,7 @@ impl ChatService for LiveChatService {
         let terminal_runs = Arc::new(RwLock::new(HashSet::new()));
         let result = if stream_only {
             run_streaming(
+                persona,
                 &state,
                 &model_store,
                 &run_id,
@@ -4406,6 +4648,7 @@ impl ChatService for LiveChatService {
             .await
         } else {
             run_with_tools(
+                persona,
                 &state,
                 &model_store,
                 &run_id,
@@ -4673,26 +4916,36 @@ impl ChatService for LiveChatService {
         if let Some(mm) = self.state.memory_manager()
             && let Ok(provider) = self.resolve_provider(&session_key, &history).await
         {
-            let chat_history_for_memory = values_to_chat_messages(&history);
-            let writer: Arc<dyn moltis_agents::memory_writer::MemoryWriter> = Arc::new(
-                AgentScopedMemoryWriter::new(Arc::clone(mm), session_agent_id.clone()),
-            );
-            match moltis_agents::silent_turn::run_silent_memory_turn(
-                provider,
-                &chat_history_for_memory,
-                writer,
-            )
-            .await
-            {
-                Ok(paths) => {
-                    if !paths.is_empty() {
-                        info!(
-                            files = paths.len(),
-                            "compact: silent memory turn wrote files"
-                        );
-                    }
-                },
-                Err(e) => warn!(error = %e, "compact: silent memory turn failed"),
+            let write_mode = moltis_config::discover_and_load().memory.agent_write_mode;
+            if !memory_write_mode_allows_save(write_mode) {
+                debug!(
+                    "compact: agent-authored memory writes disabled, skipping silent memory turn"
+                );
+            } else {
+                let chat_history_for_memory = values_to_chat_messages(&history);
+                let writer: Arc<dyn moltis_agents::memory_writer::MemoryWriter> =
+                    Arc::new(AgentScopedMemoryWriter::new(
+                        Arc::clone(mm),
+                        session_agent_id.clone(),
+                        write_mode,
+                    ));
+                match moltis_agents::silent_turn::run_silent_memory_turn(
+                    provider,
+                    &chat_history_for_memory,
+                    writer,
+                )
+                .await
+                {
+                    Ok(paths) => {
+                        if !paths.is_empty() {
+                            info!(
+                                files = paths.len(),
+                                "compact: silent memory turn wrote files"
+                            );
+                        }
+                    },
+                    Err(e) => warn!(error = %e, "compact: silent memory turn failed"),
+                }
             }
         }
 
@@ -4846,6 +5099,12 @@ impl ChatService for LiveChatService {
         // Session info
         let message_count = self.session_store.count(&session_key).await.unwrap_or(0);
         let session_entry = self.session_metadata.get(&session_key).await;
+        let prompt_persona = load_prompt_persona_for_session(
+            &session_key,
+            session_entry.as_ref(),
+            self.session_state_store.as_deref(),
+        )
+        .await;
         let (provider_name, supports_tools) = {
             let reg = self.providers.read().await;
             let session_model = session_entry.as_ref().and_then(|e| e.model.as_deref());
@@ -5068,6 +5327,7 @@ impl ChatService for LiveChatService {
             "mcpDisabled": mcp_disabled,
             "sandbox": sandbox_info,
             "execution": execution_info,
+            "promptMemory": prompt_persona.memory_status,
             "supportsTools": supports_tools,
             "tokenUsage": {
                 "inputTokens": usage.session_input_tokens,
@@ -5106,7 +5366,12 @@ impl ChatService for LiveChatService {
 
         // Build runtime context.
         let session_entry = self.session_metadata.get(&session_key).await;
-        let persona = load_prompt_persona_for_session(session_entry.as_ref());
+        let persona = load_prompt_persona_for_session(
+            &session_key,
+            session_entry.as_ref(),
+            self.session_state_store.as_deref(),
+        )
+        .await;
         let mut runtime_context = build_prompt_runtime_context(
             &self.state,
             &provider,
@@ -5190,6 +5455,7 @@ impl ChatService for LiveChatService {
             "charCount": char_count,
             "truncated": truncated,
             "workspaceFiles": workspace_files,
+            "promptMemory": persona.memory_status,
             "native_tools": native_tools,
             "tools_enabled": tools_enabled,
             "tool_mode": format!("{:?}", tool_mode),
@@ -5223,7 +5489,12 @@ impl ChatService for LiveChatService {
 
         // Build runtime context.
         let session_entry = self.session_metadata.get(&session_key).await;
-        let persona = load_prompt_persona_for_session(session_entry.as_ref());
+        let persona = load_prompt_persona_for_session(
+            &session_key,
+            session_entry.as_ref(),
+            self.session_state_store.as_deref(),
+        )
+        .await;
         let mut runtime_context = build_prompt_runtime_context(
             &self.state,
             &provider,
@@ -5329,6 +5600,33 @@ impl ChatService for LiveChatService {
             "totalChars": total_chars,
             "truncated": truncated,
             "workspaceFiles": workspace_files,
+            "promptMemory": persona.memory_status,
+        }))
+    }
+
+    async fn refresh_prompt_memory(&self, params: Value) -> ServiceResult {
+        let session_key = self.resolve_session_key_from_params(&params).await;
+        let session_entry = self.session_metadata.get(&session_key).await;
+        let agent_id = resolve_prompt_agent_id(session_entry.as_ref());
+        let snapshot_cleared = clear_prompt_memory_snapshot(
+            &session_key,
+            &agent_id,
+            self.session_state_store.as_deref(),
+        )
+        .await;
+        let persona = load_prompt_persona_for_session(
+            &session_key,
+            session_entry.as_ref(),
+            self.session_state_store.as_deref(),
+        )
+        .await;
+
+        Ok(serde_json::json!({
+            "ok": true,
+            "sessionKey": session_key,
+            "agentId": agent_id,
+            "snapshotCleared": snapshot_cleared,
+            "promptMemory": persona.memory_status,
         }))
     }
 
@@ -5955,16 +6253,22 @@ fn is_path_in_agent_memory_scope(path: &Path, agent_id: &str) -> bool {
 }
 
 struct AgentScopedMemoryWriter {
-    manager: Arc<moltis_memory::manager::MemoryManager>,
+    manager: moltis_memory::runtime::DynMemoryRuntime,
     agent_id: String,
+    write_mode: AgentMemoryWriteMode,
     checkpoints: moltis_tools::checkpoints::CheckpointManager,
 }
 
 impl AgentScopedMemoryWriter {
-    fn new(manager: Arc<moltis_memory::manager::MemoryManager>, agent_id: String) -> Self {
+    fn new(
+        manager: moltis_memory::runtime::DynMemoryRuntime,
+        agent_id: String,
+        write_mode: AgentMemoryWriteMode,
+    ) -> Self {
         Self {
             manager,
             agent_id,
+            write_mode,
             checkpoints: moltis_tools::checkpoints::CheckpointManager::new(
                 moltis_config::data_dir(),
             ),
@@ -5988,6 +6292,7 @@ impl moltis_agents::memory_writer::MemoryWriter for AgentScopedMemoryWriter {
             );
         }
 
+        validate_agent_memory_target_for_mode(self.write_mode, file)?;
         let path = resolve_agent_memory_target_path(&self.agent_id, file)?;
         if let Some(parent) = path.parent() {
             tokio::fs::create_dir_all(parent).await?;
@@ -6019,12 +6324,12 @@ impl moltis_agents::memory_writer::MemoryWriter for AgentScopedMemoryWriter {
 }
 
 struct AgentScopedMemorySearchTool {
-    manager: Arc<moltis_memory::manager::MemoryManager>,
+    manager: moltis_memory::runtime::DynMemoryRuntime,
     agent_id: String,
 }
 
 impl AgentScopedMemorySearchTool {
-    fn new(manager: Arc<moltis_memory::manager::MemoryManager>, agent_id: String) -> Self {
+    fn new(manager: moltis_memory::runtime::DynMemoryRuntime, agent_id: String) -> Self {
         Self { manager, agent_id }
     }
 }
@@ -6111,12 +6416,12 @@ impl AgentTool for AgentScopedMemorySearchTool {
 }
 
 struct AgentScopedMemoryGetTool {
-    manager: Arc<moltis_memory::manager::MemoryManager>,
+    manager: moltis_memory::runtime::DynMemoryRuntime,
     agent_id: String,
 }
 
 impl AgentScopedMemoryGetTool {
-    fn new(manager: Arc<moltis_memory::manager::MemoryManager>, agent_id: String) -> Self {
+    fn new(manager: moltis_memory::runtime::DynMemoryRuntime, agent_id: String) -> Self {
         Self { manager, agent_id }
     }
 }
@@ -6173,12 +6478,18 @@ impl AgentTool for AgentScopedMemoryGetTool {
 
 struct AgentScopedMemorySaveTool {
     writer: AgentScopedMemoryWriter,
+    write_mode: AgentMemoryWriteMode,
 }
 
 impl AgentScopedMemorySaveTool {
-    fn new(manager: Arc<moltis_memory::manager::MemoryManager>, agent_id: String) -> Self {
+    fn new(
+        manager: moltis_memory::runtime::DynMemoryRuntime,
+        agent_id: String,
+        write_mode: AgentMemoryWriteMode,
+    ) -> Self {
         Self {
-            writer: AgentScopedMemoryWriter::new(manager, agent_id),
+            writer: AgentScopedMemoryWriter::new(manager, agent_id, write_mode),
+            write_mode,
         }
     }
 }
@@ -6224,7 +6535,7 @@ impl AgentTool for AgentScopedMemorySaveTool {
         let file = params
             .get("file")
             .and_then(Value::as_str)
-            .unwrap_or("MEMORY.md");
+            .unwrap_or_else(|| default_agent_memory_file_for_mode(self.write_mode));
         let append = params
             .get("append")
             .and_then(Value::as_bool)
@@ -6244,12 +6555,18 @@ impl AgentTool for AgentScopedMemorySaveTool {
 
 fn install_agent_scoped_memory_tools(
     registry: &mut ToolRegistry,
-    manager: &Arc<moltis_memory::manager::MemoryManager>,
+    manager: &moltis_memory::runtime::DynMemoryRuntime,
     agent_id: &str,
+    style: MemoryStyle,
+    write_mode: AgentMemoryWriteMode,
 ) {
     let had_search = registry.unregister("memory_search");
     let had_get = registry.unregister("memory_get");
     let had_save = registry.unregister("memory_save");
+
+    if !memory_style_allows_tools(style) {
+        return;
+    }
 
     let agent_id_owned = agent_id.to_string();
     if had_search {
@@ -6264,10 +6581,11 @@ fn install_agent_scoped_memory_tools(
             agent_id_owned.clone(),
         )));
     }
-    if had_save {
+    if had_save && memory_write_mode_allows_save(write_mode) {
         registry.register(Box::new(AgentScopedMemorySaveTool::new(
             Arc::clone(manager),
             agent_id_owned,
+            write_mode,
         )));
     }
 }
@@ -6295,6 +6613,7 @@ fn effective_tool_mode(provider: &dyn moltis_agents::model::LlmProvider) -> Tool
 }
 
 async fn run_with_tools(
+    persona: PromptPersona,
     state: &Arc<dyn ChatRuntime>,
     model_store: &Arc<RwLock<DisabledModelsStore>>,
     run_id: &str,
@@ -6324,7 +6643,6 @@ async fn run_with_tools(
     terminal_runs: &Arc<RwLock<HashSet<String>>>,
 ) -> Option<AssistantTurnOutput> {
     let run_started = Instant::now();
-    let persona = load_prompt_persona_for_agent(agent_id);
 
     let tool_mode = effective_tool_mode(&*provider);
     let native_tools = matches!(tool_mode, ToolMode::Native);
@@ -6339,7 +6657,13 @@ async fn run_with_tools(
         }
     };
     if tools_enabled && let Some(manager) = state.memory_manager() {
-        install_agent_scoped_memory_tools(&mut filtered_registry, manager, agent_id);
+        install_agent_scoped_memory_tools(
+            &mut filtered_registry,
+            manager,
+            agent_id,
+            persona.config.memory.style,
+            persona.config.memory.agent_write_mode,
+        );
     }
     if tools_enabled
         && matches!(
@@ -7437,6 +7761,7 @@ fn next_stream_retry_delay_ms(
 }
 
 async fn run_streaming(
+    persona: PromptPersona,
     state: &Arc<dyn ChatRuntime>,
     model_store: &Arc<RwLock<DisabledModelsStore>>,
     run_id: &str,
@@ -7446,7 +7771,7 @@ async fn run_streaming(
     provider_name: &str,
     history_raw: &[Value],
     session_key: &str,
-    agent_id: &str,
+    _agent_id: &str,
     desired_reply_medium: ReplyMedium,
     project_context: Option<&str>,
     user_message_index: usize,
@@ -7458,7 +7783,6 @@ async fn run_streaming(
     terminal_runs: &Arc<RwLock<HashSet<String>>>,
 ) -> Option<AssistantTurnOutput> {
     let run_started = Instant::now();
-    let persona = load_prompt_persona_for_agent(agent_id);
 
     let system_prompt = build_system_prompt_minimal_runtime_details(
         project_context,
@@ -9118,10 +9442,13 @@ mod tests {
         anyhow::Result,
         moltis_agents::{model::LlmProvider, tool_registry::AgentTool},
         moltis_common::types::ReplyPayload,
+        moltis_memory::{
+            config::MemoryConfig, schema::run_migrations, store_sqlite::SqliteMemoryStore,
+        },
         std::{
             pin::Pin,
             sync::{
-                Arc,
+                Arc, Mutex as StdMutex,
                 atomic::{AtomicUsize, Ordering},
             },
             time::{Duration, Instant},
@@ -9129,6 +9456,8 @@ mod tests {
         tokio::sync::Notify,
         tokio_stream::Stream,
     };
+
+    static DATA_DIR_TEST_LOCK: StdMutex<()> = StdMutex::new(());
 
     struct DummyTool {
         name: String,
@@ -9142,7 +9471,7 @@ mod tests {
     struct AbortThenContinueProvider {
         call_count: AtomicUsize,
         first_delta_processed: Arc<Notify>,
-        seen_messages: Arc<std::sync::Mutex<Vec<Vec<ChatMessage>>>>,
+        seen_messages: Arc<StdMutex<Vec<Vec<ChatMessage>>>>,
     }
 
     impl AbortThenContinueProvider {
@@ -9150,7 +9479,7 @@ mod tests {
             Self {
                 call_count: AtomicUsize::new(0),
                 first_delta_processed: Arc::new(Notify::new()),
-                seen_messages: Arc::new(std::sync::Mutex::new(Vec::new())),
+                seen_messages: Arc::new(StdMutex::new(Vec::new())),
             }
         }
     }
@@ -9528,7 +9857,7 @@ mod tests {
             None
         }
 
-        fn memory_manager(&self) -> Option<&Arc<moltis_memory::manager::MemoryManager>> {
+        fn memory_manager(&self) -> Option<&moltis_memory::runtime::DynMemoryRuntime> {
             None
         }
 
@@ -9599,7 +9928,7 @@ mod tests {
 
     struct MockExecTool {
         calls: Arc<AtomicUsize>,
-        commands: Arc<std::sync::Mutex<Vec<String>>>,
+        commands: Arc<StdMutex<Vec<String>>>,
     }
 
     #[test]
@@ -10063,6 +10392,9 @@ mod tests {
         moltis_projects::run_migrations(&pool)
             .await
             .expect("projects migrations");
+        moltis_sessions::run_migrations(&pool)
+            .await
+            .expect("sessions migrations");
         SqliteSessionMetadata::init(&pool)
             .await
             .expect("session metadata migrations");
@@ -11083,7 +11415,7 @@ mod tests {
         let providers = Arc::new(RwLock::new(ProviderRegistry::empty()));
         let disabled = Arc::new(RwLock::new(DisabledModelsStore::default()));
         let calls = Arc::new(AtomicUsize::new(0));
-        let commands = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let commands = Arc::new(StdMutex::new(Vec::new()));
 
         let mut registry = ToolRegistry::new();
         registry.register(Box::new(MockExecTool {
@@ -13474,6 +13806,35 @@ mod tests {
     }
 
     #[test]
+    fn validate_agent_memory_target_for_mode_rejects_disallowed_paths() {
+        assert!(
+            validate_agent_memory_target_for_mode(AgentMemoryWriteMode::PromptOnly, "MEMORY.md")
+                .is_ok()
+        );
+        assert!(
+            validate_agent_memory_target_for_mode(
+                AgentMemoryWriteMode::PromptOnly,
+                "memory/daily.md"
+            )
+            .is_err()
+        );
+        assert!(
+            validate_agent_memory_target_for_mode(
+                AgentMemoryWriteMode::SearchOnly,
+                "memory/daily.md"
+            )
+            .is_ok()
+        );
+        assert!(
+            validate_agent_memory_target_for_mode(AgentMemoryWriteMode::SearchOnly, "MEMORY.md")
+                .is_err()
+        );
+        assert!(
+            validate_agent_memory_target_for_mode(AgentMemoryWriteMode::Off, "MEMORY.md").is_err()
+        );
+    }
+
+    #[test]
     fn path_in_agent_memory_scope_is_isolated_per_agent() {
         let ops_workspace = moltis_config::agent_workspace_dir("ops");
         let ops_memory = ops_workspace.join("memory").join("daily.md");
@@ -13483,6 +13844,672 @@ mod tests {
         let root_memory = moltis_config::data_dir().join("memory").join("root.md");
         assert!(is_path_in_agent_memory_scope(&root_memory, "main"));
         assert!(!is_path_in_agent_memory_scope(&root_memory, "ops"));
+    }
+
+    #[test]
+    fn load_prompt_persona_for_agent_uses_agent_scoped_memory_files() {
+        let _guard = DATA_DIR_TEST_LOCK.lock().expect("data dir lock");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let config_dir = tempfile::tempdir().expect("tempdir");
+        moltis_config::set_data_dir(dir.path().to_path_buf());
+        moltis_config::set_config_dir(config_dir.path().to_path_buf());
+
+        std::fs::write(dir.path().join("MEMORY.md"), "root memory").unwrap();
+        let ops_dir = dir.path().join("agents").join("ops");
+        std::fs::create_dir_all(&ops_dir).unwrap();
+        std::fs::write(ops_dir.join("MEMORY.md"), "ops memory").unwrap();
+
+        let main_persona = load_prompt_persona_for_agent("main");
+        assert_eq!(main_persona.memory_text.as_deref(), Some("root memory"));
+        assert_eq!(
+            main_persona.memory_status.mode,
+            PromptMemoryMode::LiveReload
+        );
+        assert_eq!(
+            main_persona.memory_status.file_source,
+            Some(moltis_config::WorkspaceMarkdownSource::RootWorkspace)
+        );
+
+        let ops_persona = load_prompt_persona_for_agent("ops");
+        assert_eq!(ops_persona.memory_text.as_deref(), Some("ops memory"));
+        assert_eq!(
+            ops_persona.memory_status.file_source,
+            Some(moltis_config::WorkspaceMarkdownSource::AgentWorkspace)
+        );
+
+        moltis_config::clear_data_dir();
+        moltis_config::clear_config_dir();
+    }
+
+    #[test]
+    fn load_prompt_persona_for_agent_reloads_memory_between_calls() {
+        let _guard = DATA_DIR_TEST_LOCK.lock().expect("data dir lock");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let config_dir = tempfile::tempdir().expect("tempdir");
+        moltis_config::set_data_dir(dir.path().to_path_buf());
+        moltis_config::set_config_dir(config_dir.path().to_path_buf());
+
+        std::fs::write(dir.path().join("MEMORY.md"), "first memory").unwrap();
+        let first = load_prompt_persona_for_agent("main");
+        assert_eq!(first.memory_text.as_deref(), Some("first memory"));
+
+        std::fs::write(dir.path().join("MEMORY.md"), "second memory").unwrap();
+        let second = load_prompt_persona_for_agent("main");
+        assert_eq!(second.memory_text.as_deref(), Some("second memory"));
+
+        moltis_config::clear_data_dir();
+        moltis_config::clear_config_dir();
+    }
+
+    #[test]
+    fn load_prompt_persona_for_agent_prompt_only_keeps_prompt_memory() {
+        let _guard = DATA_DIR_TEST_LOCK.lock().expect("data dir lock");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let config_dir = tempfile::tempdir().expect("tempdir");
+        moltis_config::set_data_dir(dir.path().to_path_buf());
+        moltis_config::set_config_dir(config_dir.path().to_path_buf());
+        write_prompt_memory_config(config_dir.path(), Some("prompt-only"), None);
+
+        std::fs::write(dir.path().join("MEMORY.md"), "prompt memory").unwrap();
+
+        let persona = load_prompt_persona_for_agent("main");
+        assert_eq!(persona.memory_text.as_deref(), Some("prompt memory"));
+        assert_eq!(persona.memory_status.style, MemoryStyle::PromptOnly);
+        assert!(persona.memory_status.present);
+
+        moltis_config::clear_data_dir();
+        moltis_config::clear_config_dir();
+    }
+
+    #[test]
+    fn load_prompt_persona_for_agent_search_only_omits_prompt_memory() {
+        let _guard = DATA_DIR_TEST_LOCK.lock().expect("data dir lock");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let config_dir = tempfile::tempdir().expect("tempdir");
+        moltis_config::set_data_dir(dir.path().to_path_buf());
+        moltis_config::set_config_dir(config_dir.path().to_path_buf());
+        write_prompt_memory_config(config_dir.path(), Some("search-only"), None);
+
+        std::fs::write(dir.path().join("MEMORY.md"), "hidden memory").unwrap();
+
+        let persona = load_prompt_persona_for_agent("main");
+        assert_eq!(persona.memory_text, None);
+        assert_eq!(persona.memory_status.style, MemoryStyle::SearchOnly);
+        assert!(!persona.memory_status.present);
+
+        moltis_config::clear_data_dir();
+        moltis_config::clear_config_dir();
+    }
+
+    #[test]
+    fn load_prompt_persona_for_agent_off_omits_prompt_memory() {
+        let _guard = DATA_DIR_TEST_LOCK.lock().expect("data dir lock");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let config_dir = tempfile::tempdir().expect("tempdir");
+        moltis_config::set_data_dir(dir.path().to_path_buf());
+        moltis_config::set_config_dir(config_dir.path().to_path_buf());
+        write_prompt_memory_config(config_dir.path(), Some("off"), None);
+
+        std::fs::write(dir.path().join("MEMORY.md"), "hidden memory").unwrap();
+
+        let persona = load_prompt_persona_for_agent("main");
+        assert_eq!(persona.memory_text, None);
+        assert_eq!(persona.memory_status.style, MemoryStyle::Off);
+        assert!(!persona.memory_status.present);
+
+        moltis_config::clear_data_dir();
+        moltis_config::clear_config_dir();
+    }
+
+    #[tokio::test]
+    async fn install_agent_scoped_memory_tools_respects_memory_style() {
+        let manager = test_memory_manager().await;
+        let runtime: moltis_memory::runtime::DynMemoryRuntime = manager;
+
+        for (style, expected_tools) in [
+            (MemoryStyle::Hybrid, vec![
+                "memory_get",
+                "memory_save",
+                "memory_search",
+            ]),
+            (MemoryStyle::SearchOnly, vec![
+                "memory_get",
+                "memory_save",
+                "memory_search",
+            ]),
+            (MemoryStyle::PromptOnly, Vec::new()),
+            (MemoryStyle::Off, Vec::new()),
+        ] {
+            let mut registry = ToolRegistry::new();
+            registry.register(Box::new(DummyTool {
+                name: "memory_search".to_string(),
+            }));
+            registry.register(Box::new(DummyTool {
+                name: "memory_get".to_string(),
+            }));
+            registry.register(Box::new(DummyTool {
+                name: "memory_save".to_string(),
+            }));
+            registry.register(Box::new(DummyTool {
+                name: "echo_tool".to_string(),
+            }));
+
+            install_agent_scoped_memory_tools(
+                &mut registry,
+                &runtime,
+                "ops",
+                style,
+                AgentMemoryWriteMode::Hybrid,
+            );
+
+            assert_eq!(registry.list_names(), {
+                let mut names = expected_tools
+                    .into_iter()
+                    .map(str::to_string)
+                    .collect::<Vec<_>>();
+                names.push("echo_tool".to_string());
+                names.sort();
+                names
+            });
+        }
+    }
+
+    #[tokio::test]
+    async fn install_agent_scoped_memory_tools_hides_save_when_write_mode_is_off() {
+        let manager = test_memory_manager().await;
+        let runtime: moltis_memory::runtime::DynMemoryRuntime = manager;
+
+        let mut registry = ToolRegistry::new();
+        registry.register(Box::new(DummyTool {
+            name: "memory_search".to_string(),
+        }));
+        registry.register(Box::new(DummyTool {
+            name: "memory_get".to_string(),
+        }));
+        registry.register(Box::new(DummyTool {
+            name: "memory_save".to_string(),
+        }));
+
+        install_agent_scoped_memory_tools(
+            &mut registry,
+            &runtime,
+            "ops",
+            MemoryStyle::Hybrid,
+            AgentMemoryWriteMode::Off,
+        );
+
+        assert_eq!(registry.list_names(), vec![
+            "memory_get".to_string(),
+            "memory_search".to_string()
+        ]);
+    }
+
+    fn session_entry_for_agent(session_key: &str, agent_id: &str) -> SessionEntry {
+        let mut entry = make_session_entry_with_binding(None);
+        entry.key = session_key.to_string();
+        entry.agent_id = Some(agent_id.to_string());
+        entry
+    }
+
+    fn write_prompt_memory_config(config_dir: &Path, style: Option<&str>, mode: Option<&str>) {
+        write_memory_behavior_config(config_dir, style, mode, None);
+    }
+
+    fn write_memory_behavior_config(
+        config_dir: &Path,
+        style: Option<&str>,
+        mode: Option<&str>,
+        agent_write_mode: Option<&str>,
+    ) {
+        std::fs::create_dir_all(config_dir).expect("config dir");
+        let mut config = String::new();
+        if let Some(mode) = mode {
+            config.push_str("[chat]\n");
+            config.push_str(&format!("prompt_memory_mode = \"{mode}\"\n"));
+        }
+        if style.is_some() || agent_write_mode.is_some() {
+            if !config.is_empty() {
+                config.push('\n');
+            }
+            config.push_str("[memory]\n");
+            if let Some(style) = style {
+                config.push_str(&format!("style = \"{style}\"\n"));
+            }
+            if let Some(agent_write_mode) = agent_write_mode {
+                config.push_str(&format!("agent_write_mode = \"{agent_write_mode}\"\n"));
+            }
+        }
+        std::fs::write(config_dir.join("moltis.toml"), config).expect("write config");
+    }
+
+    async fn test_memory_manager() -> Arc<moltis_memory::manager::MemoryManager> {
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:")
+            .await
+            .expect("connect memory db");
+        run_migrations(&pool).await.expect("run memory migrations");
+        Arc::new(moltis_memory::manager::MemoryManager::keyword_only(
+            MemoryConfig::default(),
+            Box::new(SqliteMemoryStore::new(pool)),
+        ))
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn load_prompt_persona_for_session_freezes_memory_at_session_start() {
+        let _guard = DATA_DIR_TEST_LOCK.lock().expect("data dir lock");
+        let data_dir = tempfile::tempdir().expect("tempdir");
+        let config_dir = tempfile::tempdir().expect("tempdir");
+        moltis_config::set_data_dir(data_dir.path().to_path_buf());
+        moltis_config::set_config_dir(config_dir.path().to_path_buf());
+        write_prompt_memory_config(config_dir.path(), None, Some("frozen-at-session-start"));
+
+        std::fs::write(data_dir.path().join("MEMORY.md"), "first memory").unwrap();
+
+        let state_store = SessionStateStore::new(sqlite_pool().await);
+        let entry = session_entry_for_agent("session-a", "main");
+        let first =
+            load_prompt_persona_for_session("session-a", Some(&entry), Some(&state_store)).await;
+        assert_eq!(first.memory_text.as_deref(), Some("first memory"));
+        assert_eq!(
+            first.memory_status.mode,
+            PromptMemoryMode::FrozenAtSessionStart
+        );
+        assert!(first.memory_status.snapshot_active);
+        let expected_path = data_dir
+            .path()
+            .join("MEMORY.md")
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(
+            first.memory_status.path.as_deref(),
+            Some(expected_path.as_str())
+        );
+
+        std::fs::write(data_dir.path().join("MEMORY.md"), "second memory").unwrap();
+        let second =
+            load_prompt_persona_for_session("session-a", Some(&entry), Some(&state_store)).await;
+        assert_eq!(second.memory_text.as_deref(), Some("first memory"));
+        assert!(second.memory_status.snapshot_active);
+
+        moltis_config::clear_config_dir();
+        moltis_config::clear_data_dir();
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn load_prompt_persona_for_session_frozen_mode_isolated_between_sessions() {
+        let _guard = DATA_DIR_TEST_LOCK.lock().expect("data dir lock");
+        let data_dir = tempfile::tempdir().expect("tempdir");
+        let config_dir = tempfile::tempdir().expect("tempdir");
+        moltis_config::set_data_dir(data_dir.path().to_path_buf());
+        moltis_config::set_config_dir(config_dir.path().to_path_buf());
+        write_prompt_memory_config(config_dir.path(), None, Some("frozen-at-session-start"));
+
+        std::fs::write(data_dir.path().join("MEMORY.md"), "first memory").unwrap();
+
+        let state_store = SessionStateStore::new(sqlite_pool().await);
+        let session_a = session_entry_for_agent("session-a", "main");
+        let first =
+            load_prompt_persona_for_session("session-a", Some(&session_a), Some(&state_store))
+                .await;
+        assert_eq!(first.memory_text.as_deref(), Some("first memory"));
+
+        std::fs::write(data_dir.path().join("MEMORY.md"), "second memory").unwrap();
+        let session_b = session_entry_for_agent("session-b", "main");
+        let second =
+            load_prompt_persona_for_session("session-b", Some(&session_b), Some(&state_store))
+                .await;
+        assert_eq!(second.memory_text.as_deref(), Some("second memory"));
+
+        moltis_config::clear_config_dir();
+        moltis_config::clear_data_dir();
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn load_prompt_persona_for_session_frozen_mode_scopes_snapshots_by_agent() {
+        let _guard = DATA_DIR_TEST_LOCK.lock().expect("data dir lock");
+        let data_dir = tempfile::tempdir().expect("tempdir");
+        let config_dir = tempfile::tempdir().expect("tempdir");
+        moltis_config::set_data_dir(data_dir.path().to_path_buf());
+        moltis_config::set_config_dir(config_dir.path().to_path_buf());
+        write_prompt_memory_config(config_dir.path(), None, Some("frozen-at-session-start"));
+
+        std::fs::write(data_dir.path().join("MEMORY.md"), "root memory").unwrap();
+        let ops_dir = data_dir.path().join("agents").join("ops");
+        std::fs::create_dir_all(&ops_dir).unwrap();
+        std::fs::write(ops_dir.join("MEMORY.md"), "ops memory").unwrap();
+
+        let state_store = SessionStateStore::new(sqlite_pool().await);
+        let main_entry = session_entry_for_agent("session-a", "main");
+        let ops_entry = session_entry_for_agent("session-a", "ops");
+
+        let main =
+            load_prompt_persona_for_session("session-a", Some(&main_entry), Some(&state_store))
+                .await;
+        let ops =
+            load_prompt_persona_for_session("session-a", Some(&ops_entry), Some(&state_store))
+                .await;
+        assert_eq!(main.memory_text.as_deref(), Some("root memory"));
+        assert_eq!(ops.memory_text.as_deref(), Some("ops memory"));
+
+        std::fs::write(data_dir.path().join("MEMORY.md"), "root memory v2").unwrap();
+        std::fs::write(ops_dir.join("MEMORY.md"), "ops memory v2").unwrap();
+
+        let main_again =
+            load_prompt_persona_for_session("session-a", Some(&main_entry), Some(&state_store))
+                .await;
+        let ops_again =
+            load_prompt_persona_for_session("session-a", Some(&ops_entry), Some(&state_store))
+                .await;
+        assert_eq!(main_again.memory_text.as_deref(), Some("root memory"));
+        assert_eq!(ops_again.memory_text.as_deref(), Some("ops memory"));
+
+        moltis_config::clear_config_dir();
+        moltis_config::clear_data_dir();
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn load_prompt_persona_for_session_live_reload_reads_latest_memory() {
+        let _guard = DATA_DIR_TEST_LOCK.lock().expect("data dir lock");
+        let data_dir = tempfile::tempdir().expect("tempdir");
+        let config_dir = tempfile::tempdir().expect("tempdir");
+        moltis_config::set_data_dir(data_dir.path().to_path_buf());
+        moltis_config::set_config_dir(config_dir.path().to_path_buf());
+        write_prompt_memory_config(config_dir.path(), None, Some("live-reload"));
+
+        std::fs::write(data_dir.path().join("MEMORY.md"), "first memory").unwrap();
+
+        let state_store = SessionStateStore::new(sqlite_pool().await);
+        let entry = session_entry_for_agent("session-a", "main");
+        let first =
+            load_prompt_persona_for_session("session-a", Some(&entry), Some(&state_store)).await;
+        assert_eq!(first.memory_text.as_deref(), Some("first memory"));
+        assert_eq!(first.memory_status.mode, PromptMemoryMode::LiveReload);
+        assert!(!first.memory_status.snapshot_active);
+
+        std::fs::write(data_dir.path().join("MEMORY.md"), "second memory").unwrap();
+        let second =
+            load_prompt_persona_for_session("session-a", Some(&entry), Some(&state_store)).await;
+        assert_eq!(second.memory_text.as_deref(), Some("second memory"));
+        assert!(!second.memory_status.snapshot_active);
+        assert_eq!(
+            state_store
+                .get(
+                    "session-a",
+                    PROMPT_MEMORY_NAMESPACE,
+                    &prompt_memory_snapshot_key("main"),
+                )
+                .await
+                .unwrap(),
+            None
+        );
+
+        moltis_config::clear_config_dir();
+        moltis_config::clear_data_dir();
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn load_prompt_persona_for_session_search_only_skips_frozen_snapshot() {
+        let _guard = DATA_DIR_TEST_LOCK.lock().expect("data dir lock");
+        let data_dir = tempfile::tempdir().expect("tempdir");
+        let config_dir = tempfile::tempdir().expect("tempdir");
+        moltis_config::set_data_dir(data_dir.path().to_path_buf());
+        moltis_config::set_config_dir(config_dir.path().to_path_buf());
+        write_prompt_memory_config(
+            config_dir.path(),
+            Some("search-only"),
+            Some("frozen-at-session-start"),
+        );
+
+        std::fs::write(data_dir.path().join("MEMORY.md"), "first memory").unwrap();
+
+        let state_store = SessionStateStore::new(sqlite_pool().await);
+        let entry = session_entry_for_agent("session-a", "main");
+        let persona =
+            load_prompt_persona_for_session("session-a", Some(&entry), Some(&state_store)).await;
+        assert_eq!(persona.memory_text, None);
+        assert_eq!(persona.memory_status.style, MemoryStyle::SearchOnly);
+        assert!(!persona.memory_status.present);
+        assert!(!persona.memory_status.snapshot_active);
+        assert_eq!(
+            state_store
+                .get(
+                    "session-a",
+                    PROMPT_MEMORY_NAMESPACE,
+                    &prompt_memory_snapshot_key("main"),
+                )
+                .await
+                .unwrap(),
+            None
+        );
+
+        moltis_config::clear_config_dir();
+        moltis_config::clear_data_dir();
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn memory_save_defaults_to_notes_file_in_search_only_write_mode() {
+        let _guard = DATA_DIR_TEST_LOCK.lock().expect("data dir lock");
+        let data_dir = tempfile::tempdir().expect("tempdir");
+        let config_dir = tempfile::tempdir().expect("tempdir");
+        moltis_config::set_data_dir(data_dir.path().to_path_buf());
+        moltis_config::set_config_dir(config_dir.path().to_path_buf());
+        write_memory_behavior_config(config_dir.path(), None, None, Some("search-only"));
+
+        let manager = test_memory_manager().await;
+        let runtime: moltis_memory::runtime::DynMemoryRuntime = manager;
+        let tool = AgentScopedMemorySaveTool::new(
+            runtime,
+            "ops".to_string(),
+            AgentMemoryWriteMode::SearchOnly,
+        );
+
+        let result = tool
+            .execute(serde_json::json!({ "content": "search-only memory" }))
+            .await
+            .expect("memory_save should succeed");
+        assert_eq!(result["path"].as_str(), Some("memory/notes.md"));
+        let saved =
+            std::fs::read_to_string(data_dir.path().join("agents/ops/memory/notes.md")).unwrap();
+        assert_eq!(saved, "search-only memory");
+
+        moltis_config::clear_config_dir();
+        moltis_config::clear_data_dir();
+    }
+
+    #[tokio::test]
+    async fn memory_save_rejects_memory_md_in_search_only_write_mode() {
+        let manager = test_memory_manager().await;
+        let runtime: moltis_memory::runtime::DynMemoryRuntime = manager;
+        let tool = AgentScopedMemorySaveTool::new(
+            runtime,
+            "ops".to_string(),
+            AgentMemoryWriteMode::SearchOnly,
+        );
+
+        let error = tool
+            .execute(serde_json::json!({
+                "content": "should fail",
+                "file": "MEMORY.md",
+            }))
+            .await
+            .expect_err("search-only mode should reject MEMORY.md");
+        assert!(error.to_string().contains("search-only"));
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn context_reports_prompt_memory_status() {
+        let _guard = DATA_DIR_TEST_LOCK.lock().expect("data dir lock");
+        let data_dir = tempfile::tempdir().expect("tempdir");
+        let config_dir = tempfile::tempdir().expect("tempdir");
+        moltis_config::set_data_dir(data_dir.path().to_path_buf());
+        moltis_config::set_config_dir(config_dir.path().to_path_buf());
+        write_prompt_memory_config(config_dir.path(), None, Some("frozen-at-session-start"));
+        std::fs::write(data_dir.path().join("MEMORY.md"), "first memory").unwrap();
+
+        let session_store = Arc::new(SessionStore::new(data_dir.path().join("sessions")));
+        let metadata = Arc::new(SqliteSessionMetadata::new(sqlite_pool().await));
+        let state_store = Arc::new(SessionStateStore::new(sqlite_pool().await));
+        let service = LiveChatService::new(
+            Arc::new(RwLock::new(ProviderRegistry::empty())),
+            Arc::new(RwLock::new(DisabledModelsStore::default())),
+            Arc::new(MockChatRuntime::new()),
+            session_store,
+            metadata,
+        )
+        .with_session_state_store(Arc::clone(&state_store));
+
+        let result = service
+            .context(serde_json::json!({ "sessionKey": "session-a" }))
+            .await
+            .expect("chat.context should succeed");
+
+        assert_eq!(
+            result["promptMemory"]["mode"].as_str(),
+            Some("frozen-at-session-start")
+        );
+        assert_eq!(result["promptMemory"]["style"].as_str(), Some("hybrid"));
+        assert_eq!(result["promptMemory"]["writeMode"].as_str(), Some("hybrid"));
+        assert_eq!(
+            result["promptMemory"]["snapshotActive"].as_bool(),
+            Some(true)
+        );
+        assert_eq!(result["promptMemory"]["present"].as_bool(), Some(true));
+
+        moltis_config::clear_config_dir();
+        moltis_config::clear_data_dir();
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn refresh_prompt_memory_rebuilds_frozen_snapshot() {
+        let _guard = DATA_DIR_TEST_LOCK.lock().expect("data dir lock");
+        let data_dir = tempfile::tempdir().expect("tempdir");
+        let config_dir = tempfile::tempdir().expect("tempdir");
+        moltis_config::set_data_dir(data_dir.path().to_path_buf());
+        moltis_config::set_config_dir(config_dir.path().to_path_buf());
+        write_prompt_memory_config(config_dir.path(), None, Some("frozen-at-session-start"));
+        std::fs::write(data_dir.path().join("MEMORY.md"), "first memory").unwrap();
+
+        let session_store = Arc::new(SessionStore::new(data_dir.path().join("sessions")));
+        let metadata = Arc::new(SqliteSessionMetadata::new(sqlite_pool().await));
+        let state_store = Arc::new(SessionStateStore::new(sqlite_pool().await));
+        let service = LiveChatService::new(
+            Arc::new(RwLock::new(ProviderRegistry::empty())),
+            Arc::new(RwLock::new(DisabledModelsStore::default())),
+            Arc::new(MockChatRuntime::new()),
+            session_store,
+            metadata,
+        )
+        .with_session_state_store(Arc::clone(&state_store));
+
+        let first_context = service
+            .context(serde_json::json!({ "sessionKey": "session-a" }))
+            .await
+            .expect("chat.context should succeed");
+        assert_eq!(
+            first_context["promptMemory"]["chars"].as_u64(),
+            Some("first memory".chars().count() as u64)
+        );
+
+        std::fs::write(data_dir.path().join("MEMORY.md"), "second memory").unwrap();
+
+        let refresh_result = service
+            .refresh_prompt_memory(serde_json::json!({ "sessionKey": "session-a" }))
+            .await
+            .expect("chat.prompt_memory.refresh should succeed");
+        assert_eq!(refresh_result["snapshotCleared"].as_bool(), Some(true));
+        assert_eq!(
+            refresh_result["promptMemory"]["chars"].as_u64(),
+            Some("second memory".chars().count() as u64)
+        );
+        assert!(
+            state_store
+                .get(
+                    "session-a",
+                    PROMPT_MEMORY_NAMESPACE,
+                    &prompt_memory_snapshot_key("main"),
+                )
+                .await
+                .unwrap()
+                .as_deref()
+                .is_some()
+        );
+
+        let second_context = service
+            .context(serde_json::json!({ "sessionKey": "session-a" }))
+            .await
+            .expect("chat.context should succeed");
+        assert_eq!(
+            second_context["promptMemory"]["chars"].as_u64(),
+            Some("second memory".chars().count() as u64)
+        );
+
+        moltis_config::clear_config_dir();
+        moltis_config::clear_data_dir();
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn refresh_prompt_memory_in_live_mode_does_not_require_snapshot() {
+        let _guard = DATA_DIR_TEST_LOCK.lock().expect("data dir lock");
+        let data_dir = tempfile::tempdir().expect("tempdir");
+        let config_dir = tempfile::tempdir().expect("tempdir");
+        moltis_config::set_data_dir(data_dir.path().to_path_buf());
+        moltis_config::set_config_dir(config_dir.path().to_path_buf());
+        write_prompt_memory_config(config_dir.path(), None, Some("live-reload"));
+        std::fs::write(data_dir.path().join("MEMORY.md"), "first memory").unwrap();
+
+        let session_store = Arc::new(SessionStore::new(data_dir.path().join("sessions")));
+        let metadata = Arc::new(SqliteSessionMetadata::new(sqlite_pool().await));
+        let state_store = Arc::new(SessionStateStore::new(sqlite_pool().await));
+        let service = LiveChatService::new(
+            Arc::new(RwLock::new(ProviderRegistry::empty())),
+            Arc::new(RwLock::new(DisabledModelsStore::default())),
+            Arc::new(MockChatRuntime::new()),
+            session_store,
+            metadata,
+        )
+        .with_session_state_store(Arc::clone(&state_store));
+
+        let _ = service
+            .context(serde_json::json!({ "sessionKey": "session-a" }))
+            .await
+            .expect("chat.context should succeed");
+
+        std::fs::write(data_dir.path().join("MEMORY.md"), "second memory").unwrap();
+        let refresh_result = service
+            .refresh_prompt_memory(serde_json::json!({ "sessionKey": "session-a" }))
+            .await
+            .expect("chat.prompt_memory.refresh should succeed");
+        assert_eq!(refresh_result["snapshotCleared"].as_bool(), Some(false));
+        assert_eq!(
+            refresh_result["promptMemory"]["mode"].as_str(),
+            Some("live-reload")
+        );
+        assert_eq!(
+            refresh_result["promptMemory"]["chars"].as_u64(),
+            Some("second memory".chars().count() as u64)
+        );
+        assert_eq!(
+            state_store
+                .get(
+                    "session-a",
+                    PROMPT_MEMORY_NAMESPACE,
+                    &prompt_memory_snapshot_key("main"),
+                )
+                .await
+                .unwrap(),
+            None
+        );
+
+        moltis_config::clear_config_dir();
+        moltis_config::clear_data_dir();
     }
 
     // ── active_session_keys tests ───────────────────────────────────────

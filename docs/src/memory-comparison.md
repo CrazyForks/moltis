@@ -54,7 +54,7 @@ general-purpose).
 | **Daily logs** | `memory/YYYY-MM-DD.md` | `memory/YYYY-MM-DD.md` |
 | **Session transcripts** | `memory/sessions/*.md` | Session JSONL files (separate) |
 | **Extra paths** | Via `memory_dirs` config | Via `memorySearch.extraPaths` |
-| **MEMORY.md loading** | Always available in system prompt | Only in private sessions (not group chats) |
+| **MEMORY.md loading** | Available in system prompt, with configurable live reload or frozen-per-session mode | Only in private sessions (not group chats) |
 
 ### Agent Tools
 

@@ -201,6 +201,9 @@ message_queue_mode = "followup"   # Default: process queued messages one-by-one 
                                   # How to handle messages during an active agent run:
                                   #   "followup" - Queue messages, replay one-by-one after run
                                   #   "collect"  - Buffer messages, concatenate as single message
+# prompt_memory_mode = "live-reload"  # How MEMORY.md reaches the prompt:
+                                      #   "live-reload"            - Re-read MEMORY.md before each turn
+                                      #   "frozen-at-session-start" - Freeze the first MEMORY.md snapshot per session
 # workspace_file_max_chars = 32000  # Optional: per-file prompt cap for AGENTS.md / TOOLS.md before truncation.
 # priority_models = ["claude-opus-4-5", "gpt-5.2", "gemini-3-flash"]  # Optional: models to pin first in selectors
 # allowed_models = ["gpt 5.2"]  # Legacy field (currently ignored).
@@ -352,7 +355,7 @@ scope = "session"                 # Container lifecycle:
                                   #   "session" - Container per session (recommended)
                                   #   "global"  - Single shared container
 workspace_mount = "ro"            # How to mount workspace in sandbox:
-                                  #   "ro"   - Read-only (safe)
+                                  #   "ro"   - Read-only (safe; sandbox commands can read mounted files but cannot modify them)
                                   #   "rw"   - Read-write (can modify files)
                                   #   "none" - No mount
 # host_data_dir = "/host/path/data"  # Optional override if auto-detection cannot resolve the host-visible data dir
@@ -724,16 +727,42 @@ reset_on_exit = true              # Reset serve/funnel when gateway shuts down
 # Configure the embedding provider for memory/RAG features.
 
 [memory]
-# provider = "local"              # Embedding provider:
+# style = "hybrid"               # High-level memory behavior (default = "hybrid"):
+                                  #   "hybrid"      - Prompt MEMORY.md + memory_search/memory_get/memory_save
+                                  #   "prompt-only" - Prompt MEMORY.md only, no memory tools
+                                  #   "search-only" - Memory tools only, no prompt MEMORY.md injection
+                                  #   "off"         - Disable prompt memory injection and memory tools
+#                                  # Prompt freshness is configured separately in [chat].prompt_memory_mode
+# agent_write_mode = "hybrid"    # Where agent-authored memory writes can land (default = "hybrid"):
+                                  #   "hybrid"      - Allow MEMORY.md and memory/<name>.md
+                                  #   "prompt-only" - Allow MEMORY.md only
+                                  #   "search-only" - Allow memory/<name>.md only
+                                  #   "off"         - Disable agent-authored memory writes
+# user_profile_write_mode = "explicit-and-auto"  # How Moltis writes USER.md (default = "explicit-and-auto"):
+                                  #   "explicit-and-auto" - Settings saves plus silent timezone/location capture
+                                  #   "explicit-only"     - Settings saves only, no silent timezone/location capture
+                                  #   "off"               - Do not write USER.md, keep profile in moltis.toml only
+# backend = "builtin"            # Memory backend (default = "builtin"):
+                                  #   "builtin" - Built-in SQLite indexer and retriever
+                                  #   "qmd"     - External QMD CLI backend
+# provider = "auto"               # Embedding provider for the built-in backend (default = auto-detect):
                                   #   "local"   - Built-in local embeddings
                                   #   "ollama"  - Ollama server
                                   #   "openai"  - OpenAI API
                                   #   "custom"  - Custom endpoint
                                   #   (none)    - Auto-detect from available providers
-# disable_rag = false             # true => keyword-only search (no embeddings)
-# base_url = "http://localhost:11434/v1"  # Embedding API base (host, /v1, or /embeddings)
-# model = "nomic-embed-text"      # Embedding model name
-# api_key = "..."                 # API key (optional for local endpoints like Ollama)
+                                  # Ignored while backend = "qmd"
+# disable_rag = false             # true => keyword-only search, disables embedding retrieval
+# citations = "auto"              # Citation mode (default = "auto"): "on", "off", or "auto"
+# llm_reranking = false           # Use the LLM to rerank search results (only meaningful when RAG is enabled)
+# search_merge_strategy = "rrf"   # Merge strategy (default = "rrf"): "rrf" or "linear"
+# session_export = "on-new-or-reset"  # Session transcript export policy (default = "on-new-or-reset"):
+                                  #   "on-new-or-reset" - Export transcripts on /new and /reset
+                                  #   "off"             - Disable session transcript export
+#                                  # Exported transcripts become searchable memory, not prompt memory
+# base_url = "http://localhost:11434/v1"  # Builtin backend only: embedding API base (host, /v1, or /embeddings)
+# model = "nomic-embed-text"      # Builtin backend only: embedding model name
+# api_key = "..."                 # Builtin backend only: API key (optional for local endpoints like Ollama)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # CHANNELS
