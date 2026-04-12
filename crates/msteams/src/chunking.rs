@@ -29,7 +29,8 @@ pub fn chunk_message(text: &str, max_len: usize) -> Vec<&str> {
             break;
         }
 
-        let window = &remaining[..max_len];
+        let split_window_end = split_window_end(remaining, max_len);
+        let window = &remaining[..split_window_end];
         let split_at = find_split_point(window);
 
         let (chunk, rest) = remaining.split_at(split_at);
@@ -41,6 +42,17 @@ pub fn chunk_message(text: &str, max_len: usize) -> Vec<&str> {
     }
 
     chunks
+}
+
+fn split_window_end(text: &str, max_len: usize) -> usize {
+    let split_window_end = floor_char_boundary(text, max_len);
+    if split_window_end > 0 {
+        return split_window_end;
+    }
+    text.chars()
+        .next()
+        .map(char::len_utf8)
+        .unwrap_or(text.len())
 }
 
 fn find_split_point(window: &str) -> usize {
@@ -143,7 +155,15 @@ mod tests {
         let chunks = chunk_message(text, 8); // fits exactly 2 emoji
         assert!(chunks.len() >= 2);
         for chunk in &chunks {
-            assert!(chunk.is_char_boundary(0));
+            assert!(chunk.is_char_boundary(chunk.len()));
         }
+    }
+
+    #[test]
+    fn unicode_safe_when_limit_lands_inside_first_codepoint() {
+        let text = "😀abc";
+        let chunks = chunk_message(text, 1);
+        assert_eq!(chunks[0], "😀");
+        assert_eq!(chunks.concat(), text);
     }
 }
