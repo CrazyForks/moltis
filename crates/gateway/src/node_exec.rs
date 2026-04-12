@@ -19,7 +19,6 @@ use std::{
 use {
     async_trait::async_trait,
     secrecy::ExposeSecret,
-    serde::{Deserialize, Serialize},
     tokio::{io::AsyncReadExt, process::Command},
     tracing::warn,
 };
@@ -29,41 +28,11 @@ use crate::{
     state::GatewayState,
 };
 
-/// Result of a remote command execution on a node.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NodeExecResult {
-    pub stdout: String,
-    pub stderr: String,
-    pub exit_code: i32,
-}
-
-/// Environment variables that are safe to forward to a remote node.
-const SAFE_ENV_ALLOWLIST: &[&str] = &["TERM", "LANG", "COLORTERM", "NO_COLOR", "FORCE_COLOR"];
-
-/// Environment variable prefixes that are safe to forward.
-const SAFE_ENV_PREFIX_ALLOWLIST: &[&str] = &["LC_"];
-
-/// Environment variable patterns that must NEVER be forwarded to a remote node.
-const BLOCKED_ENV_PREFIXES: &[&str] = &[
-    "DYLD_",
-    "LD_",
-    "NODE_OPTIONS",
-    "PYTHON",
-    "PERL",
-    "RUBYOPT",
-    "SHELLOPTS",
-    "PS4",
-    // Security-sensitive keys
-    "MOLTIS_",
-    "OPENAI_",
-    "ANTHROPIC_",
-    "AWS_",
-    "GOOGLE_",
-    "AZURE_",
-];
-
-const SSH_ID_PREFIX: &str = "ssh:";
-const SSH_TARGET_ID_PREFIX: &str = "ssh:target:";
+// Re-export core node execution types from the dedicated crate.
+pub use moltis_node_exec_types::{
+    BLOCKED_ENV_PREFIXES, NodeExecResult, SAFE_ENV_ALLOWLIST, SAFE_ENV_PREFIX_ALLOWLIST,
+    SSH_ID_PREFIX, SSH_TARGET_ID_PREFIX,
+};
 
 pub(crate) fn ssh_node_id(target: &str) -> String {
     format!("{SSH_ID_PREFIX}{target}")
