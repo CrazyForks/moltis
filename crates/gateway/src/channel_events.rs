@@ -111,6 +111,32 @@ fn parse_numbered_selection(arg: &str, command_name: &str) -> ChannelResult<usiz
         .map_err(|_| ChannelError::invalid_input(format!("usage: /{command_name} [number]")))
 }
 
+/// Check whether `sender_id` is on the channel account's DM allowlist.
+///
+/// The DM allowlist is the source of truth for privileged command access:
+/// anyone allowed to DM the bot is trusted to run commands like `/approve`
+/// and `/deny` from any context (DM or group). Users not on the allowlist
+/// can still chat (if group policy permits) but cannot run privileged
+/// commands.
+///
+/// Returns `false` when the allowlist is empty (open DM policy) because an
+/// open policy means no one has been explicitly authorized.
+async fn is_sender_on_allowlist(
+    state: &Arc<GatewayState>,
+    account_id: &str,
+    sender_id: &str,
+) -> bool {
+    let Some(ref registry) = state.services.channel_registry else {
+        return false;
+    };
+    let Some(config) = registry.account_config(account_id).await else {
+        return false;
+    };
+    let allowlist = config.allowlist();
+    // Empty allowlist = open policy → no explicit authorization.
+    !allowlist.is_empty() && moltis_channels::gating::is_allowed(sender_id, allowlist)
+}
+
 fn is_attachable_session(entry: &SessionEntry) -> bool {
     !entry.archived && !entry.key.starts_with("cron:")
 }
@@ -1463,7 +1489,7 @@ impl ChannelEventSink for GatewayChannelEventSink {
             },
             "attach" => {
                 let sessions: Vec<_> = session_metadata
-                    .list()
+                    .list_account_sessions(reply_to.channel_type.as_str(), &reply_to.account_id)
                     .await
                     .into_iter()
                     .filter(is_attachable_session)
@@ -1544,6 +1570,15 @@ impl ChannelEventSink for GatewayChannelEventSink {
                 }
             },
             "approve" | "deny" => {
+                let authorized = match sender_id {
+                    Some(sid) => is_sender_on_allowlist(state, &reply_to.account_id, sid).await,
+                    None => false,
+                };
+                if !authorized {
+                    return Err(ChannelError::invalid_input(
+                        "You are not authorized to manage approvals. Only users on this bot's allowlist can use /approve and /deny.",
+                    ));
+                }
                 if args.is_empty() {
                     return Err(ChannelError::invalid_input(format!(
                         "usage: /{cmd} [number]"

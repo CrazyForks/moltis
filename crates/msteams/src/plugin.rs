@@ -470,8 +470,10 @@ impl MsTeamsPlugin {
             } else {
                 ChannelMessageKind::Text
             }),
-            model: config.model.clone(),
-            agent_id: None,
+            model: config.resolve_model(&chat_id, &peer_id).map(String::from),
+            agent_id: config
+                .resolve_agent_id(&chat_id, &peer_id)
+                .map(String::from),
             audio_filename: None,
         };
 

@@ -1,6 +1,6 @@
 //! Live approval service and broadcaster for the gateway.
 
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 use {
     async_trait::async_trait,
@@ -132,9 +132,9 @@ impl GatewayApprovalBroadcaster {
             return Ok(());
         };
 
+        let preview = truncate_command_preview(command, MAX_COMMAND_PREVIEW_LEN);
         let message = format!(
-            "Approval needed for `{}`.\nUse /approvals to see the numbered list, then /approve N or /deny N. The web UI still works too.",
-            command
+            "Approval needed for `{preview}`.\nUse /approvals to see the numbered list, then /approve N or /deny N. The web UI still works too.",
         );
         outbound
             .send_text(&target.account_id, &target.outbound_to(), &message, None)
@@ -166,6 +166,18 @@ impl ApprovalBroadcaster for GatewayApprovalBroadcaster {
             warn!(%error, session_key, request_id, "failed to notify originating channel about approval");
         }
         Ok(())
+    }
+}
+
+/// Truncate a command string for safe display in channel notifications.
+/// Prevents leaking full command text (which may contain secrets) to group chats.
+const MAX_COMMAND_PREVIEW_LEN: usize = 80;
+
+fn truncate_command_preview(command: &str, max_len: usize) -> Cow<'_, str> {
+    if command.len() <= max_len {
+        Cow::Borrowed(command)
+    } else {
+        Cow::Owned(format!("{}…", &command[..max_len]))
     }
 }
 
@@ -297,5 +309,26 @@ mod tests {
         };
 
         assert!(channel_reply_target_for_entry(&entry).is_none());
+    }
+
+    #[test]
+    fn truncate_command_preview_short_command_unchanged() {
+        let short = "git status";
+        assert_eq!(truncate_command_preview(short, 80).as_ref(), short);
+    }
+
+    #[test]
+    fn truncate_command_preview_long_command_truncated() {
+        let long = "a]".repeat(50); // 100 chars
+        let preview = truncate_command_preview(&long, 80);
+        assert!(preview.ends_with('…'));
+        // 80 chars of content + 3 bytes for '…'
+        assert_eq!(preview.len(), 83);
+    }
+
+    #[test]
+    fn truncate_command_preview_exact_length_unchanged() {
+        let exact = "a".repeat(80);
+        assert_eq!(truncate_command_preview(&exact, 80).as_ref(), exact);
     }
 }
