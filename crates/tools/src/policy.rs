@@ -278,6 +278,11 @@ mod tests {
         assert!(minimal.is_allowed("exec"));
         assert!(!minimal.is_allowed("browser"));
 
+        let coding = profile_tools("coding");
+        assert!(coding.is_allowed("exec"));
+        assert!(!coding.is_allowed("Read"));
+        assert!(!coding.is_allowed("Write"));
+
         let full = profile_tools("full");
         assert!(full.is_allowed("anything"));
     }

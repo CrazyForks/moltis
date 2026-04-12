@@ -18,6 +18,9 @@ use {
     moltis_tools::sandbox::SandboxRouter,
 };
 
+#[cfg(feature = "fs-tools")]
+use moltis_tools::fs::FsState;
+
 use crate::{
     agent_persona::AgentPersonaStore,
     services::{ServiceError, ServiceResult, SessionService, TtsService},
@@ -831,6 +834,8 @@ pub struct LiveSessionService {
     hook_registry: Option<Arc<HookRegistry>>,
     state_store: Option<Arc<SessionStateStore>>,
     browser_service: Option<Arc<dyn crate::services::BrowserService>>,
+    #[cfg(feature = "fs-tools")]
+    fs_state: Option<FsState>,
 }
 
 impl LiveSessionService {
@@ -846,6 +851,8 @@ impl LiveSessionService {
             hook_registry: None,
             state_store: None,
             browser_service: None,
+            #[cfg(feature = "fs-tools")]
+            fs_state: None,
         }
     }
 
@@ -889,6 +896,12 @@ impl LiveSessionService {
         browser: Arc<dyn crate::services::BrowserService>,
     ) -> Self {
         self.browser_service = Some(browser);
+        self
+    }
+
+    #[cfg(feature = "fs-tools")]
+    pub fn with_fs_state(mut self, fs_state: FsState) -> Self {
+        self.fs_state = Some(fs_state);
         self
     }
 
@@ -1642,6 +1655,14 @@ impl SessionService for LiveSessionService {
             && let Err(e) = state_store.delete_session(key).await
         {
             tracing::warn!("session state cleanup for {key}: {e}");
+        }
+
+        #[cfg(feature = "fs-tools")]
+        if let Some(ref fs_state) = self.fs_state {
+            let mut guard = fs_state
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            guard.remove_session(key);
         }
 
         self.metadata.remove(key).await;
@@ -3036,5 +3057,40 @@ mod tests {
             content.contains("cleared"),
             "notification should mention cleared"
         );
+    }
+
+    #[cfg(feature = "fs-tools")]
+    #[tokio::test]
+    async fn delete_clears_fs_state_for_session() {
+        use std::path::{Path, PathBuf};
+
+        let dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(SessionStore::new(dir.path().to_path_buf()));
+        let pool = sqlite_pool().await;
+        let metadata = Arc::new(SqliteSessionMetadata::new(pool));
+        metadata
+            .upsert("side", Some("Test".to_string()))
+            .await
+            .unwrap();
+
+        let fs_state = moltis_tools::fs::new_fs_state(false);
+        {
+            let mut guard = fs_state
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let _ = guard.record_read("side", PathBuf::from("/tmp/demo.txt"), 0, 25, None);
+            assert!(guard.has_been_read("side", Path::new("/tmp/demo.txt")));
+        }
+
+        let svc = LiveSessionService::new(Arc::clone(&store), Arc::clone(&metadata))
+            .with_fs_state(Arc::clone(&fs_state));
+
+        let result = svc.delete(serde_json::json!({ "key": "side" })).await;
+        assert!(result.is_ok());
+
+        let guard = fs_state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        assert!(!guard.has_been_read("side", Path::new("/tmp/demo.txt")));
     }
 }

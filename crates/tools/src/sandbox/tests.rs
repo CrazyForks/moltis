@@ -2,6 +2,7 @@
 
 use std::{
     collections::HashMap,
+    env,
     path::PathBuf,
     sync::{
         Arc, Mutex,
@@ -16,6 +17,10 @@ use {
     crate::{
         error::{Error, Result},
         exec::{ExecOpts, ExecResult},
+        sandbox::file_system::{
+            SandboxReadResult, oci_container_list_files, oci_container_read_file,
+            oci_container_write_file,
+        },
     },
 };
 
@@ -37,6 +42,129 @@ fn set_test_container_mount_override(cli: &str, reference: &str, mounts: Vec<Con
         .lock()
         .unwrap_or_else(|error| error.into_inner())
         .insert(test_container_mount_override_key(cli, reference), mounts);
+}
+
+const OCI_RUNTIME_E2E_ENV: &str = "MOLTIS_SANDBOX_RUNTIME_E2E";
+const OCI_RUNTIME_E2E_IMAGE: &str = "alpine:3.21";
+
+fn runtime_container_e2e_enabled(cli: &str) -> bool {
+    let requested = env::var(OCI_RUNTIME_E2E_ENV)
+        .map(|value| {
+            let normalized = value.trim().to_ascii_lowercase();
+            matches!(normalized.as_str(), "1" | "true" | "yes")
+        })
+        .unwrap_or(false);
+    if !requested || !is_cli_available(cli) {
+        return false;
+    }
+    std::process::Command::new(cli)
+        .arg("info")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
+struct RuntimeContainerGuard {
+    cli: String,
+    name: String,
+}
+
+impl RuntimeContainerGuard {
+    async fn start(cli: &str) -> Result<Self> {
+        let name = format!("moltis-runtime-e2e-{}", uuid::Uuid::new_v4().simple());
+        let output = tokio::process::Command::new(cli)
+            .args([
+                "run",
+                "-d",
+                "--rm",
+                "--name",
+                &name,
+                OCI_RUNTIME_E2E_IMAGE,
+                "sleep",
+                "600",
+            ])
+            .output()
+            .await?;
+        if !output.status.success() {
+            return Err(Error::message(format!(
+                "{cli} run failed for runtime e2e container '{name}': {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            )));
+        }
+        Ok(Self {
+            cli: cli.to_string(),
+            name,
+        })
+    }
+
+    async fn exec(&self, command: &str) -> Result<String> {
+        let output = tokio::process::Command::new(&self.cli)
+            .args(["exec", &self.name, "sh", "-c", command])
+            .output()
+            .await?;
+        if !output.status.success() {
+            return Err(Error::message(format!(
+                "{} exec failed in runtime e2e container '{}': {}",
+                self.cli,
+                self.name,
+                String::from_utf8_lossy(&output.stderr).trim()
+            )));
+        }
+        Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    }
+}
+
+impl Drop for RuntimeContainerGuard {
+    fn drop(&mut self) {
+        let _ = std::process::Command::new(&self.cli)
+            .args(["rm", "-f", &self.name])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+    }
+}
+
+async fn assert_runtime_oci_file_transfers(cli: &str) -> Result<()> {
+    let container = RuntimeContainerGuard::start(cli).await?;
+    container
+        .exec(
+            "mkdir -p /tmp/moltis-e2e/list && \
+             printf 'hello runtime\\n' > /tmp/moltis-e2e/read.txt && \
+             printf 'alpha\\n' > /tmp/moltis-e2e/list/a.txt && \
+             printf 'beta\\n' > /tmp/moltis-e2e/list/b.txt",
+        )
+        .await?;
+
+    let read_result =
+        oci_container_read_file(cli, &container.name, "/tmp/moltis-e2e/read.txt", 1024).await?;
+    match read_result {
+        SandboxReadResult::Ok(bytes) => assert_eq!(bytes, b"hello runtime\n"),
+        other => panic!("expected Ok from runtime OCI read, got {other:?}"),
+    }
+
+    assert!(
+        oci_container_write_file(
+            cli,
+            &container.name,
+            "/tmp/moltis-e2e/write.txt",
+            b"written from host"
+        )
+        .await?
+        .is_none()
+    );
+    let written = container.exec("cat /tmp/moltis-e2e/write.txt").await?;
+    assert_eq!(written, "written from host");
+
+    let files = oci_container_list_files(cli, &container.name, "/tmp/moltis-e2e/list").await?;
+    assert_eq!(files.files, vec![
+        "/tmp/moltis-e2e/list/a.txt".to_string(),
+        "/tmp/moltis-e2e/list/b.txt".to_string(),
+    ]);
+    assert!(!files.truncated);
+
+    Ok(())
 }
 
 #[test]
@@ -618,6 +746,141 @@ fn test_docker_home_persistence_args_session_uses_host_data_dir_override() {
 }
 
 #[test]
+fn test_resolve_workspace_guest_path_on_host_uses_host_override() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let host_data_dir = temp_dir.path().join("moltis-data");
+    let config = SandboxConfig {
+        workspace_mount: WorkspaceMount::Rw,
+        host_data_dir: Some(host_data_dir.clone()),
+        ..Default::default()
+    };
+    let guest_file = moltis_config::data_dir().join("notes/todo.txt");
+
+    let resolved =
+        resolve_workspace_guest_path_on_host(&config, Some("docker"), &guest_file).unwrap();
+
+    assert_eq!(resolved, host_data_dir.join("notes/todo.txt"));
+}
+
+#[test]
+fn test_resolve_home_persistence_guest_path_on_host_uses_session_mount() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let host_data_dir = temp_dir.path().join("moltis-data");
+    let config = SandboxConfig {
+        home_persistence: HomePersistence::Session,
+        host_data_dir: Some(host_data_dir.clone()),
+        ..Default::default()
+    };
+    let id = SandboxId {
+        scope: SandboxScope::Session,
+        key: "sess-1".into(),
+    };
+    let guest_file = guest_visible_sandbox_home_persistence_host_dir(&config, &id)
+        .unwrap()
+        .join("history.txt");
+
+    let resolved =
+        resolve_home_persistence_guest_path_on_host(&config, Some("docker"), &id, &guest_file)
+            .unwrap();
+
+    assert_eq!(
+        resolved,
+        host_data_dir.join("sandbox/home/session/sess-1/history.txt")
+    );
+}
+
+#[tokio::test]
+async fn test_docker_read_file_uses_mounted_workspace_path() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let host_data_dir = temp_dir.path().join("moltis-data");
+    let host_file = host_data_dir.join("notes/todo.txt");
+    std::fs::create_dir_all(host_file.parent().unwrap()).unwrap();
+    std::fs::write(&host_file, "docker mounted read").unwrap();
+
+    let docker = DockerSandbox::new(SandboxConfig {
+        workspace_mount: WorkspaceMount::Rw,
+        host_data_dir: Some(host_data_dir),
+        ..Default::default()
+    });
+    let id = SandboxId {
+        scope: SandboxScope::Session,
+        key: "test-docker-read".into(),
+    };
+    let guest_file = moltis_config::data_dir().join("notes/todo.txt");
+
+    let result = docker
+        .read_file(&id, &guest_file.display().to_string(), 1024)
+        .await
+        .unwrap();
+    match result {
+        SandboxReadResult::Ok(bytes) => assert_eq!(bytes, b"docker mounted read"),
+        other => panic!("expected Ok, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn test_docker_write_file_uses_mounted_workspace_path() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let host_data_dir = temp_dir.path().join("moltis-data");
+    let docker = DockerSandbox::new(SandboxConfig {
+        workspace_mount: WorkspaceMount::Rw,
+        host_data_dir: Some(host_data_dir.clone()),
+        ..Default::default()
+    });
+    let id = SandboxId {
+        scope: SandboxScope::Session,
+        key: "test-docker-write".into(),
+    };
+    let guest_file = moltis_config::data_dir().join("notes/todo.txt");
+    std::fs::create_dir_all(host_data_dir.join("notes")).unwrap();
+
+    let result = docker
+        .write_file(
+            &id,
+            &guest_file.display().to_string(),
+            b"docker mounted write",
+        )
+        .await
+        .unwrap();
+    assert!(result.is_none());
+    assert_eq!(
+        std::fs::read_to_string(host_data_dir.join("notes/todo.txt")).unwrap(),
+        "docker mounted write"
+    );
+}
+
+#[tokio::test]
+async fn test_docker_list_files_remaps_mounted_workspace_paths() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let host_data_dir = temp_dir.path().join("moltis-data");
+    let host_root = host_data_dir.join("notes");
+    std::fs::create_dir_all(host_root.join("nested")).unwrap();
+    std::fs::write(host_root.join("todo.txt"), "a").unwrap();
+    std::fs::write(host_root.join("nested/done.txt"), "b").unwrap();
+
+    let docker = DockerSandbox::new(SandboxConfig {
+        workspace_mount: WorkspaceMount::Rw,
+        host_data_dir: Some(host_data_dir),
+        ..Default::default()
+    });
+    let id = SandboxId {
+        scope: SandboxScope::Session,
+        key: "test-docker-list".into(),
+    };
+    let guest_root = moltis_config::data_dir().join("notes");
+
+    let files = docker
+        .list_files(&id, &guest_root.display().to_string())
+        .await
+        .unwrap();
+    assert_eq!(files.files, vec![
+        guest_root.join("nested/done.txt").display().to_string(),
+        guest_root.join("todo.txt").display().to_string(),
+    ]);
+    assert!(!files.truncated);
+}
+
+#[test]
 fn test_create_sandbox_off_uses_no_sandbox() {
     let config = SandboxConfig {
         mode: SandboxMode::Off,
@@ -648,6 +911,206 @@ async fn test_no_sandbox_exec() {
     let result = sandbox.exec(&id, "echo sandbox-test", &opts).await.unwrap();
     assert_eq!(result.stdout.trim(), "sandbox-test");
     assert_eq!(result.exit_code, 0);
+}
+
+#[cfg(target_os = "macos")]
+#[tokio::test]
+async fn test_apple_container_home_read_uses_mounted_host_path() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let host_data_dir = temp_dir.path().join("moltis-data");
+    let config = SandboxConfig {
+        home_persistence: HomePersistence::Session,
+        host_data_dir: Some(host_data_dir.clone()),
+        ..Default::default()
+    };
+    let sandbox = AppleContainerSandbox::new(config.clone());
+    let id = SandboxId {
+        scope: SandboxScope::Session,
+        key: "apple-home-read".into(),
+    };
+    let guest_file = guest_visible_sandbox_home_persistence_host_dir(&config, &id)
+        .unwrap()
+        .join("history.txt");
+    let host_file = sandbox_home_persistence_host_dir(&config, Some("container"), &id)
+        .unwrap()
+        .join("history.txt");
+    std::fs::create_dir_all(host_file.parent().unwrap()).unwrap();
+    std::fs::write(&host_file, "apple mounted read").unwrap();
+
+    let result = sandbox
+        .read_file(&id, &guest_file.display().to_string(), 1024)
+        .await
+        .unwrap();
+    match result {
+        SandboxReadResult::Ok(bytes) => assert_eq!(bytes, b"apple mounted read"),
+        other => panic!("expected Ok, got {other:?}"),
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[tokio::test]
+async fn test_apple_container_home_write_uses_mounted_host_path() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let host_data_dir = temp_dir.path().join("moltis-data");
+    let config = SandboxConfig {
+        home_persistence: HomePersistence::Session,
+        host_data_dir: Some(host_data_dir.clone()),
+        ..Default::default()
+    };
+    let sandbox = AppleContainerSandbox::new(config.clone());
+    let id = SandboxId {
+        scope: SandboxScope::Session,
+        key: "apple-home-write".into(),
+    };
+    let guest_file = guest_visible_sandbox_home_persistence_host_dir(&config, &id)
+        .unwrap()
+        .join("history.txt");
+    let host_file = sandbox_home_persistence_host_dir(&config, Some("container"), &id)
+        .unwrap()
+        .join("history.txt");
+    std::fs::create_dir_all(host_file.parent().unwrap()).unwrap();
+
+    let result = sandbox
+        .write_file(
+            &id,
+            &guest_file.display().to_string(),
+            b"apple mounted write",
+        )
+        .await
+        .unwrap();
+    assert!(result.is_none());
+    assert_eq!(
+        std::fs::read_to_string(host_file).unwrap(),
+        "apple mounted write"
+    );
+}
+
+#[cfg(target_os = "macos")]
+#[tokio::test]
+async fn test_apple_container_home_list_remaps_mounted_host_paths() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let host_data_dir = temp_dir.path().join("moltis-data");
+    let config = SandboxConfig {
+        home_persistence: HomePersistence::Session,
+        host_data_dir: Some(host_data_dir.clone()),
+        ..Default::default()
+    };
+    let sandbox = AppleContainerSandbox::new(config.clone());
+    let id = SandboxId {
+        scope: SandboxScope::Session,
+        key: "apple-home-list".into(),
+    };
+    let guest_root = guest_visible_sandbox_home_persistence_host_dir(&config, &id)
+        .unwrap()
+        .join("notes");
+    let host_root = sandbox_home_persistence_host_dir(&config, Some("container"), &id)
+        .unwrap()
+        .join("notes");
+    std::fs::create_dir_all(host_root.join("nested")).unwrap();
+    std::fs::write(host_root.join("todo.txt"), "a").unwrap();
+    std::fs::write(host_root.join("nested/done.txt"), "b").unwrap();
+
+    let files = sandbox
+        .list_files(&id, &guest_root.display().to_string())
+        .await
+        .unwrap();
+    assert_eq!(files.files, vec![
+        guest_root.join("nested/done.txt").display().to_string(),
+        guest_root.join("todo.txt").display().to_string(),
+    ]);
+    assert!(!files.truncated);
+}
+
+#[tokio::test]
+async fn test_no_sandbox_read_file_native() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("note.txt");
+    std::fs::write(&file, "native read").unwrap();
+
+    let sandbox = NoSandbox;
+    let id = SandboxId {
+        scope: SandboxScope::Session,
+        key: "test-read".into(),
+    };
+
+    let result = sandbox
+        .read_file(&id, &file.display().to_string(), 1024)
+        .await
+        .unwrap();
+    match result {
+        SandboxReadResult::Ok(bytes) => assert_eq!(bytes, b"native read"),
+        other => panic!("expected Ok, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn test_no_sandbox_write_file_native() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("note.txt");
+
+    let sandbox = NoSandbox;
+    let id = SandboxId {
+        scope: SandboxScope::Session,
+        key: "test-write".into(),
+    };
+
+    let result = sandbox
+        .write_file(&id, &file.display().to_string(), b"native write")
+        .await
+        .unwrap();
+    assert!(result.is_none());
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "native write");
+}
+
+#[tokio::test]
+async fn test_no_sandbox_list_files_native() {
+    let dir = tempfile::tempdir().unwrap();
+    let nested = dir.path().join("nested");
+    std::fs::create_dir(&nested).unwrap();
+    let first = dir.path().join("a.txt");
+    let second = nested.join("b.txt");
+    std::fs::write(&first, "a").unwrap();
+    std::fs::write(&second, "b").unwrap();
+
+    let sandbox = NoSandbox;
+    let id = SandboxId {
+        scope: SandboxScope::Session,
+        key: "test-list".into(),
+    };
+
+    let files = sandbox
+        .list_files(&id, &dir.path().display().to_string())
+        .await
+        .unwrap();
+    assert_eq!(files.files, vec![
+        first.display().to_string(),
+        second.display().to_string(),
+    ]);
+    assert!(!files.truncated);
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn test_no_sandbox_write_file_rejects_symlink_native() {
+    let dir = tempfile::tempdir().unwrap();
+    let real = dir.path().join("real.txt");
+    let link = dir.path().join("link.txt");
+    std::fs::write(&real, "original").unwrap();
+    std::os::unix::fs::symlink(&real, &link).unwrap();
+
+    let sandbox = NoSandbox;
+    let id = SandboxId {
+        scope: SandboxScope::Session,
+        key: "test-symlink".into(),
+    };
+
+    let result = sandbox
+        .write_file(&id, &link.display().to_string(), b"nope")
+        .await
+        .unwrap();
+    let payload = result.expect("expected typed payload");
+    assert_eq!(payload["kind"], "path_denied");
+    assert_eq!(std::fs::read_to_string(&real).unwrap(), "original");
 }
 
 #[test]
@@ -1142,6 +1605,32 @@ fn test_select_backend_explicit_choices() {
         let backend = select_backend(config);
         assert_eq!(backend.backend_name(), "apple-container");
     }
+}
+
+#[tokio::test]
+async fn test_runtime_oci_file_transfers_with_docker() {
+    if !runtime_container_e2e_enabled("docker") {
+        eprintln!(
+            "skipping Docker OCI runtime e2e test, set {}=1 and ensure docker is available",
+            OCI_RUNTIME_E2E_ENV
+        );
+        return;
+    }
+
+    assert_runtime_oci_file_transfers("docker").await.unwrap();
+}
+
+#[tokio::test]
+async fn test_runtime_oci_file_transfers_with_podman() {
+    if !runtime_container_e2e_enabled("podman") {
+        eprintln!(
+            "skipping Podman OCI runtime e2e test, set {}=1 and ensure podman is available",
+            OCI_RUNTIME_E2E_ENV
+        );
+        return;
+    }
+
+    assert_runtime_oci_file_transfers("podman").await.unwrap();
 }
 
 #[test]
@@ -1990,6 +2479,98 @@ mod restricted_host_tests {
             .unwrap();
         assert_eq!(result.exit_code, 0);
         assert_eq!(result.stdout.trim(), "hello");
+    }
+
+    #[tokio::test]
+    async fn test_restricted_host_sandbox_read_file_native() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("note.txt");
+        std::fs::write(&file, "restricted read").unwrap();
+
+        let sandbox = RestrictedHostSandbox::new(SandboxConfig::default());
+        let id = SandboxId {
+            scope: SandboxScope::Session,
+            key: "test-rh-read".into(),
+        };
+
+        let result = sandbox
+            .read_file(&id, &file.display().to_string(), 1024)
+            .await
+            .unwrap();
+        match result {
+            SandboxReadResult::Ok(bytes) => assert_eq!(bytes, b"restricted read"),
+            other => panic!("expected Ok, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_restricted_host_sandbox_write_file_native() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("note.txt");
+
+        let sandbox = RestrictedHostSandbox::new(SandboxConfig::default());
+        let id = SandboxId {
+            scope: SandboxScope::Session,
+            key: "test-rh-write".into(),
+        };
+
+        let result = sandbox
+            .write_file(&id, &file.display().to_string(), b"restricted write")
+            .await
+            .unwrap();
+        assert!(result.is_none());
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "restricted write");
+    }
+
+    #[tokio::test]
+    async fn test_restricted_host_sandbox_list_files_native() {
+        let dir = tempfile::tempdir().unwrap();
+        let nested = dir.path().join("nested");
+        std::fs::create_dir(&nested).unwrap();
+        let first = dir.path().join("a.txt");
+        let second = nested.join("b.txt");
+        std::fs::write(&first, "a").unwrap();
+        std::fs::write(&second, "b").unwrap();
+
+        let sandbox = RestrictedHostSandbox::new(SandboxConfig::default());
+        let id = SandboxId {
+            scope: SandboxScope::Session,
+            key: "test-rh-list".into(),
+        };
+
+        let files = sandbox
+            .list_files(&id, &dir.path().display().to_string())
+            .await
+            .unwrap();
+        assert_eq!(files.files, vec![
+            first.display().to_string(),
+            second.display().to_string(),
+        ]);
+        assert!(!files.truncated);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_restricted_host_sandbox_write_rejects_symlink_native() {
+        let dir = tempfile::tempdir().unwrap();
+        let real = dir.path().join("real.txt");
+        let link = dir.path().join("link.txt");
+        std::fs::write(&real, "original").unwrap();
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+
+        let sandbox = RestrictedHostSandbox::new(SandboxConfig::default());
+        let id = SandboxId {
+            scope: SandboxScope::Session,
+            key: "test-rh-symlink".into(),
+        };
+
+        let result = sandbox
+            .write_file(&id, &link.display().to_string(), b"nope")
+            .await
+            .unwrap();
+        let payload = result.expect("expected typed payload");
+        assert_eq!(payload["kind"], "path_denied");
+        assert_eq!(std::fs::read_to_string(&real).unwrap(), "original");
     }
 
     #[tokio::test]

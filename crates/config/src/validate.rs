@@ -281,6 +281,22 @@ fn build_schema_map() -> KnownKeys {
                 ])),
             ),
             ("maps", Struct(HashMap::from([("provider", Leaf)]))),
+            (
+                "fs",
+                Struct(HashMap::from([
+                    ("workspace_root", Leaf),
+                    ("allow_paths", Array(Box::new(Leaf))),
+                    ("deny_paths", Array(Box::new(Leaf))),
+                    ("track_reads", Leaf),
+                    ("must_read_before_write", Leaf),
+                    ("require_approval", Leaf),
+                    ("max_read_bytes", Leaf),
+                    ("binary_policy", Leaf),
+                    ("respect_gitignore", Leaf),
+                    ("checkpoint_before_mutation", Leaf),
+                    ("context_window_tokens", Leaf),
+                ])),
+            ),
             ("agent_timeout_secs", Leaf),
             ("agent_max_iterations", Leaf),
             ("agent_max_auto_continues", Leaf),
@@ -1147,6 +1163,54 @@ fn check_semantic_warnings(config: &MoltisConfig, diagnostics: &mut Vec<Diagnost
             path: "tools.exec.sandbox.mode".into(),
             message: "sandbox mode is disabled — commands run without isolation".into(),
         });
+    }
+
+    // tools.fs: must_read_before_write requires track_reads
+    if config.tools.fs.must_read_before_write && !config.tools.fs.track_reads {
+        diagnostics.push(Diagnostic {
+            severity: Severity::Error,
+            category: "invalid-value",
+            path: "tools.fs".into(),
+            message: "must_read_before_write=true requires track_reads=true".into(),
+        });
+    }
+
+    // tools.fs.workspace_root must be absolute when set
+    if let Some(ref root) = config.tools.fs.workspace_root
+        && !Path::new(root).is_absolute()
+    {
+        diagnostics.push(Diagnostic {
+            severity: Severity::Error,
+            category: "invalid-value",
+            path: "tools.fs.workspace_root".into(),
+            message: format!("workspace_root must be an absolute path (got '{root}')"),
+        });
+    }
+
+    // tools.fs.allow_paths / deny_paths entries should be absolute
+    for (idx, entry) in config.tools.fs.allow_paths.iter().enumerate() {
+        if !entry.starts_with('/') && !entry.starts_with("**") {
+            diagnostics.push(Diagnostic {
+                severity: Severity::Warning,
+                category: "invalid-value",
+                path: format!("tools.fs.allow_paths[{idx}]"),
+                message: format!(
+                    "allow_paths entries should be absolute path globs starting with '/' (got '{entry}')"
+                ),
+            });
+        }
+    }
+    for (idx, entry) in config.tools.fs.deny_paths.iter().enumerate() {
+        if !entry.starts_with('/') && !entry.starts_with("**") {
+            diagnostics.push(Diagnostic {
+                severity: Severity::Warning,
+                category: "invalid-value",
+                path: format!("tools.fs.deny_paths[{idx}]"),
+                message: format!(
+                    "deny_paths entries should be absolute path globs starting with '/' (got '{entry}')"
+                ),
+            });
+        }
     }
 
     // upstream_proxy: must be a valid URL with a supported scheme.

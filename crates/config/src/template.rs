@@ -320,6 +320,61 @@ provider = "google_maps"          # Map provider used by show_map:
                                   #   "apple_maps"
                                   #   "openstreetmap"
 
+# ── Native filesystem tools (Read/Write/Edit/MultiEdit/Glob/Grep) ─────────────
+# All fields are optional. Defaults are conservative — the fs tools work
+# out of the box with no configuration.
+
+[tools.fs]
+# workspace_root = "/home/user/projects/my-app"
+                                  # Absolute path used as the default search root
+                                  # for Glob/Grep when the LLM call omits `path`.
+                                  # Unset → calls without an explicit `path` are
+                                  # rejected with a clear error.
+allow_paths = []                  # Absolute path globs the fs tools are allowed
+                                  # to access. Empty = no allowlist (all paths OK).
+                                  # Evaluated after canonicalization so symlinks
+                                  # can't escape the list.
+                                  # Example: ["/data/home/*", "/srv/workspace/**"]
+deny_paths = []                   # Absolute path globs the fs tools must refuse.
+                                  # Deny wins over allow. Also evaluated after
+                                  # canonicalization. Example:
+                                  #   ["/data/secrets/**", "**/.env*", "/etc/**"]
+track_reads = false               # Record per-session Read history for loop
+                                  # detection and the must_read_before_write
+                                  # invariant. Cheap in-memory map keyed by
+                                  # session_key.
+must_read_before_write = false    # Refuse Write/Edit/MultiEdit calls targeting
+                                  # files the session has not previously Read.
+                                  # Requires track_reads = true. Returns a typed
+                                  # must_read_before_write payload the LLM can
+                                  # branch on.
+require_approval = true           # When true, Write/Edit/MultiEdit pause for
+                                  # explicit operator approval before mutating.
+                                  # Uses the existing approval queue and will
+                                  # time out if nobody approves the request.
+max_read_bytes = 10485760         # Maximum bytes a single Read can return before
+                                  # the file is rejected with a typed "too_large"
+                                  # payload (10 MB).
+binary_policy = "reject"          # How to handle binary files in Read:
+                                  #   "reject" — return typed binary marker (default)
+                                  #   "base64" — return base64-encoded bytes in the
+                                  #              payload (still capped by max_read_bytes)
+respect_gitignore = true          # When true (default), Glob and Grep skip files
+                                  # ignored by .gitignore / .ignore / .git/info/exclude
+                                  # while walking. Set false to include ignored files.
+checkpoint_before_mutation = false  # When true, Write/Edit/MultiEdit call the
+                                  # existing CheckpointManager to snapshot the target
+                                  # file before mutating, so the LLM (or operator) can
+                                  # restore it later via `checkpoint_restore`. Default
+                                  # off because checkpoints grow with activity and
+                                  # size scales with file size.
+# context_window_tokens = 200000    # Model context window in tokens. When set, Read's
+                                  # per-call byte cap scales adaptively so a single
+                                  # Read uses at most ~20% of the model's working set
+                                  # (clamped to [50 KB, 512 KB]). Unset → fixed 256 KB.
+                                  # Typical values: 200000 for Claude Sonnet, 1000000
+                                  # for Claude Opus 4.6 1M, 128000 for GPT-4 Turbo.
+
 # ── Command Execution ─────────────────────────────────────────────────────────
 
 [tools.exec]
