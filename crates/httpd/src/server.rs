@@ -454,6 +454,7 @@ fn build_gateway_base_internal(
             credential_store: Arc::clone(cred_store),
             webauthn_registry: webauthn_registry.clone(),
             gateway_state: Arc::clone(&state),
+            login_guard: crate::login_guard::LoginGuard::new(),
         };
         router = router.nest("/api/auth", auth_router().with_state(auth_state));
     }
@@ -556,6 +557,7 @@ fn build_gateway_base_internal(
             credential_store: Arc::clone(cred_store),
             webauthn_registry: webauthn_registry.clone(),
             gateway_state: Arc::clone(&state),
+            login_guard: crate::login_guard::LoginGuard::new(),
         };
         router = router.nest("/api/auth", auth_router().with_state(auth_state));
     }

@@ -19,6 +19,7 @@ use moltis_gateway::{
 
 use crate::{
     auth_middleware::{AuthResult, AuthSession, SESSION_COOKIE, check_auth},
+    login_guard::LoginGuard,
     server::is_local_connection,
 };
 
@@ -28,6 +29,7 @@ pub struct AuthState {
     pub credential_store: Arc<CredentialStore>,
     pub webauthn_registry: Option<SharedWebAuthnRegistry>,
     pub gateway_state: Arc<GatewayState>,
+    pub login_guard: LoginGuard,
 }
 
 impl axum::extract::FromRef<AuthState> for Arc<CredentialStore> {
@@ -95,6 +97,37 @@ fn vault_routes() -> axum::Router<AuthState> {
 #[cfg(not(feature = "vault"))]
 fn vault_routes() -> axum::Router<AuthState> {
     axum::Router::new()
+}
+
+// ── Brute-force block response ────────────────────────────────────────────────
+
+fn blocked_response(reason: crate::login_guard::BlockReason) -> axum::response::Response {
+    use crate::login_guard::BlockReason;
+    let (message, retry_after) = match reason {
+        BlockReason::IpBanned { retry_after } => (
+            "too many failed attempts from this address — try again later",
+            retry_after,
+        ),
+        BlockReason::AccountLocked { retry_after } => (
+            "account temporarily locked due to suspicious activity — try again later",
+            retry_after,
+        ),
+    };
+    let retry_secs = retry_after.as_secs().max(1);
+    let mut resp = (
+        StatusCode::TOO_MANY_REQUESTS,
+        Json(serde_json::json!({
+            "code": "LOGIN_BLOCKED",
+            "error": message,
+            "retry_after_seconds": retry_secs,
+        })),
+    )
+        .into_response();
+    if let Ok(val) = retry_secs.to_string().parse() {
+        resp.headers_mut()
+            .insert(axum::http::header::RETRY_AFTER, val);
+    }
+    resp
 }
 
 // ── Status ───────────────────────────────────────────────────────────────────
@@ -285,11 +318,24 @@ struct LoginRequest {
 
 async fn login_handler(
     State(state): State<AuthState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     headers: axum::http::HeaderMap,
     Json(body): Json<LoginRequest>,
 ) -> impl IntoResponse {
+    let client_ip = crate::request_throttle::resolve_client_ip(
+        &headers,
+        addr,
+        state.gateway_state.behind_proxy,
+    );
+    const PASSWORD_ACCOUNT: &str = "__password__";
+
+    if let Some(block) = state.login_guard.check(client_ip, PASSWORD_ACCOUNT) {
+        return blocked_response(block);
+    }
+
     match state.credential_store.verify_password(&body.password).await {
         Ok(true) => {
+            state.login_guard.record_success(client_ip);
             // Best-effort vault unseal on successful login.
             #[cfg(feature = "vault")]
             if let Some(ref vault) = state.gateway_state.vault {
@@ -315,7 +361,12 @@ async fn login_handler(
                     .into_response(),
             }
         },
-        Ok(false) => (StatusCode::UNAUTHORIZED, "invalid password").into_response(),
+        Ok(false) => {
+            state
+                .login_guard
+                .record_failure(client_ip, PASSWORD_ACCOUNT);
+            (StatusCode::UNAUTHORIZED, "invalid password").into_response()
+        },
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("auth error: {e}"),
@@ -802,10 +853,22 @@ struct PasskeyAuthFinishRequest {
 
 async fn passkey_auth_finish_handler(
     State(state): State<AuthState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Host(host): Host,
     headers: axum::http::HeaderMap,
     Json(body): Json<PasskeyAuthFinishRequest>,
 ) -> impl IntoResponse {
+    let client_ip = crate::request_throttle::resolve_client_ip(
+        &headers,
+        addr,
+        state.gateway_state.behind_proxy,
+    );
+    const PASSKEY_ACCOUNT: &str = "__passkey__";
+
+    if let Some(block) = state.login_guard.check(client_ip, PASSKEY_ACCOUNT) {
+        return blocked_response(block);
+    }
+
     let Some(ref registry) = state.webauthn_registry else {
         return (StatusCode::NOT_IMPLEMENTED, "passkeys not configured").into_response();
     };
@@ -818,14 +881,20 @@ async fn passkey_auth_finish_handler(
     };
 
     match wa.finish_authentication(&body.challenge_id, &body.credential) {
-        Ok(_result) => match state.credential_store.create_session().await {
-            Ok(token) => {
-                let bp = state.gateway_state.behind_proxy;
-                session_response(token, &headers, bp, state.gateway_state.tls_active || bp)
-            },
-            Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+        Ok(_result) => {
+            state.login_guard.record_success(client_ip);
+            match state.credential_store.create_session().await {
+                Ok(token) => {
+                    let bp = state.gateway_state.behind_proxy;
+                    session_response(token, &headers, bp, state.gateway_state.tls_active || bp)
+                },
+                Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+            }
         },
-        Err(e) => (StatusCode::UNAUTHORIZED, e.to_string()).into_response(),
+        Err(e) => {
+            state.login_guard.record_failure(client_ip, PASSKEY_ACCOUNT);
+            (StatusCode::UNAUTHORIZED, e.to_string()).into_response()
+        },
     }
 }
 
