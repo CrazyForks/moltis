@@ -26,6 +26,7 @@ default-members = [
   "crates/msteams",
   "crates/network-filter",
   "crates/node-host",
+  "crates/nostr",
   "crates/oauth",
   "crates/onboarding",
   "crates/openclaw-import",
@@ -36,8 +37,8 @@ default-members = [
   "crates/providers",
   "crates/qmd",
   "crates/routing",
-  "crates/service-traits",
   "crates/secret-store",
+  "crates/service-traits",
   "crates/sessions",
   "crates/skills",
   "crates/slack",
@@ -81,6 +82,7 @@ members = [
   "crates/metrics",
   "crates/msteams",
   "crates/node-host",
+  "crates/nostr",
   "crates/oauth",
   "crates/onboarding",
   "crates/openclaw-import",
@@ -92,8 +94,8 @@ members = [
   "crates/qmd",
   "crates/routing",
   "crates/schema-export",
-  "crates/service-traits",
   "crates/secret-store",
+  "crates/service-traits",
   "crates/sessions",
   "crates/skills",
   "crates/slack",
@@ -118,8 +120,8 @@ resolver = "2"
 # Widen libsqlite3-sys pin (0.30.1 → >=0.30.1,<0.36.0) so sqlx-sqlite 0.8.6
 # can coexist with matrix-sdk-sqlite's rusqlite 0.37 (libsqlite3-sys 0.35).
 # Remove once sqlx ≥ 0.9 ships stable.
+sqlx-core   = { git = "https://github.com/moltis-org/sqlx", rev = "33747ad2e2d0c7962c6450faf31591c4e0782c23" }
 sqlx-sqlite = { git = "https://github.com/moltis-org/sqlx", rev = "33747ad2e2d0c7962c6450faf31591c4e0782c23" }
-sqlx-core = { git = "https://github.com/moltis-org/sqlx", rev = "33747ad2e2d0c7962c6450faf31591c4e0782c23" }
 
 [workspace.lints.rust]
 unsafe_code           = "deny"
@@ -202,6 +204,7 @@ jsonwebtoken       = { features = ["aws_lc_rs"], version = "10" }
 llama-cpp-2        = "0.1"
 matrix-sdk         = { default-features = false, features = ["e2e-encryption", "markdown", "native-tls", "sqlite"], version = "0.16" }
 mockito            = "1.7"
+nostr-sdk          = { features = ["nip04"], version = "0.44" }
 open               = "5.3"
 rand               = "0.9"
 regex              = "1"
@@ -332,6 +335,7 @@ moltis-metrics         = { path = "crates/metrics" }
 moltis-msteams         = { path = "crates/msteams" }
 moltis-network-filter  = { default-features = false, path = "crates/network-filter" }
 moltis-node-host       = { path = "crates/node-host" }
+moltis-nostr           = { path = "crates/nostr" }
 moltis-oauth           = { path = "crates/oauth" }
 moltis-onboarding      = { path = "crates/onboarding" }
 moltis-openclaw-import = { path = "crates/openclaw-import" }

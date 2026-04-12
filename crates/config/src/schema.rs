@@ -1545,7 +1545,7 @@ pub const KNOWN_CHANNEL_TYPES: &[&str] = &[
 #[serde(default)]
 pub struct ChannelsConfig {
     /// Which channel types are offered in the web UI (onboarding + channels page).
-    /// Defaults to `["telegram", "msteams", "discord", "slack", "matrix"]`. Add `"whatsapp"` to opt in.
+    /// Defaults to `["telegram", "msteams", "discord", "slack", "matrix", "nostr"]`. Add `"whatsapp"` to opt in.
     #[serde(
         default = "default_channels_offered",
         skip_serializing_if = "Vec::is_empty"
@@ -1566,6 +1566,12 @@ pub struct ChannelsConfig {
     /// Slack bot accounts, keyed by account ID.
     #[serde(default)]
     pub slack: HashMap<String, serde_json::Value>,
+    /// Matrix bot accounts, keyed by account ID.
+    #[serde(default)]
+    pub matrix: HashMap<String, serde_json::Value>,
+    /// Nostr DM accounts, keyed by account ID.
+    #[serde(default)]
+    pub nostr: HashMap<String, serde_json::Value>,
     /// Additional channel types not covered by the named fields above.
     ///
     /// This allows new channel plugins to be configured without changing
@@ -1579,13 +1585,15 @@ impl ChannelsConfig {
     ///
     /// This is the single source of truth for the set of named channel types.
     /// Keep in sync with the struct fields.
-    fn named_fields(&self) -> [(&str, &HashMap<String, serde_json::Value>); 5] {
+    fn named_fields(&self) -> [(&str, &HashMap<String, serde_json::Value>); 7] {
         [
             ("telegram", &self.telegram),
             ("whatsapp", &self.whatsapp),
             ("msteams", &self.msteams),
             ("discord", &self.discord),
             ("slack", &self.slack),
+            ("matrix", &self.matrix),
+            ("nostr", &self.nostr),
         ]
     }
 
@@ -1607,6 +1615,7 @@ fn default_channels_offered() -> Vec<String> {
         "discord".into(),
         "slack".into(),
         "matrix".into(),
+        "nostr".into(),
     ]
 }
 
@@ -1619,6 +1628,8 @@ impl Default for ChannelsConfig {
             msteams: HashMap::new(),
             discord: HashMap::new(),
             slack: HashMap::new(),
+            matrix: HashMap::new(),
+            nostr: HashMap::new(),
             extra: HashMap::new(),
         }
     }
@@ -3378,6 +3389,7 @@ deny = ["exec"]
             "discord".to_string(),
             "slack".to_string(),
             "matrix".to_string(),
+            "nostr".to_string(),
         ]);
     }
 
@@ -3390,6 +3402,7 @@ deny = ["exec"]
             "discord".to_string(),
             "slack".to_string(),
             "matrix".to_string(),
+            "nostr".to_string(),
         ]);
     }
 

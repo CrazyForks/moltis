@@ -67,6 +67,7 @@ default = [
   "matrix",
   "mdns",
   "metrics",
+  "nostr",
   "prometheus",
   "push-notifications",
   "slack",
@@ -86,6 +87,7 @@ matrix = ["dep:moltis-matrix", "moltis-gateway/matrix"]
 mdns = ["moltis-gateway/mdns"]
 metrics = ["dep:moltis-metrics", "moltis-gateway/metrics"]
 ngrok = ["dep:ngrok"]
+nostr = ["moltis-gateway/nostr"]
 prometheus = ["metrics", "moltis-gateway/prometheus"]
 push-notifications = ["dep:chrono", "moltis-gateway/push-notifications"]
 slack = ["dep:moltis-slack", "moltis-gateway/slack"]

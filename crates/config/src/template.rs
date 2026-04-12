@@ -774,9 +774,9 @@ reset_on_exit = true              # Reset serve/funnel when gateway shuts down
 
 [channels]
 # Which channel types appear in the web UI's "+ Add Channel" menu.
-# Default: ["telegram", "msteams", "discord", "slack", "matrix"]
+# Default: ["telegram", "msteams", "discord", "slack", "matrix", "nostr"]
 # Add "whatsapp" to enable it in the UI.
-# offered = ["telegram", "msteams", "discord", "slack", "matrix", "whatsapp"]
+# offered = ["telegram", "msteams", "discord", "slack", "matrix", "nostr", "whatsapp"]
 
 # WhatsApp linked-device accounts
 # [channels.whatsapp.my-bot]
@@ -883,6 +883,20 @@ reset_on_exit = true              # Reset serve/funnel when gateway shuts down
 # ack_reaction = "👀"             # Emoji reaction while processing (omit to disable)
 # otp_self_approval = true        # OTP self-approval for non-allowlisted DM users
 # otp_cooldown_secs = 300         # Cooldown after 3 failed OTP attempts
+
+# Nostr DM bots (NIP-04 encrypted direct messages)
+# [channels.nostr.my-bot]
+# secret_key = "nsec1..."          # Secret key (nsec1 bech32 or 64-char hex)
+# relays = ["wss://relay.damus.io", "wss://relay.nostr.band", "wss://nos.lol"]
+# dm_policy = "allowlist"          # "open", "allowlist", or "disabled"
+# allowed_pubkeys = []             # Allowed sender public keys (npub1 or hex)
+# model = "anthropic/claude-sonnet-4-20250514"
+# model_provider = "anthropic"
+# otp_self_approval = true         # OTP self-approval for non-allowlisted DM users
+# otp_cooldown_secs = 300          # Cooldown after 3 failed OTP attempts
+# [channels.nostr.my-bot.profile]  # NIP-01 profile metadata (optional)
+# name = "Moltis Bot"
+# about = "AI assistant on Nostr"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # HOOKS

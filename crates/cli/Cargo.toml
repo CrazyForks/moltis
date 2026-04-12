@@ -120,6 +120,7 @@ default = [
   "mdns",
   "metrics",
   "ngrok",
+  "nostr",
   "openclaw-import",
   "prometheus",
   "push-notifications",
@@ -133,7 +134,7 @@ default = [
   "web-ui",
   "whatsapp",
 ]
-llm-compaction  = ["moltis-gateway/llm-compaction"]
+llm-compaction = ["moltis-gateway/llm-compaction"]
 # Minimal build for memory-constrained devices (Raspberry Pi, etc.).
 # Build with: cargo build --release --no-default-features --features lightweight
 code-splitter   = ["moltis-memory/code-splitter"]
@@ -165,6 +166,7 @@ matrix             = ["moltis-httpd/matrix"]
 mdns               = ["moltis-gateway/mdns"]
 metrics            = ["moltis-httpd/metrics", "moltis-web?/metrics"]
 ngrok              = ["moltis-httpd/ngrok", "moltis-web?/ngrok"]
+nostr              = ["moltis-httpd/nostr"]
 openclaw-import    = ["dep:moltis-openclaw-import", "moltis-gateway/openclaw-import"]
 prometheus         = ["moltis-httpd/prometheus"]
 push-notifications = ["moltis-httpd/push-notifications", "moltis-web?/push-notifications"]
