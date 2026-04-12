@@ -100,6 +100,7 @@ auto_generate = true              # Auto-generate local CA and server certificat
 #   fetch_models - Discover models from provider API when available (default: true)
 #   stream_transport - Streaming transport: "sse", "websocket", or "auto" (default: "sse")
 #   alias     - Custom name for metrics labels (useful for multiple instances)
+#   policy    - Per-provider tool policy override (allow/deny lists)
 
 [providers]
 offered = ["local-llm", "github-copilot", "openai-codex", "openai", "anthropic", "openrouter", "ollama", "moonshot", "minimax", "zai"] # Enabled providers and those shown in onboarding/picker UI ([] = enable/show all)
@@ -119,6 +120,8 @@ offered = ["local-llm", "github-copilot", "openai-codex", "openai", "anthropic",
 # base_url = "https://api.anthropic.com"     # API endpoint
 # alias = "anthropic"                         # Custom name for metrics
 # cache_retention = "short"                    # Prompt caching: "none" | "short" | "long"
+# policy.deny = ["exec"]                       # Deny specific tools when using this provider
+# policy.allow = []                            # Restrict to only these tools (empty = all allowed)
 
 # ── OpenAI ────────────────────────────────────────────────────
 [providers.openai]
@@ -464,13 +467,25 @@ packages = [
 # cpu_quota = 0.5                 # CPU quota as fraction (0.5 = half a core, 2.0 = two cores)
 # pids_max = 100                  # Maximum number of processes
 
+# Tool policy overrides applied when commands run inside the sandbox (layer 6).
+# These narrow the effective policy for sandboxed execution only.
+# [tools.exec.sandbox.tools_policy]
+# allow = ["exec"]                # Only allow exec tool inside sandbox
+# deny = ["browser"]              # Deny browser tool inside sandbox
+
 # ── Tool Policy ───────────────────────────────────────────────────────────────
-# Control which tools the MAIN agent session can use.
+# Control which tools the agent can use. Policies are layered (later wins for
+# allow, deny always accumulates across layers):
 #
-# This is the tool policy for the main session. Preset tool policies under
-# `[agents.presets.*]` apply only to sub-agents spawned via `spawn_agent` and
-# are NOT read by the main session. If you want a deny list to harden the
-# main agent, it must live here.
+#   1. Global        — this section ([tools.policy])
+#   2. Per-provider  — [providers.<name>.policy]
+#   3. Per-agent     — [agents.presets.<id>.tools]
+#   4. Per-channel   — [channels.<type>.<account>.tools.groups.<chat_type>]
+#   5. Per-sender    — [...groups.<chat_type>.by_sender.<sender_id>]
+#   6. Sandbox       — [tools.exec.sandbox.tools_policy] (only when sandboxed)
+#
+# This is the base policy for all sessions. Provider and channel layers
+# narrow it further based on runtime context.
 
 [tools.policy]
 allow = []                        # Tools to always allow (e.g., ["exec", "web_fetch"])
@@ -800,6 +815,14 @@ reset_on_exit = true              # Reset serve/funnel when gateway shuts down
 # otp_cooldown_secs = 300         # Cooldown after 3 failed OTP attempts
 # stream_mode = "edit_in_place"   # "edit_in_place" or "off"
 # edit_throttle_ms = 300          # Min ms between streaming edits
+#
+# Per-channel tool policy (restrict tools by chat type and sender):
+# [channels.telegram.my-bot.tools.groups.group]
+# deny = ["exec", "browser"]      # Deny dangerous tools in group chats
+# [channels.telegram.my-bot.tools.groups.group.by_sender."123456"]
+# allow = ["*"]                    # Override: trusted sender gets all tools
+# [channels.telegram.my-bot.tools.groups.private]
+# allow = []                       # DMs: allow all tools (default)
 
 # Microsoft Teams bots
 # [channels.msteams.my-bot]

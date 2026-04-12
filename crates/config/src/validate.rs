@@ -111,6 +111,14 @@ const PROVIDERS_META_KEYS: &[&str] = &["offered", "show_legacy_models"];
 fn build_schema_map() -> KnownKeys {
     use KnownKeys::{Array, Leaf, Map, MapWithFields, Struct};
 
+    let tool_policy_entry = || {
+        Struct(HashMap::from([
+            ("allow", Leaf),
+            ("deny", Leaf),
+            ("profile", Leaf),
+        ]))
+    };
+
     let provider_entry = || {
         Struct(HashMap::from([
             ("enabled", Leaf),
@@ -124,6 +132,7 @@ fn build_schema_map() -> KnownKeys {
             ("alias", Leaf),
             ("tool_mode", Leaf),
             ("cache_retention", Leaf),
+            ("policy", tool_policy_entry()),
         ]))
     };
 
@@ -164,6 +173,7 @@ fn build_schema_map() -> KnownKeys {
             ("wasm_fuel_limit", Leaf),
             ("wasm_epoch_interval_ms", Leaf),
             ("wasm_tool_limits", wasm_tool_limits()),
+            ("tools_policy", tool_policy_entry()),
         ]))
     };
 
@@ -439,17 +449,34 @@ fn build_schema_map() -> KnownKeys {
                 ("servers", Map(Box::new(mcp_server_entry()))),
             ])),
         ),
-        ("channels", MapWithFields {
-            // Dynamic keys: extra channel types via #[serde(flatten)]
-            value: Box::new(Map(Box::new(Leaf))),
-            fields: HashMap::from([
-                ("offered", Array(Box::new(Leaf))),
-                ("telegram", Map(Box::new(Leaf))),
-                ("whatsapp", Map(Box::new(Leaf))),
-                ("msteams", Map(Box::new(Leaf))),
-                ("discord", Map(Box::new(Leaf))),
-                ("slack", Map(Box::new(Leaf))),
-            ]),
+        ("channels", {
+            // Channel accounts are stored as serde_json::Value but we
+            // recognise a `tools` sub-key with typed group/sender policy.
+            let group_policy = || {
+                Struct(HashMap::from([
+                    ("allow", Leaf),
+                    ("deny", Leaf),
+                    ("by_sender", Map(Box::new(tool_policy_entry()))),
+                ]))
+            };
+            let channel_tools =
+                || Struct(HashMap::from([("groups", Map(Box::new(group_policy())))]));
+            let channel_account = || MapWithFields {
+                value: Box::new(Leaf),
+                fields: HashMap::from([("tools", channel_tools())]),
+            };
+            MapWithFields {
+                // Dynamic keys: extra channel types via #[serde(flatten)]
+                value: Box::new(Map(Box::new(channel_account()))),
+                fields: HashMap::from([
+                    ("offered", Array(Box::new(Leaf))),
+                    ("telegram", Map(Box::new(channel_account()))),
+                    ("whatsapp", Map(Box::new(channel_account()))),
+                    ("msteams", Map(Box::new(channel_account()))),
+                    ("discord", Map(Box::new(channel_account()))),
+                    ("slack", Map(Box::new(channel_account()))),
+                ]),
+            }
         }),
         (
             "tls",

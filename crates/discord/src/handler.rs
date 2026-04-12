@@ -984,6 +984,7 @@ impl EventHandler for Handler {
             channel_type: ChannelType::Discord,
             sender_name,
             username,
+            sender_id: Some(peer_id.clone()),
             message_kind: Some(inferred_kind),
             model: config.model.clone(),
             audio_filename,

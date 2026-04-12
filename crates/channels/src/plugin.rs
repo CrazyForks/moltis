@@ -458,6 +458,10 @@ pub struct ChannelMessageMeta {
     pub channel_type: ChannelType,
     pub sender_name: Option<String>,
     pub username: Option<String>,
+    /// Platform-specific sender/peer ID (e.g. Telegram user ID, Discord user ID).
+    /// Used for per-sender tool policy resolution.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sender_id: Option<String>,
     /// Original inbound message media kind (voice, audio, photo, etc.).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message_kind: Option<ChannelMessageKind>,

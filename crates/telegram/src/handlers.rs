@@ -694,6 +694,7 @@ pub async fn handle_message_direct(
             channel_type: ChannelType::Telegram,
             sender_name: sender_name.clone(),
             username: username.clone(),
+            sender_id: Some(peer_id.clone()),
             message_kind: message_kind(&msg),
             model: config.model.clone(),
             audio_filename,
