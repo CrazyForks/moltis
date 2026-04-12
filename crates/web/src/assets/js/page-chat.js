@@ -1294,7 +1294,6 @@ registerPrefix(
 						showSelectors=${false}
 						showName=${false}
 						showStop=${false}
-						showClear=${false}
 						actionButtonClass=${"provider-btn provider-btn-secondary provider-btn-sm"}
 						onBeforeShare=${() => closeChatMore?.()}
 						onBeforeDelete=${() => closeChatMore?.()}
