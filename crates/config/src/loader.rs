@@ -1139,9 +1139,50 @@ fn merge_toml_tables(current: &mut toml_edit::Table, updated: &toml_edit::Table)
         if let Some(current_item) = current.get_mut(key) {
             merge_toml_items(current_item, updated_item);
         } else {
-            current.insert(key, updated_item.clone());
+            // Clone the item and strip `doc_position` metadata inherited from
+            // the source document.  Without this, toml_edit uses the position
+            // from the *serialized* document, causing new sub-tables to be
+            // interleaved among existing sections instead of appearing after
+            // their parent (GH-684).
+            current.insert(key, clone_item_without_positions(updated_item));
         }
     }
+}
+
+/// Deep-clone a `toml_edit::Item`, stripping `doc_position` from every table
+/// so that newly inserted entries get auto-positioned by `toml_edit` rather
+/// than inheriting stale positions from a different document.
+fn clone_item_without_positions(item: &toml_edit::Item) -> toml_edit::Item {
+    match item {
+        toml_edit::Item::Table(t) => toml_edit::Item::Table(clone_table_without_positions(t)),
+        toml_edit::Item::ArrayOfTables(arr) => {
+            let mut new_arr = toml_edit::ArrayOfTables::new();
+            for table in arr.iter() {
+                new_arr.push(clone_table_without_positions(table));
+            }
+            toml_edit::Item::ArrayOfTables(new_arr)
+        },
+        other => other.clone(),
+    }
+}
+
+/// Clone a table, recursively stripping `doc_position` so new tables get
+/// auto-positioned when inserted into a different document.
+fn clone_table_without_positions(src: &toml_edit::Table) -> toml_edit::Table {
+    let mut dst = toml_edit::Table::new();
+    // doc_position is None for manually created tables → auto-positioned
+    dst.set_implicit(src.is_implicit());
+    dst.set_dotted(src.is_dotted());
+    *dst.decor_mut() = src.decor().clone();
+    for (key, item) in src.iter() {
+        dst.insert(key, clone_item_without_positions(item));
+        // Preserve key decorations (whitespace/comments around the key)
+        if let (Some(src_key), Some(mut dst_key)) = (src.key(key), dst.key_mut(key)) {
+            *dst_key.leaf_decor_mut() = src_key.leaf_decor().clone();
+            *dst_key.dotted_decor_mut() = src_key.dotted_decor().clone();
+        }
+    }
+    dst
 }
 
 fn merge_toml_items(current: &mut toml_edit::Item, updated: &toml_edit::Item) {
@@ -2258,5 +2299,128 @@ name = "Rex"
         let content = "  <!-- comment -->\n\n<!-- another -->  ";
         let normalized = normalize_workspace_markdown_content(content);
         assert_eq!(normalized, None);
+    }
+
+    /// GH-684: section order must be preserved after a save roundtrip.
+    #[test]
+    fn gh684_template_section_order_preserved_after_save() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("moltis.toml");
+        let template = crate::template::default_config_template(18789);
+        std::fs::write(&path, &template).expect("write template");
+
+        let template_sections: Vec<String> = template
+            .lines()
+            .filter(|l| l.starts_with('['))
+            .map(|l| l.to_string())
+            .collect();
+
+        // Load, modify, save — simulating a web UI setting change
+        let raw = std::fs::read_to_string(&path).expect("read");
+        let mut config: MoltisConfig = parse_config(&raw, &path).expect("parse");
+        config.auth.disabled = true;
+        config.server.http_request_logs = true;
+
+        save_config_to_path(&path, &config).expect("save config");
+
+        let saved = std::fs::read_to_string(&path).expect("read saved");
+        let saved_sections: Vec<String> = saved
+            .lines()
+            .filter(|l| l.starts_with('['))
+            .map(|l| l.to_string())
+            .collect();
+
+        // Every template section must still exist in the saved file
+        for ts in &template_sections {
+            assert!(
+                saved_sections.contains(ts),
+                "template section {ts} missing from saved file"
+            );
+        }
+
+        // Template sections must maintain their relative order
+        let template_positions: Vec<usize> = template_sections
+            .iter()
+            .map(|ts| {
+                saved_sections
+                    .iter()
+                    .position(|ss| ss == ts)
+                    .unwrap_or_else(|| panic!("section {ts} not found in saved"))
+            })
+            .collect();
+        for window in template_positions.windows(2) {
+            assert!(
+                window[0] < window[1],
+                "template sections swapped: saved position {} >= {} \
+                 (sections around index {})",
+                window[0],
+                window[1],
+                window[0],
+            );
+        }
+    }
+
+    /// GH-684: new sub-tables must render after their parent, not interleaved
+    /// with unrelated sections.
+    #[test]
+    fn gh684_new_subtables_render_after_parent() {
+        let original = r#"[server]
+port = 8080
+
+[channels]
+offered = ["telegram"]
+
+[memory]
+enabled = true
+"#;
+
+        let updated = r#"[server]
+port = 8080
+
+[channels]
+offered = ["telegram"]
+
+[channels.telegram]
+token = "abc"
+
+[channels.whatsapp]
+token = "xyz"
+
+[memory]
+enabled = true
+"#;
+
+        let mut current_doc = original.parse::<toml_edit::DocumentMut>().unwrap();
+        let updated_doc = updated.parse::<toml_edit::DocumentMut>().unwrap();
+
+        merge_toml_tables(current_doc.as_table_mut(), updated_doc.as_table());
+        let result = current_doc.to_string();
+
+        let sections: Vec<&str> = result.lines().filter(|l| l.starts_with('[')).collect();
+
+        // Expected order: server, channels, channels.telegram, channels.whatsapp, memory
+        let channels_idx = sections.iter().position(|s| *s == "[channels]").unwrap();
+        let telegram_idx = sections
+            .iter()
+            .position(|s| *s == "[channels.telegram]")
+            .unwrap();
+        let whatsapp_idx = sections
+            .iter()
+            .position(|s| *s == "[channels.whatsapp]")
+            .unwrap();
+        let memory_idx = sections.iter().position(|s| *s == "[memory]").unwrap();
+
+        assert!(
+            channels_idx < telegram_idx,
+            "[channels.telegram] must come after [channels]"
+        );
+        assert!(
+            telegram_idx < whatsapp_idx,
+            "[channels.whatsapp] must come after [channels.telegram]"
+        );
+        assert!(
+            whatsapp_idx < memory_idx,
+            "[memory] must come after channel sub-tables"
+        );
     }
 }
