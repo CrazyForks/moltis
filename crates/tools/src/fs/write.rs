@@ -110,11 +110,11 @@ impl WriteTool {
             {
                 return Ok(payload);
             }
-            if let Some(payload) =
-                enforce_must_read_before_write(self.fs_state.as_ref(), session_key, file_path)
-            {
-                return Ok(payload);
-            }
+            // must-read-before-write: skip for sandbox Write because we
+            // can't cheaply check whether the file exists inside the
+            // container (that would cost an extra exec round-trip). New
+            // files would be falsely blocked. Edit/MultiEdit always read
+            // before writing so they get the check naturally.
             require_fs_mutation_approval(
                 self.approval_manager.as_ref(),
                 self.broadcaster.as_ref(),

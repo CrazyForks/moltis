@@ -231,6 +231,24 @@ impl ReadTool {
         session_key: &str,
         from_sandbox: bool,
     ) -> Value {
+        // Record the read in the tracker BEFORE any early return (including
+        // binary). An operator with must_read_before_write + binary_policy=base64
+        // needs binary Reads to count as "this session has read the file."
+        if let Some(ref state) = self.fs_state {
+            let tracker_path = if from_sandbox {
+                std::path::PathBuf::from(file_path)
+            } else {
+                std::fs::canonicalize(file_path)
+                    .unwrap_or_else(|_| std::path::PathBuf::from(file_path))
+            };
+            let mut guard = state
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let _consecutive = guard.record_read(session_key, tracker_path, offset, limit);
+            // loop_warning only applies to text reads; binary reads
+            // are a one-shot check, not something the LLM re-reads.
+        }
+
         if looks_binary(bytes) {
             #[cfg(feature = "metrics")]
             counter!(
@@ -293,33 +311,23 @@ impl ReadTool {
             "truncated": rendered.truncated,
         });
 
-        // Record in the shared tracker if one is configured. Emit a
-        // `loop_warning` when the LLM is re-reading the same slice
-        // after context compression without doing any intervening work.
+        // Loop warning: the read was already recorded at the top of
+        // this method. Check the consecutive count (which was bumped
+        // during that first record_read) and surface a warning if the
+        // same (path, offset, limit) has been repeated too many times.
         if let Some(ref state) = self.fs_state {
-            let tracker_path = if from_sandbox {
-                // Sandbox paths are already absolute inside the container;
-                // there's no host-side symlink resolution to do.
-                std::path::PathBuf::from(file_path)
-            } else {
-                // On the host, canonicalize first so Write/Edit's
-                // subsequent has_been_read check (which also canonicalizes)
-                // matches. macOS /tmp → /private/tmp is the classic case.
-                std::fs::canonicalize(file_path)
-                    .unwrap_or_else(|_| std::path::PathBuf::from(file_path))
-            };
-            let mut guard = state
+            let guard = state
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
-            let consecutive = guard.record_read(session_key, tracker_path, offset, limit);
-            if consecutive >= READ_LOOP_THRESHOLD
+            let n = guard.consecutive_reads(session_key);
+            if n >= READ_LOOP_THRESHOLD
                 && let Some(obj) = payload.as_object_mut()
             {
                 obj.insert(
                     "loop_warning".into(),
                     json!(format!(
                         "This exact read (file_path={file_path}, offset={offset}, limit={limit}) \
-                         has been repeated {consecutive} times with no intervening edit. The \
+                         has been repeated {n} times with no intervening edit. The \
                          file hasn't changed — stop re-reading it and make progress on the task."
                     )),
                 );

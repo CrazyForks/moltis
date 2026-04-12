@@ -493,6 +493,16 @@ impl FsStateInner {
             .is_some_and(|state| state.read_files.contains(path))
     }
 
+    /// Current consecutive-read count for `session_key`. Returns 0
+    /// when the session has no tracked reads.
+    #[must_use]
+    pub fn consecutive_reads(&self, session_key: &str) -> usize {
+        self.sessions
+            .get(session_key)
+            .map(|s| s.consecutive_reads)
+            .unwrap_or(0)
+    }
+
     /// Remove all tracking state for a completed session.
     pub fn remove_session(&mut self, session_key: &str) {
         self.sessions.remove(session_key);
