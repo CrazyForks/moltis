@@ -60,7 +60,7 @@ async fn test_credential_store_password() {
     let store = CredentialStore::new(pool).await.unwrap();
     let initial_password = fixture_secret("credential-store-password-initial");
     let replacement_password = fixture_secret("credential-store-password-replacement");
-    let duplicate_password = fixture_secret("credential-store-password-duplicate");
+    let duplicate_password = generate_token();
     let wrong_password = fixture_secret("credential-store-password-wrong");
     let bad_change_password = fixture_secret("credential-store-password-bad-change");
     let tiny_password = fixture_secret("credential-store-password-tiny");
