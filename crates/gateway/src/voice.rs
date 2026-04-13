@@ -63,6 +63,11 @@ fn resolve_openai_key(
         .or_else(|| cfg.providers.get("openai").and_then(|p| p.api_key.clone()))
 }
 
+#[cfg(feature = "voice")]
+fn resolve_openai_base_url(cfg: &moltis_config::MoltisConfig) -> Option<String> {
+    cfg.providers.get("openai").and_then(|p| p.base_url.clone())
+}
+
 // ── TTS Service ─────────────────────────────────────────────────────────────
 
 /// Live TTS service that delegates to voice providers.
@@ -112,7 +117,7 @@ impl LiveTtsService {
             },
             openai: moltis_voice::OpenAiTtsConfig {
                 api_key: resolve_openai_key(cfg.voice.tts.openai.api_key.as_ref(), &cfg),
-                base_url: cfg.voice.tts.openai.base_url.clone(),
+                base_url: resolve_openai_base_url(&cfg),
                 voice: cfg.voice.tts.openai.voice.clone(),
                 model: cfg.voice.tts.openai.model.clone(),
                 speed: None,
@@ -530,7 +535,7 @@ impl LiveSttService {
                 let key = resolve_openai_key(cfg.voice.stt.whisper.api_key.as_ref(), &cfg);
                 let provider = WhisperStt::with_options(
                     key,
-                    cfg.voice.stt.whisper.base_url.clone(),
+                    resolve_openai_base_url(&cfg),
                     cfg.voice.stt.whisper.model.clone(),
                     cfg.voice.stt.whisper.language.clone(),
                 );
@@ -621,7 +626,7 @@ impl LiveSttService {
         vec![
             (
                 SttProviderId::Whisper,
-                cfg.voice.stt.whisper.api_key.is_some() || cfg.voice.stt.whisper.base_url.is_some(),
+                cfg.voice.stt.whisper.api_key.is_some() || resolve_openai_base_url(&cfg).is_some(),
             ),
             (SttProviderId::Groq, cfg.voice.stt.groq.api_key.is_some()),
             (
@@ -902,13 +907,13 @@ mod tests {
     }
 
     #[test]
-    fn test_live_stt_whisper_base_url_counts_as_configured() {
+    fn test_live_stt_openai_provider_base_url_counts_as_configured() {
         let _guard = VoiceConfigTestGuard::with_config(
             r#"
 [server]
 port = 18080
 
-[voice.stt.whisper]
+[providers.openai]
 base_url = "http://127.0.0.1:8001/"
 "#,
         );

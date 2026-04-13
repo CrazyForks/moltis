@@ -14,12 +14,13 @@ use axum::{
 #[cfg(feature = "web-ui")]
 use tracing::{debug, warn};
 
-use moltis_gateway::{
-    auth::{AuthIdentity, AuthMethod, CredentialStore},
-    state::GatewayState,
+use {
+    moltis_auth::locality::is_local_connection,
+    moltis_gateway::{
+        auth::{AuthIdentity, AuthMethod, CredentialStore},
+        state::GatewayState,
+    },
 };
-
-use crate::server::is_local_connection;
 
 /// Session cookie name.
 pub const SESSION_COOKIE: &str = "moltis_session";
