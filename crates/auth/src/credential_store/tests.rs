@@ -710,7 +710,7 @@ async fn test_removing_passkey_keeps_setup_when_password_exists() {
 #[cfg(feature = "vault")]
 #[tokio::test]
 async fn test_env_var_encryption_when_vault_unsealed() {
-    let vault_password = fixture_secret("vault-env-encrypted-password");
+    let vault_password = generate_token();
     let secret_value = fixture_secret("vault-env-encrypted-secret");
     let (store, _vault) = vault_store(&vault_password).await;
 
