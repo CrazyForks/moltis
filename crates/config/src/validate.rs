@@ -257,6 +257,7 @@ fn build_schema_map() -> KnownKeys {
             ("persist_profile", Leaf),
             ("profile_dir", Leaf),
             ("container_host", Leaf),
+            ("browserless_api_version", Leaf),
         ]))
     };
 
