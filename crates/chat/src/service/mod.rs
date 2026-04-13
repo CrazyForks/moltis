@@ -644,7 +644,7 @@ mod tests {
                 assert_eq!(cache_write_tokens, None);
                 assert_eq!(request_cache_read_tokens, None);
                 assert_eq!(request_cache_write_tokens, None);
-                assert_eq!(tool_calls.expect("tool call").len(), 1);
+                assert_eq!(tool_calls.as_ref().map(Vec::len), Some(1));
             },
             _ => panic!("expected assistant message"),
         }
