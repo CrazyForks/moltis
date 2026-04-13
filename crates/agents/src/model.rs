@@ -31,8 +31,10 @@ pub fn decode_tool_call_arguments(arguments: Option<&serde_json::Value>) -> serd
     match arguments {
         Some(serde_json::Value::String(raw)) => serde_json::from_str(raw)
             .unwrap_or_else(|_| serde_json::Value::Object(Default::default())),
+        Some(serde_json::Value::Null) | None => serde_json::Value::Object(Default::default()),
+        Some(serde_json::Value::String(raw)) => serde_json::from_str(raw)
+            .unwrap_or_else(|_| serde_json::Value::Object(Default::default())),
         Some(value) => value.clone(),
-        None => serde_json::Value::Object(Default::default()),
     }
 }
 
