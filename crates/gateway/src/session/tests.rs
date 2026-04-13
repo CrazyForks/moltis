@@ -1352,6 +1352,35 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn search_includes_results_without_metadata_rows() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(SessionStore::new(dir.path().to_path_buf()));
+        let pool = sqlite_pool().await;
+        let metadata = Arc::new(SqliteSessionMetadata::new(pool));
+        store
+            .append(
+                "session:orphaned",
+                &serde_json::json!({"role": "user", "content": "needle without metadata"}),
+            )
+            .await
+            .unwrap();
+
+        let svc = LiveSessionService::new(Arc::clone(&store), Arc::clone(&metadata));
+
+        let results = svc
+            .search(serde_json::json!({ "query": "needle", "limit": 10 }))
+            .await
+            .unwrap()
+            .as_array()
+            .cloned()
+            .unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0]["sessionKey"], "session:orphaned");
+        assert!(results[0]["label"].is_null());
+        assert_eq!(results[0]["archived"], false);
+    }
+
     #[cfg(feature = "fs-tools")]
     #[tokio::test]
     async fn delete_clears_fs_state_for_session() {

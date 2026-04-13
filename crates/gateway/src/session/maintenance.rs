@@ -250,10 +250,11 @@ impl LiveSessionService {
         let enriched: Vec<Value> = {
             let mut out = Vec::with_capacity(results.len());
             for r in results {
-                let Some(entry) = self.metadata.get(&r.session_key).await else {
-                    continue;
+                let (label, archived) = match self.metadata.get(&r.session_key).await {
+                    Some(entry) => (entry.label, entry.archived),
+                    None => (None, false),
                 };
-                if entry.archived && !include_archived {
+                if archived && !include_archived {
                     continue;
                 }
                 out.push(serde_json::json!({
@@ -261,8 +262,8 @@ impl LiveSessionService {
                     "snippet": r.snippet,
                     "role": r.role,
                     "messageIndex": r.message_index,
-                    "label": entry.label,
-                    "archived": entry.archived,
+                    "label": label,
+                    "archived": archived,
                 }));
                 if out.len() >= max {
                     break;
