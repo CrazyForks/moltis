@@ -404,6 +404,11 @@ pub(super) async fn detect_voice_providers(
             "tts",
             "cloud",
             config.voice.tts.openai.api_key.is_some()
+                || config
+                    .providers
+                    .get("openai")
+                    .and_then(|provider| provider.base_url.as_ref())
+                    .is_some()
                 || env_openai_key.is_some()
                 || llm_openai_key.is_some(),
             config.voice.tts.provider == "openai" && config.voice.tts.enabled,
