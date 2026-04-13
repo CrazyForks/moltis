@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [20260413.06] - 2026-04-13
+### Fixed
+- [web] Gate openai live e2e server on api key
+
 ## [20260413.05] - 2026-04-13
 ### Added
 - [voice] Add local whisper web setup
