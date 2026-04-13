@@ -692,7 +692,7 @@ async fn test_removing_last_passkey_clears_setup_complete() {
 async fn test_removing_passkey_keeps_setup_when_password_exists() {
     let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
     let store = CredentialStore::new(pool).await.unwrap();
-    let password = fixture_secret("remove-passkey-keep-setup");
+    let password = generate_token();
 
     store.set_initial_password(&password).await.unwrap();
     let id = store
