@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [20260413.03] - 2026-04-13
+### Fixed
+- [gateway] Resolve release CI regressions
+
 ## [20260413.02] - 2026-04-13
 ### Added
 - [voice] Add base_url config for OpenAI TTS and Whisper STT providers
