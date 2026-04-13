@@ -79,6 +79,8 @@ pub struct VoiceOpenAiConfig {
         deserialize_with = "crate::schema::deserialize_option_secret"
     )]
     pub api_key: Option<Secret<String>>,
+    /// Override the OpenAI TTS endpoint for compatible local servers.
+    pub base_url: Option<String>,
     /// Voice to use for TTS (alloy, echo, fable, onyx, nova, shimmer).
     pub voice: Option<String>,
     /// Model to use for TTS (tts-1, tts-1-hd).
@@ -271,6 +273,8 @@ pub struct VoiceWhisperConfig {
         deserialize_with = "crate::schema::deserialize_option_secret"
     )]
     pub api_key: Option<Secret<String>>,
+    /// Override the Whisper endpoint for compatible local servers.
+    pub base_url: Option<String>,
     /// Model to use (whisper-1).
     pub model: Option<String>,
     /// Language hint (ISO 639-1 code).

@@ -39,6 +39,7 @@ import {
 	decodeBase64Safe,
 	fetchVoiceProviders,
 	saveVoiceKey,
+	saveVoiceSettings,
 	testTts,
 	toggleVoiceProvider,
 	transcribeAudio,
@@ -4489,6 +4490,7 @@ function LocalProviderInstructions({ providerId, voxtralReqs }) {
 // Add Voice Provider Modal
 function AddVoiceProviderModal({ unconfiguredProviders, voxtralReqs, onSaved }) {
 	var [apiKey, setApiKey] = useState("");
+	var [baseUrlValue, setBaseUrlValue] = useState("");
 	var [voiceValue, setVoiceValue] = useState("");
 	var [modelValue, setModelValue] = useState("");
 	var [languageCodeValue, setLanguageCodeValue] = useState("");
@@ -4503,12 +4505,14 @@ function AddVoiceProviderModal({ unconfiguredProviders, voxtralReqs, onSaved }) 
 		: null;
 	var isElevenLabsProvider = selectedProvider === "elevenlabs" || selectedProvider === "elevenlabs-stt";
 	var supportsTtsVoiceSettings = providerMeta?.type === "tts";
+	var supportsBaseUrl = providerMeta?.capabilities?.baseUrl === true;
 
 	function onClose() {
 		voiceShowAddModal.value = false;
 		voiceSelectedProvider.value = null;
 		voiceSelectedProviderData.value = null;
 		setApiKey("");
+		setBaseUrlValue("");
 		setVoiceValue("");
 		setModelValue("");
 		setLanguageCodeValue("");
@@ -4517,30 +4521,28 @@ function AddVoiceProviderModal({ unconfiguredProviders, voxtralReqs, onSaved }) 
 
 	function onSaveKey() {
 		var hasApiKey = apiKey.trim().length > 0;
-		var hasSettings = supportsTtsVoiceSettings && (voiceValue.trim() || modelValue.trim() || languageCodeValue.trim());
+		var trimmedBaseUrl = baseUrlValue.trim();
+		var hadBaseUrl =
+			typeof providerMeta?.settings?.baseUrl === "string" && providerMeta.settings.baseUrl.trim().length > 0;
+		var hasBaseUrl = supportsBaseUrl && (trimmedBaseUrl.length > 0 || hadBaseUrl);
+		var hasSettings =
+			(supportsTtsVoiceSettings && (voiceValue.trim() || modelValue.trim() || languageCodeValue.trim())) || hasBaseUrl;
 		if (!(hasApiKey || hasSettings)) {
-			setError("Provide an API key or at least one voice setting.");
+			setError("Provide an API key, base URL, or at least one provider setting.");
 			return;
 		}
 		setError("");
 		setSaving(true);
 
-		var voiceOpts = supportsTtsVoiceSettings
-			? {
-					voice: voiceValue.trim() || undefined,
-					model: modelValue.trim() || undefined,
-					languageCode: languageCodeValue.trim() || undefined,
-				}
-			: undefined;
+		var voiceOpts = {
+			baseUrl: hasBaseUrl ? trimmedBaseUrl : undefined,
+			voice: supportsTtsVoiceSettings ? voiceValue.trim() || undefined : undefined,
+			model: supportsTtsVoiceSettings ? modelValue.trim() || undefined : undefined,
+			languageCode: supportsTtsVoiceSettings ? languageCodeValue.trim() || undefined : undefined,
+		};
 		var req = hasApiKey
 			? saveVoiceKey(selectedProvider, apiKey.trim(), voiceOpts)
-			: sendRpc("voice.config.save_settings", {
-					provider: selectedProvider,
-					voice: voiceOpts?.voice,
-					voiceId: voiceOpts?.voice,
-					model: voiceOpts?.model,
-					languageCode: voiceOpts?.languageCode,
-				});
+			: saveVoiceSettings(selectedProvider, voiceOpts);
 		req
 			.then((res) => {
 				setSaving(false);
@@ -4561,6 +4563,7 @@ function AddVoiceProviderModal({ unconfiguredProviders, voxtralReqs, onSaved }) 
 		voiceSelectedProvider.value = providerId;
 		voiceSelectedProviderData.value = null;
 		setApiKey("");
+		setBaseUrlValue("");
 		setVoiceValue("");
 		setModelValue("");
 		setLanguageCodeValue("");
@@ -4570,6 +4573,7 @@ function AddVoiceProviderModal({ unconfiguredProviders, voxtralReqs, onSaved }) 
 	useEffect(() => {
 		var settings = voiceSelectedProviderData.value?.settings;
 		if (!settings) return;
+		setBaseUrlValue(settings.baseUrl || "");
 		setVoiceValue(settings.voiceId || settings.voice || "");
 		setModelValue(settings.model || "");
 		setLanguageCodeValue(settings.languageCode || "");
@@ -4612,15 +4616,34 @@ function AddVoiceProviderModal({ unconfiguredProviders, voxtralReqs, onSaved }) 
 			return html`<${Modal} show=${voiceShowAddModal.value} onClose=${onClose} title="Add ${providerMeta.name}">
 				<div class="channel-form">
 					<div class="text-sm text-[var(--text-strong)]">${providerMeta.name}</div>
-					<div class="text-xs text-[var(--muted)]" style="margin-bottom:12px;">${providerMeta.description}</div>
+					<div class="mb-3 text-xs text-[var(--muted)]">${providerMeta.description}</div>
 
 					<label class="text-xs text-[var(--muted)]">API Key</label>
-					<input type="password" class="provider-key-input" style="width:100%;"
+					<input type="password" class="provider-key-input w-full"
 						value=${apiKey} onInput=${(e) => setApiKey(e.target.value)}
 						placeholder=${providerMeta.keyPlaceholder || "Leave blank to keep existing key"} />
-					<div class="text-xs text-[var(--muted)]">
+					${
+						providerMeta.keyUrl
+							? html`<div class="text-xs text-[var(--muted)]">
 						Get your API key at <a href=${providerMeta.keyUrl} target="_blank" rel="noopener" class="hover:underline text-[var(--accent)]">${providerMeta.keyUrlLabel}</a>
+					</div>`
+							: null
+					}
+
+					${
+						supportsBaseUrl
+							? html`<div class="mt-2 flex flex-col gap-2">
+					<label class="text-xs text-[var(--muted)]">Base URL</label>
+					<input type="text" class="provider-key-input w-full"
+						data-field="baseUrl"
+						value=${baseUrlValue} onInput=${(e) => setBaseUrlValue(e.target.value)}
+						placeholder="http://localhost:8000/v1" />
+					<div class="text-xs text-[var(--muted)]">
+						Use this for a local or OpenAI-compatible server. Leave the API key blank if your endpoint does not require one.
 					</div>
+				</div>`
+							: null
+					}
 
 					${
 						supportsTtsVoiceSettings
@@ -4630,13 +4653,13 @@ function AddVoiceProviderModal({ unconfiguredProviders, voxtralReqs, onSaved }) 
 					${isElevenLabsProvider && elevenlabsCatalog.warning ? html`<div class="text-xs text-[var(--muted)]">${elevenlabsCatalog.warning}</div>` : null}
 					${
 						isElevenLabsProvider && elevenlabsCatalog.voices.length > 0
-							? html`<select class="provider-key-input" style="width:100%;" onChange=${(e) => setVoiceValue(e.target.value)}>
+							? html`<select class="provider-key-input w-full" onChange=${(e) => setVoiceValue(e.target.value)}>
 						<option value="">Pick a voice from your account...</option>
 						${elevenlabsCatalog.voices.map((v) => html`<option value=${v.id}>${v.name} (${v.id})</option>`)}
 					</select>`
 							: null
 					}
-					<input type="text" class="provider-key-input" style="width:100%;"
+					<input type="text" class="provider-key-input w-full"
 						value=${voiceValue} onInput=${(e) => setVoiceValue(e.target.value)}
 						list=${isElevenLabsProvider ? "elevenlabs-voice-options" : undefined}
 						placeholder="voice id / name (optional)" />
@@ -4651,13 +4674,13 @@ function AddVoiceProviderModal({ unconfiguredProviders, voxtralReqs, onSaved }) 
 					<label class="text-xs text-[var(--muted)]">Model</label>
 					${
 						isElevenLabsProvider && elevenlabsCatalog.models.length > 0
-							? html`<select class="provider-key-input" style="width:100%;" onChange=${(e) => setModelValue(e.target.value)}>
+							? html`<select class="provider-key-input w-full" onChange=${(e) => setModelValue(e.target.value)}>
 						<option value="">Pick a model...</option>
 						${elevenlabsCatalog.models.map((m) => html`<option value=${m.id}>${m.name} (${m.id})</option>`)}
 					</select>`
 							: null
 					}
-					<input type="text" class="provider-key-input" style="width:100%;"
+					<input type="text" class="provider-key-input w-full"
 						value=${modelValue} onInput=${(e) => setModelValue(e.target.value)}
 						list=${isElevenLabsProvider ? "elevenlabs-model-options" : undefined}
 						placeholder="model (optional)" />
@@ -4673,7 +4696,7 @@ function AddVoiceProviderModal({ unconfiguredProviders, voxtralReqs, onSaved }) 
 						selectedProvider === "google" || selectedProvider === "google-tts"
 							? html`<div class="flex flex-col gap-2">
 							<label class="text-xs text-[var(--muted)]">Language Code</label>
-							<input type="text" class="provider-key-input" style="width:100%;"
+							<input type="text" class="provider-key-input w-full"
 								value=${languageCodeValue} onInput=${(e) => setLanguageCodeValue(e.target.value)}
 								placeholder="en-US (optional)" />
 						</div>`

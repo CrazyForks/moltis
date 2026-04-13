@@ -883,4 +883,99 @@ test.describe("Onboarding wizard", () => {
 
 		expect(pageErrors).toEqual([]);
 	});
+
+	test("voice onboarding saves whisper base URL without requiring an API key", async ({ page }) => {
+		const pageErrors = watchPageErrors(page);
+		await page.goto("/onboarding");
+		await page.waitForLoadState("networkidle");
+
+		await expect.poll(() => new URL(page.url()).pathname, { timeout: 15_000 }).toMatch(/^\/(?:onboarding|chats\/.+)$/);
+		if (/^\/chats\//.test(new URL(page.url()).pathname)) {
+			expect(pageErrors).toEqual([]);
+			return;
+		}
+
+		const reachedVoice = await moveToVoiceStep(page);
+		if (!reachedVoice) {
+			test.skip(true, "voice step not reachable in this onboarding run");
+			return;
+		}
+
+		const whisperRow = page
+			.locator(".onboarding-card .rounded-md.border")
+			.filter({ has: page.getByText("OpenAI Whisper", { exact: true }) })
+			.first();
+		if (!(await isVisible(whisperRow))) {
+			test.skip(true, "OpenAI Whisper row not available in this onboarding run");
+			return;
+		}
+
+		await page.evaluate(async () => {
+			const onboardingScript = document.querySelector('script[type="module"][src*="js/onboarding-app.js"]');
+			if (!onboardingScript) throw new Error("onboarding-app.js script not found");
+			const appUrl = new URL(onboardingScript.src, window.location.origin).href;
+			const marker = "js/onboarding-app.js";
+			const markerIdx = appUrl.indexOf(marker);
+			if (markerIdx < 0) throw new Error("onboarding-app.js marker not found in script URL");
+			const prefix = appUrl.slice(0, markerIdx);
+			const state = await import(`${prefix}js/state.js`);
+			const wsOpen = typeof WebSocket !== "undefined" ? WebSocket.OPEN : 1;
+			window.__voiceOnboardingSaveSettingsRequest = null;
+			state.setConnected(true);
+			state.setWs({
+				readyState: wsOpen,
+				send(raw) {
+					const req = JSON.parse(raw || "{}");
+					const resolver = state.pending[req.id];
+					if (!resolver) return;
+					if (req.method === "voice.config.save_settings") {
+						window.__voiceOnboardingSaveSettingsRequest = req.params || null;
+						resolver({ ok: true, payload: { ok: true } });
+					} else if (req.method === "voice.provider.toggle") {
+						resolver({ ok: true, payload: { ok: true } });
+					} else if (req.method === "voice.providers.all") {
+						resolver({
+							ok: true,
+							payload: {
+								stt: [
+									{
+										id: "whisper",
+										name: "OpenAI Whisper",
+										type: "stt",
+										category: "cloud",
+										description: "Best accuracy, handles accents and background noise",
+										available: true,
+										enabled: true,
+										keySource: "config",
+										settings: { baseUrl: "http://127.0.0.1:8001/v1" },
+										capabilities: { baseUrl: true },
+									},
+								],
+								tts: [],
+							},
+						});
+					} else {
+						resolver({
+							ok: false,
+							error: { message: `unexpected rpc in onboarding voice test: ${req.method}` },
+						});
+					}
+					delete state.pending[req.id];
+				},
+			});
+		});
+
+		await whisperRow.getByRole("button", { name: "Configure", exact: true }).click();
+		await whisperRow.locator('input[data-field="baseUrl"]').fill("http://127.0.0.1:8001/v1");
+		await whisperRow.getByRole("button", { name: "Save", exact: true }).click();
+
+		await expect.poll(() => page.evaluate(() => window.__voiceOnboardingSaveSettingsRequest)).not.toBeNull();
+
+		const sentRequest = await page.evaluate(() => window.__voiceOnboardingSaveSettingsRequest);
+		expect(sentRequest).toMatchObject({
+			provider: "whisper",
+			baseUrl: "http://127.0.0.1:8001/v1",
+		});
+		expect(pageErrors).toEqual([]);
+	});
 });

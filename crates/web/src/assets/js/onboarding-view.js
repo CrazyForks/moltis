@@ -51,6 +51,7 @@ import {
 	decodeBase64Safe,
 	fetchVoiceProviders,
 	saveVoiceKey,
+	saveVoiceSettings,
 	testTts,
 	toggleVoiceProvider,
 	transcribeAudio,
@@ -1790,6 +1791,8 @@ function OnboardingVoiceRow({
 	configuring,
 	apiKey,
 	setApiKey,
+	baseUrl,
+	setBaseUrl,
 	saving,
 	error,
 	onSaveKey,
@@ -1807,6 +1810,7 @@ function OnboardingVoiceRow({
 			keyInputRef.current.focus();
 		}
 	}, [isConfiguring]);
+	var supportsBaseUrl = provider.capabilities?.baseUrl === true;
 	var keySourceLabel =
 		provider.keySource === "env" ? "(from env)" : provider.keySource === "llm_provider" ? "(from LLM provider)" : "";
 
@@ -1897,6 +1901,23 @@ function OnboardingVoiceRow({
 						placeholder=${provider.keyPlaceholder || "API key"} />
 				</div>
 				${
+					supportsBaseUrl
+						? html`<div>
+					<label class="text-xs text-[var(--muted)] mb-1 block">Base URL</label>
+					<input
+						type="text"
+						class="provider-key-input w-full"
+						data-field="baseUrl"
+						value=${baseUrl}
+						onInput=${(e) => setBaseUrl(e.target.value)}
+						placeholder="http://localhost:8000/v1" />
+					<div class="text-xs text-[var(--muted)] mt-1">
+						Use this for a local or OpenAI-compatible server. Leave the API key blank if the endpoint does not require one.
+					</div>
+				</div>`
+						: null
+				}
+				${
 					provider.keyUrl
 						? html`<div class="text-xs text-[var(--muted)]">
 					Get your key at <a href=${provider.keyUrl} target="_blank" class="text-[var(--accent)] underline">${provider.keyUrlLabel || provider.keyUrl}</a>
@@ -1922,6 +1943,7 @@ function VoiceStep({ onNext, onBack }) {
 	var [allProviders, setAllProviders] = useState({ tts: [], stt: [] });
 	var [configuring, setConfiguring] = useState(null); // provider id with open key form
 	var [apiKey, setApiKey] = useState("");
+	var [baseUrl, setBaseUrl] = useState("");
 	var [saving, setSaving] = useState(false);
 	var [error, setError] = useState(null);
 	var [voiceTesting, setVoiceTesting] = useState(null); // { id, type, phase }
@@ -2005,27 +2027,38 @@ function VoiceStep({ onNext, onBack }) {
 	}
 
 	function onStartConfigure(providerId) {
+		var provider = [...allProviders.stt, ...allProviders.tts].find((candidate) => candidate.id === providerId);
 		setConfiguring(providerId);
 		setApiKey("");
+		setBaseUrl(provider?.settings?.baseUrl || "");
 		setError(null);
 	}
 
 	function onCancelConfigure() {
 		setConfiguring(null);
 		setApiKey("");
+		setBaseUrl("");
 		setError(null);
 	}
 
 	function onSaveKey(e) {
 		e.preventDefault();
-		if (!apiKey.trim()) {
-			setError("API key is required.");
+		var provider = [...allProviders.stt, ...allProviders.tts].find((candidate) => candidate.id === configuring);
+		var trimmedApiKey = apiKey.trim();
+		var trimmedBaseUrl = baseUrl.trim();
+		var hadBaseUrl = typeof provider?.settings?.baseUrl === "string" && provider.settings.baseUrl.trim().length > 0;
+		var shouldSaveBaseUrl = provider?.capabilities?.baseUrl === true && (trimmedBaseUrl.length > 0 || hadBaseUrl);
+		if (!(trimmedApiKey || shouldSaveBaseUrl)) {
+			setError("API key or base URL is required.");
 			return;
 		}
 		setError(null);
 		setSaving(true);
 		var providerId = configuring;
-		saveVoiceKey(providerId, apiKey.trim()).then(async (res) => {
+		var req = trimmedApiKey
+			? saveVoiceKey(providerId, trimmedApiKey, { baseUrl: shouldSaveBaseUrl ? trimmedBaseUrl : undefined })
+			: saveVoiceSettings(providerId, shouldSaveBaseUrl ? { baseUrl: trimmedBaseUrl } : undefined);
+		req.then(async (res) => {
 			if (res?.ok) {
 				// Auto-enable in onboarding: toggle on for each type this provider appears in.
 				// IDs differ between TTS and STT (e.g. "elevenlabs" vs "elevenlabs-stt"),
@@ -2048,6 +2081,7 @@ function VoiceStep({ onNext, onBack }) {
 				setSaving(false);
 				setConfiguring(null);
 				setApiKey("");
+				setBaseUrl("");
 				fetchProviders();
 			} else {
 				setSaving(false);
@@ -2261,6 +2295,8 @@ function VoiceStep({ onNext, onBack }) {
 						configuring=${configuring}
 						apiKey=${apiKey}
 						setApiKey=${setApiKey}
+						baseUrl=${baseUrl}
+						setBaseUrl=${setBaseUrl}
 						saving=${saving}
 						error=${configuring === prov.id ? error : null}
 						onSaveKey=${onSaveKey}
@@ -2289,6 +2325,8 @@ function VoiceStep({ onNext, onBack }) {
 						configuring=${configuring}
 						apiKey=${apiKey}
 						setApiKey=${setApiKey}
+						baseUrl=${baseUrl}
+						setBaseUrl=${setBaseUrl}
 						saving=${saving}
 						error=${configuring === prov.id ? error : null}
 						onSaveKey=${onSaveKey}

@@ -746,3 +746,24 @@ fn terminal_disabled_via_config_reflects_in_helper() {
     // deny unsafe code, and `std::env::set_var` is unsafe.)
     assert!(!cfg.server.is_terminal_enabled());
 }
+
+#[test]
+fn voice_openai_and_whisper_base_url_parse_from_toml() {
+    let toml_str = r#"
+[voice.tts.openai]
+base_url = "http://127.0.0.1:8003/v1"
+
+[voice.stt.whisper]
+base_url = "http://127.0.0.1:8001/v1"
+"#;
+    let config: MoltisConfig = toml::from_str(toml_str).unwrap();
+
+    assert_eq!(
+        config.voice.tts.openai.base_url.as_deref(),
+        Some("http://127.0.0.1:8003/v1")
+    );
+    assert_eq!(
+        config.voice.stt.whisper.base_url.as_deref(),
+        Some("http://127.0.0.1:8001/v1")
+    );
+}
