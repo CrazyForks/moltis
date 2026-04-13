@@ -68,11 +68,17 @@ pub(crate) struct ChatFinalBroadcast {
     pub provider: String,
     pub input_tokens: u32,
     pub output_tokens: u32,
+    pub cache_read_tokens: u32,
+    pub cache_write_tokens: u32,
     pub duration_ms: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub request_input_tokens: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub request_output_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_cache_read_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_cache_write_tokens: Option<u32>,
     pub message_index: usize,
     pub reply_medium: ReplyMedium,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -105,9 +111,13 @@ pub(crate) struct AssistantTurnOutput {
     pub text: String,
     pub input_tokens: u32,
     pub output_tokens: u32,
+    pub cache_read_tokens: u32,
+    pub cache_write_tokens: u32,
     pub duration_ms: u64,
     pub request_input_tokens: u32,
     pub request_output_tokens: u32,
+    pub request_cache_read_tokens: u32,
+    pub request_cache_write_tokens: u32,
     pub audio_path: Option<String>,
     pub reasoning: Option<String>,
     pub llm_api_response: Option<Value>,
@@ -117,8 +127,12 @@ pub(crate) struct AssistantTurnOutput {
 pub(crate) struct SessionTokenUsage {
     pub session_input_tokens: u64,
     pub session_output_tokens: u64,
+    pub session_cache_read_tokens: u64,
+    pub session_cache_write_tokens: u64,
     pub current_request_input_tokens: u64,
     pub current_request_output_tokens: u64,
+    pub current_request_cache_read_tokens: u64,
+    pub current_request_cache_write_tokens: u64,
 }
 
 #[must_use]
@@ -131,12 +145,25 @@ pub(crate) fn session_token_usage_from_messages(messages: &[Value]) -> SessionTo
         .iter()
         .filter_map(|m| m.get("outputTokens").and_then(|v| v.as_u64()))
         .sum();
+    let session_cache_read_tokens = messages
+        .iter()
+        .filter_map(|m| m.get("cacheReadTokens").and_then(|v| v.as_u64()))
+        .sum();
+    let session_cache_write_tokens = messages
+        .iter()
+        .filter_map(|m| m.get("cacheWriteTokens").and_then(|v| v.as_u64()))
+        .sum();
 
-    let (current_request_input_tokens, current_request_output_tokens) = messages
+    let (
+        current_request_input_tokens,
+        current_request_output_tokens,
+        current_request_cache_read_tokens,
+        current_request_cache_write_tokens,
+    ) = messages
         .iter()
         .rev()
         .find(|m| m.get("role").and_then(|v| v.as_str()) == Some("assistant"))
-        .map_or((0, 0), |m| {
+        .map_or((0, 0, 0, 0), |m| {
             let input = m
                 .get("requestInputTokens")
                 .and_then(|v| v.as_u64())
@@ -147,14 +174,72 @@ pub(crate) fn session_token_usage_from_messages(messages: &[Value]) -> SessionTo
                 .and_then(|v| v.as_u64())
                 .or_else(|| m.get("outputTokens").and_then(|v| v.as_u64()))
                 .unwrap_or(0);
-            (input, output)
+            let cache_read = m
+                .get("requestCacheReadTokens")
+                .and_then(|v| v.as_u64())
+                .or_else(|| m.get("cacheReadTokens").and_then(|v| v.as_u64()))
+                .unwrap_or(0);
+            let cache_write = m
+                .get("requestCacheWriteTokens")
+                .and_then(|v| v.as_u64())
+                .or_else(|| m.get("cacheWriteTokens").and_then(|v| v.as_u64()))
+                .unwrap_or(0);
+            (input, output, cache_read, cache_write)
         });
 
     SessionTokenUsage {
         session_input_tokens,
         session_output_tokens,
+        session_cache_read_tokens,
+        session_cache_write_tokens,
         current_request_input_tokens,
         current_request_output_tokens,
+        current_request_cache_read_tokens,
+        current_request_cache_write_tokens,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::session_token_usage_from_messages;
+
+    #[test]
+    fn session_token_usage_tracks_cached_tokens() {
+        let messages = vec![
+            serde_json::json!({
+                "role": "assistant",
+                "inputTokens": 200,
+                "outputTokens": 20,
+                "cacheReadTokens": 150,
+                "cacheWriteTokens": 10,
+                "requestInputTokens": 180,
+                "requestOutputTokens": 18,
+                "requestCacheReadTokens": 140,
+                "requestCacheWriteTokens": 8
+            }),
+            serde_json::json!({
+                "role": "assistant",
+                "inputTokens": 300,
+                "outputTokens": 30,
+                "cacheReadTokens": 120,
+                "cacheWriteTokens": 5,
+                "requestInputTokens": 250,
+                "requestOutputTokens": 25,
+                "requestCacheReadTokens": 100,
+                "requestCacheWriteTokens": 2
+            }),
+        ];
+
+        let usage = session_token_usage_from_messages(&messages);
+
+        assert_eq!(usage.session_input_tokens, 500);
+        assert_eq!(usage.session_output_tokens, 50);
+        assert_eq!(usage.session_cache_read_tokens, 270);
+        assert_eq!(usage.session_cache_write_tokens, 15);
+        assert_eq!(usage.current_request_input_tokens, 250);
+        assert_eq!(usage.current_request_output_tokens, 25);
+        assert_eq!(usage.current_request_cache_read_tokens, 100);
+        assert_eq!(usage.current_request_cache_write_tokens, 2);
     }
 }
 

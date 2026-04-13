@@ -491,17 +491,33 @@ function renderContextTokensSection(card, data) {
 	var tu = data.tokenUsage || {};
 	var sessionInput = tu.inputTokens || 0;
 	var sessionOutput = tu.outputTokens || 0;
+	var sessionCacheRead = tu.cacheReadTokens || 0;
+	var sessionCacheWrite = tu.cacheWriteTokens || 0;
 	var sessionTotal = tu.total || 0;
 	var currentInput = tu.currentInputTokens || sessionInput;
 	var currentOutput = tu.currentOutputTokens || 0;
+	var currentCacheRead = tu.currentCacheReadTokens || 0;
+	var currentCacheWrite = tu.currentCacheWriteTokens || 0;
 	var currentTotal = tu.currentTotal || currentInput + currentOutput;
 	var estimatedNextInput = tu.estimatedNextInputTokens || currentInput;
 	var tokenSection = ctxSection("Token Usage");
 	tokenSection.appendChild(ctxRow("Session input", formatTokens(sessionInput), true));
 	tokenSection.appendChild(ctxRow("Session output", formatTokens(sessionOutput), true));
+	if (sessionCacheRead > 0) {
+		tokenSection.appendChild(ctxRow("Session cached input", formatTokens(sessionCacheRead), true));
+	}
+	if (sessionCacheWrite > 0) {
+		tokenSection.appendChild(ctxRow("Session cache writes", formatTokens(sessionCacheWrite), true));
+	}
 	tokenSection.appendChild(ctxRow("Session total", formatTokens(sessionTotal), true));
 	tokenSection.appendChild(ctxRow("Current input", formatTokens(currentInput), true));
 	tokenSection.appendChild(ctxRow("Current output", formatTokens(currentOutput), true));
+	if (currentCacheRead > 0) {
+		tokenSection.appendChild(ctxRow("Current cached input", formatTokens(currentCacheRead), true));
+	}
+	if (currentCacheWrite > 0) {
+		tokenSection.appendChild(ctxRow("Current cache writes", formatTokens(currentCacheWrite), true));
+	}
 	tokenSection.appendChild(ctxRow("Current total", formatTokens(currentTotal), true));
 	tokenSection.appendChild(ctxRow("Estimated next input", formatTokens(estimatedNextInput), true));
 	if (tu.contextWindow > 0) {

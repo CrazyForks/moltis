@@ -15,8 +15,8 @@ import {
 import { highlightCodeBlocks } from "./code-highlight.js";
 import * as gon from "./gon.js";
 import {
+	formatAssistantTokenUsage,
 	formatTokenSpeed,
-	formatTokens,
 	parseAgentsListPayload,
 	renderAudioPlayer,
 	renderDocument,
@@ -687,7 +687,7 @@ function createModelFooter(msg) {
 	ft.className = "msg-model-footer";
 	var ftText = msg.provider ? `${msg.provider} / ${msg.model}` : msg.model;
 	if (msg.inputTokens || msg.outputTokens) {
-		ftText += ` \u00b7 ${formatTokens(msg.inputTokens || 0)} in / ${formatTokens(msg.outputTokens || 0)} out`;
+		ftText += ` \u00b7 ${formatAssistantTokenUsage(msg.inputTokens, msg.outputTokens, msg.cacheReadTokens)}`;
 	}
 	var textSpan = document.createElement("span");
 	textSpan.textContent = ftText;

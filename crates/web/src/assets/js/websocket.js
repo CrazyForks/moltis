@@ -14,8 +14,8 @@ import {
 import { highlightCodeBlocks } from "./code-highlight.js";
 import { eventListeners } from "./events.js";
 import {
+	formatAssistantTokenUsage,
 	formatTokenSpeed,
-	formatTokens,
 	localizeStructuredError,
 	renderAudioPlayer,
 	renderDocument,
@@ -536,7 +536,7 @@ function appendFinalFooter(msgEl, p, eventSession) {
 	footer.className = "msg-model-footer";
 	var footerText = p.provider ? `${p.provider} / ${p.model}` : p.model;
 	if (p.inputTokens || p.outputTokens) {
-		footerText += ` \u00b7 ${formatTokens(p.inputTokens || 0)} in / ${formatTokens(p.outputTokens || 0)} out`;
+		footerText += ` \u00b7 ${formatAssistantTokenUsage(p.inputTokens, p.outputTokens, p.cacheReadTokens)}`;
 	}
 	var textSpan = document.createElement("span");
 	textSpan.textContent = footerText;
@@ -595,9 +595,13 @@ function handleChatFinal(p, isActive, isChatPage, eventSession) {
 				provider: p.provider || "",
 				inputTokens: p.inputTokens || 0,
 				outputTokens: p.outputTokens || 0,
+				cacheReadTokens: p.cacheReadTokens || 0,
+				cacheWriteTokens: p.cacheWriteTokens || 0,
 				durationMs: p.durationMs || 0,
 				requestInputTokens: p.requestInputTokens,
 				requestOutputTokens: p.requestOutputTokens,
+				requestCacheReadTokens: p.requestCacheReadTokens,
+				requestCacheWriteTokens: p.requestCacheWriteTokens,
 				reasoning: p.reasoning || null,
 				audio: p.audio || null,
 				run_id: p.runId || null,

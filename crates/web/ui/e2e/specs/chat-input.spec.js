@@ -524,6 +524,25 @@ test.describe("Chat input and slash commands", () => {
 		expect(pageErrors).toEqual([]);
 	});
 
+	test("assistant token usage formatter shows cached input counts when present", async ({ page }) => {
+		const formatted = await page.evaluate(async () => {
+			var appScript = document.querySelector('script[type="module"][src*="js/app.js"]');
+			if (!appScript) throw new Error("app module script not found");
+			var appUrl = new URL(appScript.src, window.location.origin);
+			var prefix = appUrl.href.slice(0, appUrl.href.length - "js/app.js".length);
+			var helpers = await import(`${prefix}js/helpers.js`);
+			return {
+				cached: helpers.formatAssistantTokenUsage(12400, 320, 11800),
+				uncached: helpers.formatAssistantTokenUsage(900, 45, 0),
+			};
+		});
+
+		expect(formatted).toEqual({
+			cached: "12.4K in (11.8K cached) / 320 out",
+			uncached: "900 in / 45 out",
+		});
+	});
+
 	test("token bar context-left uses current request input, not cumulative totals", async ({ page }) => {
 		const pageErrors = watchPageErrors(page);
 
