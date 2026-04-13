@@ -5,7 +5,16 @@ use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
 use super::AuthState;
 
 #[cfg(test)]
-use super::localhost_cookie_domain;
+use std::sync::Arc;
+
+#[cfg(test)]
+use super::{clear_session_response, localhost_cookie_domain, session_response};
+
+#[cfg(test)]
+use crate::login_guard::LoginGuard;
+
+#[cfg(test)]
+use moltis_gateway::{auth::CredentialStore, state::GatewayState};
 
 // ── Vault handlers ──────────────────────────────────────────────────────────
 
