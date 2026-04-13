@@ -316,6 +316,8 @@ test.describe("Settings navigation", () => {
 			const prefix = appUrl.slice(0, markerIdx);
 			const state = await import(`${prefix}js/state.js`);
 			const wsOpen = typeof WebSocket !== "undefined" ? WebSocket.OPEN : 1;
+			window.__voiceSettingsCurrentBaseUrl = null;
+			window.__voiceSettingsRequests = [];
 			window.__voiceSettingsClearBaseUrlRequest = null;
 			state.setConnected(true);
 			state.setWs({
@@ -325,7 +327,12 @@ test.describe("Settings navigation", () => {
 					const resolver = state.pending[req.id];
 					if (!resolver) return;
 					if (req.method === "voice.config.save_settings") {
-						window.__voiceSettingsClearBaseUrlRequest = req.params || null;
+						window.__voiceSettingsRequests.push(req.params || null);
+						window.__voiceSettingsCurrentBaseUrl =
+							typeof req.params?.baseUrl === "string" ? req.params.baseUrl : window.__voiceSettingsCurrentBaseUrl;
+						if (req.params?.baseUrl === "") {
+							window.__voiceSettingsClearBaseUrlRequest = req.params || null;
+						}
 						resolver({ ok: true, payload: { ok: true } });
 					} else if (req.method === "voice.providers.all") {
 						resolver({
@@ -341,7 +348,7 @@ test.describe("Settings navigation", () => {
 										available: true,
 										enabled: false,
 										keySource: "config",
-										settings: { baseUrl: "http://127.0.0.1:8001/v1" },
+										settings: { baseUrl: window.__voiceSettingsCurrentBaseUrl || "" },
 										capabilities: { baseUrl: true },
 									},
 								],
@@ -360,7 +367,18 @@ test.describe("Settings navigation", () => {
 		});
 
 		await whisperRow.getByRole("button", { name: "Configure", exact: true }).click();
-		const modal = page
+		let modal = page
+			.locator(".modal-box")
+			.filter({ has: page.getByText("OpenAI Whisper", { exact: false }) })
+			.last();
+		await expect(modal).toBeVisible();
+		await modal.locator('input[data-field="baseUrl"]').fill("http://127.0.0.1:8001/v1");
+		await modal.getByRole("button", { name: "Save", exact: true }).click();
+
+		await expect.poll(() => page.evaluate(() => window.__voiceSettingsRequests.length)).toBeGreaterThan(0);
+
+		await whisperRow.getByRole("button", { name: "Configure", exact: true }).click();
+		modal = page
 			.locator(".modal-box")
 			.filter({ has: page.getByText("OpenAI Whisper", { exact: false }) })
 			.last();
