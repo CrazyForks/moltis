@@ -1,4 +1,4 @@
-use {super::*, axum::routing::get};
+use super::*;
 
 pub(super) struct FinalizeGatewayArgs<'a> {
     pub bind: &'a str,
@@ -150,7 +150,7 @@ pub(super) async fn finalize_prepared_gateway(
             let ca_clone = Arc::clone(&ca_bytes);
             app = app.route(
                 "/certs/ca.pem",
-                get(move || {
+                axum::routing::get(move || {
                     let data = Arc::clone(&ca_clone);
                     async move {
                         (
