@@ -16,7 +16,10 @@ use crate::{
         LOG_CALLBACK, LogCallback, NETWORK_AUDIT_CALLBACK, NetworkAuditCallback,
         SESSION_EVENT_CALLBACK, SessionEventCallback, emit_log, emit_session_event,
     },
-    chat::{build_chat_response, StreamCallback, StreamCallbackCtx, BridgeStreamEvent, resolve_provider_for_model},
+    chat::{
+        BridgeStreamEvent, StreamCallback, StreamCallbackCtx, build_chat_response,
+        resolve_provider_for_model,
+    },
     helpers::{
         config_dir_string, encode_error, encode_json, parse_ffi_request, read_c_string,
         record_call, record_error, trace_call, with_ffi_boundary,
@@ -608,13 +611,14 @@ pub extern "C" fn moltis_shutdown() {
 #[allow(unsafe_code)]
 #[cfg(test)]
 mod tests {
-    use std::ffi::{CStr, CString, c_char, c_void};
-    use std::sync::{Arc, Mutex};
+    use std::{
+        ffi::{CStr, CString, c_char, c_void},
+        sync::{Arc, Mutex},
+    };
 
     use serde_json::Value;
 
-    use super::*;
-    use crate::state::BRIDGE;
+    use {super::*, crate::state::BRIDGE};
 
     fn text_from_ptr(ptr: *mut c_char) -> String {
         assert!(!ptr.is_null(), "ffi returned null pointer");

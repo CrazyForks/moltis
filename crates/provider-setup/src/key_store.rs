@@ -4,12 +4,9 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use {
-    serde_json::Value,
-    tracing::warn,
-};
+use {serde_json::Value, tracing::warn};
 
-use moltis_providers::raw_model_id;
+use moltis_providers::model_id::raw_model_id;
 
 // ── Model normalization helpers ────────────────────────────────────────────
 
@@ -203,7 +200,10 @@ impl KeyStore {
                     error = %error,
                     "failed to create provider key store directory"
                 );
-                crate::error::Error::external("failed to create provider key store directory", error)
+                crate::error::Error::external(
+                    "failed to create provider key store directory",
+                    error,
+                )
             })?;
         }
         let data = serde_json::to_string_pretty(configs).map_err(|error| {

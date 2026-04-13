@@ -1,10 +1,6 @@
 //! Streaming mode (no tools) - `run_streaming` with retry logic.
 
-use std::{
-    collections::HashMap,
-    sync::Arc,
-    time::Instant,
-};
+use std::{collections::HashMap, sync::Arc, time::Instant};
 
 use {
     serde_json::Value,
@@ -23,11 +19,8 @@ use {
 };
 
 use crate::{
-    chat_error::parse_chat_error,
-    channels::send_retry_status_to_channels,
-    models::DisabledModelsStore,
-    runtime::ChatRuntime,
-    types::*,
+    channels::send_retry_status_to_channels, chat_error::parse_chat_error,
+    models::DisabledModelsStore, runtime::ChatRuntime, types::*,
 };
 
 const STREAM_RETRYABLE_SERVER_PATTERNS: &[&str] = &[
@@ -490,7 +483,3 @@ async fn run_streaming(
         return None;
     }
 }
-
-/// Send a push notification when a chat response completes.
-/// Only sends if push notifications are configured and there are subscribers.
-#[cfg(feature = "push-notifications")]

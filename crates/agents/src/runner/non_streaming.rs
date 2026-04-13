@@ -14,30 +14,23 @@ use crate::{
     response_sanitizer::{clean_response, recover_tool_calls_from_content},
     tool_arg_validator::validate_tool_args,
     tool_loop_detector::ToolCallFingerprint,
-    tool_parsing::{looks_like_failed_tool_call, new_synthetic_tool_call_id, parse_tool_calls_from_text},
+    tool_parsing::{
+        looks_like_failed_tool_call, new_synthetic_tool_call_id, parse_tool_calls_from_text,
+    },
     tool_registry::ToolRegistry,
 };
 
 use super::{
-    AgentRunError, AgentRunResult, OnEvent, RunnerEvent,
-    apply_loop_detector_intervention,
-    channel_binding_from_tool_context,
-    empty_tool_name_retry_prompt,
-    explicit_shell_command_from_user_content,
-    find_empty_tool_name_call,
-    has_named_tool_call,
-    is_substantive_answer_text,
-    record_answer_text,
-    sanitize_tool_name,
-    tool_result::sanitize_tool_result,
+    AUTO_CONTINUE_NUDGE, AgentRunError, AgentRunResult, MALFORMED_TOOL_RETRY_PROMPT, OnEvent,
+    RunnerEvent, apply_loop_detector_intervention, channel_binding_from_tool_context,
+    empty_tool_name_retry_prompt, explicit_shell_command_from_user_content,
+    find_empty_tool_name_call, has_named_tool_call, is_substantive_answer_text, record_answer_text,
     retry::{
-        RATE_LIMIT_MAX_RETRIES,
-        is_context_window_error,
-        next_retry_delay_ms,
+        RATE_LIMIT_MAX_RETRIES, is_context_window_error, next_retry_delay_ms,
         resolve_agent_max_iterations,
     },
-    AUTO_CONTINUE_NUDGE,
-    MALFORMED_TOOL_RETRY_PROMPT,
+    sanitize_tool_name,
+    tool_result::sanitize_tool_result,
 };
 
 use crate::tool_loop_detector::ToolLoopDetector;

@@ -1,10 +1,6 @@
 use std::{path::PathBuf, sync::Arc};
 
-use crate::{
-    auth_webauthn::SharedWebAuthnRegistry,
-    methods::MethodRegistry,
-    state::GatewayState,
-};
+use crate::{auth_webauthn::SharedWebAuthnRegistry, methods::MethodRegistry, state::GatewayState};
 
 #[cfg(feature = "tailscale")]
 use crate::tailscale::TailscaleMode;

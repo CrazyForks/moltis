@@ -602,10 +602,7 @@ pub(crate) fn provider_filter_from_params(params: &Value) -> Option<String> {
         .filter(|v| !v.is_empty())
 }
 
-pub(crate) fn provider_matches_filter(
-    model_provider: &str,
-    provider_filter: Option<&str>,
-) -> bool {
+pub(crate) fn provider_matches_filter(model_provider: &str, provider_filter: Option<&str>) -> bool {
     provider_filter.is_none_or(|expected| normalize_provider_key(model_provider) == expected)
 }
 

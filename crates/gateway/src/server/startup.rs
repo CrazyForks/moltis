@@ -2,10 +2,7 @@ use std::{path::PathBuf, sync::Arc};
 
 use tracing::{debug, info, warn};
 
-use crate::{
-    auth_webauthn::SharedWebAuthnRegistry,
-    state::GatewayState,
-};
+use crate::{auth_webauthn::SharedWebAuthnRegistry, state::GatewayState};
 
 #[cfg(feature = "tailscale")]
 use crate::tailscale::{CliTailscaleManager, TailscaleManager};

@@ -2,11 +2,7 @@
 
 use std::{path::Path, sync::Arc};
 
-use {
-    async_trait::async_trait,
-    serde_json::Value,
-    tracing::warn,
-};
+use {async_trait::async_trait, serde_json::Value, tracing::warn};
 
 use {
     moltis_agents::tool_registry::{AgentTool, ToolRegistry},

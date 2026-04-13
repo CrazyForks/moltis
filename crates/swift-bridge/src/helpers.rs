@@ -2,14 +2,14 @@
 
 use std::ffi::{CStr, CString, c_char};
 
-use {
-    moltis_config::validate::Severity,
-    serde::Serialize,
-};
+use {moltis_config::validate::Severity, serde::Serialize};
 
 use crate::{
     state::BRIDGE,
-    types::{ErrorEnvelope, ErrorPayload, SandboxSharedHomeConfigResponse, SandboxStatusResponse, ValidationSummary},
+    types::{
+        ErrorEnvelope, ErrorPayload, SandboxSharedHomeConfigResponse, SandboxStatusResponse,
+        ValidationSummary,
+    },
 };
 
 // ── Encoding helpers ─────────────────────────────────────────────────────

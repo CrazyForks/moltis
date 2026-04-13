@@ -21,8 +21,8 @@ use {
 use crate::{
     runtime::ChatRuntime,
     types::{
-        PromptMemoryStatus, PromptPersona, detect_host_sudo_access, detect_runtime_shell,
-        memory_style_allows_prompt, normalized_iana_timezone, default_user_prompt_timezone,
+        PromptMemoryStatus, PromptPersona, default_user_prompt_timezone, detect_host_sudo_access,
+        detect_runtime_shell, memory_style_allows_prompt, normalized_iana_timezone,
         prompt_now_for_timezone, prompt_sandbox_no_network_state, prompt_today_for_timezone,
         refresh_runtime_prompt_time, server_prompt_timezone,
     },
@@ -445,10 +445,7 @@ pub(crate) async fn build_prompt_runtime_context(
     }
 }
 
-pub(crate) fn apply_request_runtime_context(
-    host: &mut PromptHostRuntimeContext,
-    params: &Value,
-) {
+pub(crate) fn apply_request_runtime_context(host: &mut PromptHostRuntimeContext, params: &Value) {
     host.accept_language = params
         .get("_accept_language")
         .and_then(|v| v.as_str())

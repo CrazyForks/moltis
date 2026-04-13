@@ -17,32 +17,24 @@ use {
     moltis_agents::{
         ChatMessage, UserContent,
         model::{StreamEvent, values_to_chat_messages},
-        prompt::{
-            PromptRuntimeContext,
-            build_system_prompt_with_session_runtime_details,
-        },
+        prompt::{PromptRuntimeContext, build_system_prompt_with_session_runtime_details},
         runner::{RunnerEvent, run_agent_loop_streaming},
         tool_registry::ToolRegistry,
     },
     moltis_config::ToolMode,
-    moltis_sessions::{
-        PersistedMessage,
-        store::SessionStore,
-    },
+    moltis_sessions::{PersistedMessage, store::SessionStore},
 };
 
 use crate::{
     agent_loop::{
-        ChannelStreamDispatcher, mark_unsupported_model, clear_unsupported_model,
+        ChannelStreamDispatcher, clear_unsupported_model, mark_unsupported_model,
         ordered_runner_event_callback,
     },
     channels::{
-        deliver_channel_replies, send_tool_status_to_channels,
-        send_tool_result_to_channels, send_screenshot_to_channels,
-        dispatch_document_to_channels, document_payload_from_data_uri,
-        document_payload_from_ref, send_location_to_channels,
-        generate_tts_audio, send_retry_status_to_channels,
-        notify_channels_of_compaction,
+        deliver_channel_replies, dispatch_document_to_channels, document_payload_from_data_uri,
+        document_payload_from_ref, generate_tts_audio, notify_channels_of_compaction,
+        send_location_to_channels, send_retry_status_to_channels, send_screenshot_to_channels,
+        send_tool_result_to_channels, send_tool_status_to_channels,
     },
     chat_error::parse_chat_error,
     memory_tools::{effective_tool_mode, install_agent_scoped_memory_tools},
@@ -1098,21 +1090,3 @@ async fn run_with_tools(
         },
     }
 }
-
-/// Compact a session's history by summarizing it with the given provider.
-///
-/// This is a standalone helper so `run_with_tools` can call it without
-/// requiring `&self` on `LiveChatService`.
-/// Compact a session using the configured [`moltis_config::CompactionMode`].
-///
-/// Thin wrapper around [`compaction_run::run_compaction`] that owns the
-/// session-store read/write pair. `provider` is forwarded to LLM-backed
-/// modes; `None` is accepted for deterministic compaction but causes
-/// `llm_replace` / `structured` to return a [`ProviderRequired`] error.
-///
-/// Returns the full [`compaction_run::CompactionOutcome`] so the caller
-/// can surface the effective mode and token usage in its broadcast
-/// event. This is a standalone helper so `run_with_tools` can call it
-/// without requiring `&self` on `LiveChatService`.
-///
-/// [`ProviderRequired`]: compaction_run::CompactionRunError::ProviderRequired

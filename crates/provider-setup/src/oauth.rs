@@ -3,9 +3,11 @@
 
 use std::path::{Path, PathBuf};
 
-use secrecy::Secret;
-use serde_json::Value;
-use tracing::{debug, info};
+use {
+    secrecy::Secret,
+    serde_json::Value,
+    tracing::{debug, info},
+};
 
 use moltis_oauth::{TokenStore, normalize_loopback_redirect};
 
@@ -170,10 +172,7 @@ pub(crate) fn has_oauth_tokens_for_provider(
 }
 
 /// Convenience wrapper used by `LiveProviderSetupService`.
-pub(crate) fn has_oauth_tokens(
-    provider_name: &str,
-    token_store: &TokenStore,
-) -> bool {
+pub(crate) fn has_oauth_tokens(provider_name: &str, token_store: &TokenStore) -> bool {
     has_oauth_tokens_for_provider(
         provider_name,
         token_store,

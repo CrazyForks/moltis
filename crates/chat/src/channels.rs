@@ -1,10 +1,6 @@
 //! Channel delivery, TTS, push notifications, tool status, screenshots, documents, and location.
 
-use std::{
-    collections::HashSet,
-    sync::Arc,
-    time::Duration,
-};
+use std::{collections::HashSet, sync::Arc, time::Duration};
 
 use {
     serde::{Deserialize, Serialize},
@@ -12,11 +8,7 @@ use {
     tracing::{debug, info, warn},
 };
 
-use crate::{
-    agent_loop::ChannelReplyTargetKey,
-    runtime::ChatRuntime,
-    types::*,
-};
+use crate::{agent_loop::ChannelReplyTargetKey, compaction_run, runtime::ChatRuntime, types::*};
 
 async fn send_chat_push_notification(state: &Arc<dyn ChatRuntime>, session_key: &str, text: &str) {
     // Create a short summary of the response (first 100 chars)
@@ -1297,5 +1289,3 @@ async fn send_location_to_channels(
         }
     }
 }
-
-#[allow(clippy::unwrap_used, clippy::expect_used)]

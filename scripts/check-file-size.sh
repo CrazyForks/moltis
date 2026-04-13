@@ -7,50 +7,7 @@ set -euo pipefail
 MAX_LINES=1500
 
 # Files queued for decomposition — remove as they're split below the limit.
-ALLOW=(
-  crates/agents/src/prompt.rs
-  crates/agents/src/runner.rs
-  crates/auth/src/credential_store.rs
-  crates/channels/src/plugin.rs
-  crates/chat/src/compaction.rs
-  crates/chat/src/lib.rs
-  crates/cli/src/doctor_commands.rs
-  crates/config/src/loader.rs
-  crates/config/src/schema.rs
-  crates/config/src/validate.rs
-  crates/cron/src/service.rs
-  crates/discord/src/handler.rs
-  crates/gateway/src/channel_events.rs
-  crates/gateway/src/local_llm_setup.rs
-  crates/gateway/src/methods/services.rs
-  crates/gateway/src/server.rs
-  crates/gateway/src/services.rs
-  crates/gateway/src/session.rs
-  crates/httpd/src/auth_routes.rs
-  crates/httpd/src/server.rs
-  crates/httpd/tests/auth_middleware.rs
-  crates/matrix/src/handler.rs
-  crates/openclaw-import/src/sessions.rs
-  crates/provider-setup/src/lib.rs
-  crates/providers/src/anthropic.rs
-  crates/providers/src/github_copilot.rs
-  crates/providers/src/lib.rs
-  crates/providers/src/local_gguf/models.rs
-  crates/providers/src/local_llm/backend.rs
-  crates/providers/src/openai.rs
-  crates/providers/src/openai_compat.rs
-  crates/providers/src/openai_codex.rs
-  crates/service-traits/src/lib.rs
-  crates/sessions/src/metadata.rs
-  crates/swift-bridge/src/lib.rs
-  crates/telegram/src/handlers.rs
-  crates/telegram/src/outbound.rs
-  crates/tools/src/cron_tool.rs
-  crates/tools/src/exec.rs
-  crates/tools/src/sandbox/tests.rs
-  crates/tools/src/skill_tools.rs
-  crates/web/src/terminal.rs
-)
+ALLOW=()
 
 # Check if a file is in the allowlist (bash 3.2 compatible).
 is_allowed() {

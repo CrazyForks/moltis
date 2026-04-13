@@ -1,8 +1,4 @@
-use std::{
-    collections::HashSet,
-    path::PathBuf,
-    sync::Arc,
-};
+use std::{collections::HashSet, path::PathBuf, sync::Arc};
 
 use tracing::info;
 

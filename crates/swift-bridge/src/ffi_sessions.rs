@@ -15,9 +15,7 @@ use {
 
 use crate::{
     callbacks::emit_log,
-    chat::{
-        BridgeStreamEvent, StreamCallback, StreamCallbackCtx, resolve_provider_for_model,
-    },
+    chat::{BridgeStreamEvent, StreamCallback, StreamCallbackCtx, resolve_provider_for_model},
     helpers::{
         encode_error, encode_json, parse_ffi_request, read_c_string, record_call, record_error,
         trace_call, with_ffi_boundary,

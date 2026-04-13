@@ -53,10 +53,7 @@ pub(crate) async fn discover_ollama_models(base_url: &str) -> crate::error::Resu
         .send()
         .await
         .map_err(|source| {
-            crate::error::Error::external(
-                "failed to query Ollama model discovery endpoint",
-                source,
-            )
+            crate::error::Error::external("failed to query Ollama model discovery endpoint", source)
         })?;
 
     if !response.status().is_success() {

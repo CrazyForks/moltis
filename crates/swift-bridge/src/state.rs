@@ -8,9 +8,7 @@ use std::{
 use {
     moltis_providers::ProviderRegistry,
     moltis_sessions::{
-        metadata::SqliteSessionMetadata,
-        session_events::SessionEventBus,
-        store::SessionStore,
+        metadata::SqliteSessionMetadata, session_events::SessionEventBus, store::SessionStore,
     },
 };
 

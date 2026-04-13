@@ -1,10 +1,14 @@
 //! Message content conversion and user document handling.
 
-use serde_json::Value;
-use tracing::{debug, warn};
+use {
+    serde_json::Value,
+    tracing::{debug, warn},
+};
 
 use {
-    moltis_agents::{ContentPart, UserContent, multimodal::parse_data_uri, prompt::VOICE_REPLY_SUFFIX},
+    moltis_agents::{
+        ContentPart, UserContent, multimodal::parse_data_uri, prompt::VOICE_REPLY_SUFFIX,
+    },
     moltis_sessions::{ContentBlock, MessageContent, UserDocument, store::SessionStore},
 };
 

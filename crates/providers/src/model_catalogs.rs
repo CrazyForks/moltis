@@ -295,8 +295,7 @@ pub(crate) const OPENAI_COMPAT_PROVIDERS: &[OpenAiCompatDef] = &[
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
-    use super::*;
-    use crate::catalog_to_discovered;
+    use {super::*, crate::catalog_to_discovered};
 
     #[test]
     fn model_lists_not_empty() {

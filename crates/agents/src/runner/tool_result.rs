@@ -161,7 +161,7 @@ pub(crate) fn extract_images_from_text_impl(input: &str) -> (Vec<ExtractedImage>
 }
 
 /// Test alias for extract_images_from_text_impl
-#[allow(clippy::unwrap_used, clippy::expect_used)]
+#[allow(dead_code, clippy::unwrap_used, clippy::expect_used)]
 #[cfg(test)]
 pub(crate) fn extract_images_from_text(input: &str) -> (Vec<ExtractedImage>, String) {
     extract_images_from_text_impl(input)

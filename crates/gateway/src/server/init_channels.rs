@@ -1,7 +1,4 @@
-use std::{
-    collections::HashSet,
-    sync::Arc,
-};
+use std::{collections::HashSet, sync::Arc};
 
 use tracing::info;
 
@@ -39,9 +36,9 @@ pub(crate) async fn init_channels(
 
     #[cfg(feature = "vault")]
     let channel_store: Arc<dyn ChannelStore> = {
-        let inner: Arc<dyn ChannelStore> = Arc::new(
-            crate::channel_store::SqliteChannelStore::new(db_pool.clone()),
-        );
+        let inner: Arc<dyn ChannelStore> = Arc::new(crate::channel_store::SqliteChannelStore::new(
+            db_pool.clone(),
+        ));
         Arc::new(crate::channel_store::VaultChannelStore::new(
             inner,
             vault.clone(),
@@ -237,9 +234,8 @@ pub(crate) async fn init_channels(
     services = services.with_channel_store(Arc::clone(&channel_store));
     let outbound_router = Arc::clone(&router) as Arc<dyn moltis_channels::ChannelOutbound>;
     services = services.with_channel_outbound(Arc::clone(&outbound_router));
-    services = services.with_channel_stream_outbound(
-        router as Arc<dyn moltis_channels::ChannelStreamOutbound>,
-    );
+    services = services
+        .with_channel_stream_outbound(router as Arc<dyn moltis_channels::ChannelStreamOutbound>);
 
     services.channel = Arc::new(crate::channel::LiveChannelService::new(
         registry,

@@ -23,11 +23,13 @@ pub trait SetupBroadcaster: Send + Sync {
 // Preserve the existing public API: all items previously accessible as
 // `moltis_provider_setup::Foo` remain accessible at the crate root.
 
-pub use config_helpers::{
-    AutoDetectedProviderSource, config_with_saved_keys,
-    detect_auto_provider_sources_with_overrides, has_explicit_provider_settings,
+pub use {
+    config_helpers::{
+        AutoDetectedProviderSource, config_with_saved_keys,
+        detect_auto_provider_sources_with_overrides, has_explicit_provider_settings,
+    },
+    key_store::{KeyStore, ProviderConfig},
+    known_providers::{AuthType, KnownProvider, known_providers},
+    oauth::import_detected_oauth_tokens,
+    service::{ErrorParser, LiveProviderSetupService},
 };
-pub use key_store::{KeyStore, ProviderConfig};
-pub use known_providers::{AuthType, KnownProvider, known_providers};
-pub use oauth::import_detected_oauth_tokens;
-pub use service::{ErrorParser, LiveProviderSetupService};

@@ -15,7 +15,10 @@ use {
 
 use crate::{
     callbacks::emit_log,
-    helpers::{build_validation_summary, config_dir_string, encode_json, record_call, record_error, trace_call},
+    helpers::{
+        build_validation_summary, config_dir_string, encode_json, record_call, record_error,
+        trace_call,
+    },
     state::BRIDGE,
     types::{ChatRequest, ChatResponse},
 };

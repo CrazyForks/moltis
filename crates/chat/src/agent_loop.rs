@@ -2,34 +2,33 @@
 
 use std::{
     collections::{HashMap, HashSet},
+    path::{Path, PathBuf},
     sync::Arc,
     time::Instant,
 };
 
+use async_trait::async_trait;
+
 use {
+    moltis_agents::tool_registry::AgentTool,
+    moltis_config::schema::{AgentMemoryWriteMode, MemoryStyle, ToolMode},
     serde_json::Value,
     tokio::sync::{Mutex, RwLock, mpsc},
     tracing::{debug, info, warn},
 };
 
 use {
-    moltis_agents::{
-        runner::RunnerEvent,
-        tool_registry::ToolRegistry,
-    },
-    moltis_sessions::{
-        PersistedMessage,
-        store::SessionStore,
-    },
+    moltis_agents::{runner::RunnerEvent, tool_registry::ToolRegistry},
+    moltis_sessions::{PersistedMessage, store::SessionStore},
 };
 
 use crate::{
-    chat_error::parse_chat_error,
     channels::{deliver_channel_replies, send_tool_status_to_channels},
-    compaction_run,
-    error,
+    chat_error::parse_chat_error,
+    compaction_run, error,
     models::DisabledModelsStore,
     runtime::ChatRuntime,
+    service::{build_tool_call_assistant_message, persist_tool_history_pair},
     types::*,
 };
 
@@ -933,7 +932,6 @@ fn effective_tool_mode(provider: &dyn moltis_agents::model::LlmProvider) -> Tool
         },
     }
 }
-
 
 async fn compact_session(
     store: &Arc<SessionStore>,

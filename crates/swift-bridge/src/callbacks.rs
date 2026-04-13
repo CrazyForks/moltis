@@ -6,10 +6,7 @@ use std::{
     sync::OnceLock,
 };
 
-use {
-    moltis_sessions::session_events::SessionEvent,
-    serde::Serialize,
-};
+use {moltis_sessions::session_events::SessionEvent, serde::Serialize};
 
 // ── Log callback for Swift ───────────────────────────────────────────────
 

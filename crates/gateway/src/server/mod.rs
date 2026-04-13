@@ -24,19 +24,23 @@ mod startup;
 mod workspace;
 
 #[cfg(test)]
-mod tests;
+#[allow(dead_code, clippy::all)]
+mod tests_legacy;
 
 // ── Re-exports ───────────────────────────────────────────────────────────────
 // Preserves the original public API surface of `crate::server::*`.
 
-pub use helpers::approval_manager_from_config;
-pub use prepare_core::prepare_gateway_core;
-pub use prepared::PreparedGatewayCore;
-pub use startup::{
-    openclaw_detected_for_ui, start_browser_warmup_after_listener,
-    start_openclaw_background_tasks, sync_runtime_webauthn_host_and_notice,
+pub(crate) use hooks::discover_and_build_hooks;
+pub use {
+    helpers::approval_manager_from_config,
+    prepare_core::prepare_gateway_core,
+    prepared::PreparedGatewayCore,
+    startup::{
+        openclaw_detected_for_ui, start_browser_warmup_after_listener,
+        start_openclaw_background_tasks, sync_runtime_webauthn_host_and_notice,
+    },
+    workspace::sync_persona_into_preset,
 };
-pub use workspace::sync_persona_into_preset;
 
 #[cfg(feature = "local-llm")]
 pub use startup::local_llama_cpp_bytes_for_ui;

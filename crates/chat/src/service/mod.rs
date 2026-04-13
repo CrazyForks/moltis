@@ -12,16 +12,15 @@ use std::{
 use {
     serde::Serialize,
     serde_json::Value,
-    tokio::sync::{RwLock, Semaphore},
-    tokio::task::AbortHandle,
+    tokio::{
+        sync::{RwLock, Semaphore},
+        task::AbortHandle,
+    },
     tracing::{debug, info, warn},
 };
 
 use {
-    moltis_agents::{
-        runner::RunnerEvent,
-        tool_registry::ToolRegistry,
-    },
+    moltis_agents::{runner::RunnerEvent, tool_registry::ToolRegistry},
     moltis_providers::ProviderRegistry,
     moltis_sessions::{
         PersistedMessage,
@@ -32,12 +31,7 @@ use {
     },
 };
 
-use crate::{
-    error,
-    models::DisabledModelsStore,
-    runtime::ChatRuntime,
-    types::*,
-};
+use crate::{error, models::DisabledModelsStore, runtime::ChatRuntime, types::*};
 
 /// A message that arrived while an agent run was already active on the session.
 #[derive(Debug, Clone)]
@@ -131,7 +125,7 @@ fn build_persisted_tool_call(
     }
 }
 
-fn build_tool_call_assistant_message(
+pub(crate) fn build_tool_call_assistant_message(
     tool_call_id: impl Into<String>,
     tool_name: impl Into<String>,
     arguments: Option<Value>,
@@ -161,7 +155,7 @@ fn build_tool_call_assistant_message(
     }
 }
 
-async fn persist_tool_history_pair(
+pub(crate) async fn persist_tool_history_pair(
     session_store: &Arc<SessionStore>,
     session_key: &str,
     assistant_tool_call_msg: PersistedMessage,

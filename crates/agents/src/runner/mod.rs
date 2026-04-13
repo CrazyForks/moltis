@@ -6,7 +6,8 @@ mod streaming;
 pub mod tool_result;
 
 #[cfg(test)]
-mod tests;
+#[allow(dead_code, clippy::all)]
+mod tests_legacy;
 
 use std::borrow::Cow;
 
@@ -24,9 +25,11 @@ use crate::{
 
 // ── Re-exports (preserve public API) ────────────────────────────────────
 
-pub use non_streaming::{run_agent, run_agent_loop, run_agent_loop_with_context};
-pub use streaming::run_agent_loop_streaming;
-pub use tool_result::{ExtractedImage, sanitize_tool_result, tool_result_to_content};
+pub use {
+    non_streaming::{run_agent, run_agent_loop, run_agent_loop_with_context},
+    streaming::run_agent_loop_streaming,
+    tool_result::{ExtractedImage, sanitize_tool_result, tool_result_to_content},
+};
 
 // ── Constants ───────────────────────────────────────────────────────────
 

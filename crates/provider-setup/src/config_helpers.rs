@@ -6,10 +6,8 @@ use std::{
 };
 
 use secrecy::{ExposeSecret, Secret};
-use tracing::debug;
 
-use moltis_config::schema::ProvidersConfig;
-use moltis_oauth::TokenStore;
+use {moltis_config::schema::ProvidersConfig, moltis_oauth::TokenStore};
 
 use crate::{
     key_store::{KeyStore, ProviderConfig, normalize_model_list},
@@ -84,7 +82,10 @@ pub(crate) fn ui_offered_provider_order(config: &ProvidersConfig) -> Vec<String>
     let mut ordered = Vec::new();
     for name in &config.offered {
         let normalized = normalize_provider_name(name);
-        if normalized.is_empty() || ordered.iter().any(|existing: &String| existing == &normalized)
+        if normalized.is_empty()
+            || ordered
+                .iter()
+                .any(|existing: &String| existing == &normalized)
         {
             continue;
         }

@@ -1,11 +1,9 @@
-use std::{
-    collections::HashMap,
-    path::{Path as FsPath, PathBuf},
-    sync::Arc,
-};
+use std::{collections::HashMap, path::Path as FsPath, sync::Arc};
 
-use secrecy::ExposeSecret;
-use tracing::{debug, info, warn};
+use {
+    secrecy::ExposeSecret,
+    tracing::{info, warn},
+};
 
 use super::helpers::{ensure_ollama_model, env_value_with_overrides};
 
@@ -70,9 +68,7 @@ pub(crate) async fn init_memory_system(
                 | moltis_config::MemoryProvider::Custom
                 | moltis_config::MemoryProvider::OpenAi => {
                     let base_url = mem_cfg.base_url.clone().unwrap_or_else(|| match provider {
-                        moltis_config::MemoryProvider::Ollama => {
-                            "http://localhost:11434".into()
-                        },
+                        moltis_config::MemoryProvider::Ollama => "http://localhost:11434".into(),
                         _ => "https://api.openai.com".into(),
                     });
                     if provider == moltis_config::MemoryProvider::Ollama {
@@ -116,11 +112,10 @@ pub(crate) async fn init_memory_system(
                 .is_ok();
             if ollama_ok {
                 ensure_ollama_model("http://localhost:11434", "nomic-embed-text").await;
-                let e = moltis_memory::embeddings_openai::OpenAiEmbeddingProvider::new(
-                    String::new(),
-                )
-                .with_base_url("http://localhost:11434".into())
-                .with_model("nomic-embed-text".into(), 768);
+                let e =
+                    moltis_memory::embeddings_openai::OpenAiEmbeddingProvider::new(String::new())
+                        .with_base_url("http://localhost:11434".into())
+                        .with_model("nomic-embed-text".into(), 768);
                 embedding_providers.push(("ollama".into(), Box::new(e)));
                 info!("memory: detected Ollama at localhost:11434");
             }
@@ -155,8 +150,7 @@ pub(crate) async fn init_memory_system(
                     .get(config_name)
                     .and_then(|e| e.base_url.clone())
                     .unwrap_or_else(|| default_base.to_string());
-                let mut e =
-                    moltis_memory::embeddings_openai::OpenAiEmbeddingProvider::new(api_key);
+                let mut e = moltis_memory::embeddings_openai::OpenAiEmbeddingProvider::new(api_key);
                 if base != "https://api.openai.com" {
                     e = e.with_base_url(base);
                 }
@@ -166,34 +160,33 @@ pub(crate) async fn init_memory_system(
     }
 
     // Build the final embedder: fallback chain, single provider, or keyword-only.
-    let embedder: Option<Box<dyn moltis_memory::embeddings::EmbeddingProvider>> = if mem_cfg
-        .disable_rag
-    {
-        None
-    } else if embedding_providers.is_empty() {
-        info!("memory: no embedding provider found, using keyword-only search");
-        None
-    } else {
-        let names: Vec<&str> = embedding_providers
-            .iter()
-            .map(|(n, _)| n.as_str())
-            .collect();
-        if embedding_providers.len() == 1 {
-            if let Some((name, provider)) = embedding_providers.into_iter().next() {
-                info!(provider = %name, "memory: using single embedding provider");
-                Some(provider)
-            } else {
-                None
-            }
+    let embedder: Option<Box<dyn moltis_memory::embeddings::EmbeddingProvider>> =
+        if mem_cfg.disable_rag {
+            None
+        } else if embedding_providers.is_empty() {
+            info!("memory: no embedding provider found, using keyword-only search");
+            None
         } else {
-            info!(providers = ?names, active = names[0], "memory: fallback chain configured");
-            Some(Box::new(
-                moltis_memory::embeddings_fallback::FallbackEmbeddingProvider::new(
-                    embedding_providers,
-                ),
-            ))
-        }
-    };
+            let names: Vec<&str> = embedding_providers
+                .iter()
+                .map(|(n, _)| n.as_str())
+                .collect();
+            if embedding_providers.len() == 1 {
+                if let Some((name, provider)) = embedding_providers.into_iter().next() {
+                    info!(provider = %name, "memory: using single embedding provider");
+                    Some(provider)
+                } else {
+                    None
+                }
+            } else {
+                info!(providers = ?names, active = names[0], "memory: fallback chain configured");
+                Some(Box::new(
+                    moltis_memory::embeddings_fallback::FallbackEmbeddingProvider::new(
+                        embedding_providers,
+                    ),
+                ))
+            }
+        };
 
     let memory_db_path = data_dir.join("memory.db");
     let memory_pool_result = {
@@ -202,12 +195,21 @@ pub(crate) async fn init_memory_system(
             std::str::FromStr,
         };
         let options =
-            SqliteConnectOptions::from_str(&format!("sqlite:{}", memory_db_path.display()))
-                .expect("invalid memory database path")
-                .create_if_missing(true)
-                .journal_mode(SqliteJournalMode::Wal)
-                .synchronous(SqliteSynchronous::Normal)
-                .busy_timeout(std::time::Duration::from_secs(5));
+            match SqliteConnectOptions::from_str(&format!("sqlite:{}", memory_db_path.display())) {
+                Ok(options) => options,
+                Err(error) => {
+                    tracing::warn!(
+                        path = %memory_db_path.display(),
+                        error = %error,
+                        "memory: invalid memory database path"
+                    );
+                    return None;
+                },
+            }
+            .create_if_missing(true)
+            .journal_mode(SqliteJournalMode::Wal)
+            .synchronous(SqliteSynchronous::Normal)
+            .busy_timeout(std::time::Duration::from_secs(5));
         sqlx::pool::PoolOptions::new()
             .max_connections(db_pool_max_connections)
             .connect_with(options)
@@ -219,10 +221,7 @@ pub(crate) async fn init_memory_system(
                 tracing::warn!("memory migration failed: {e}");
                 None
             } else {
-                build_memory_runtime(
-                    mem_cfg, data_dir, embedder, memory_pool,
-                )
-                .await
+                build_memory_runtime(mem_cfg, data_dir, embedder, memory_pool).await
             }
         },
         Err(e) => {
@@ -234,7 +233,7 @@ pub(crate) async fn init_memory_system(
 
 /// Build the memory runtime, start initial sync, file watchers, and periodic syncs.
 async fn build_memory_runtime(
-    mem_cfg: &moltis_config::schema::MemoryConfig,
+    mem_cfg: &moltis_config::schema::MemoryEmbeddingConfig,
     data_dir: &FsPath,
     embedder: Option<Box<dyn moltis_memory::embeddings::EmbeddingProvider>>,
     memory_pool: sqlx::SqlitePool,
@@ -269,15 +268,9 @@ async fn build_memory_runtime(
             agents_root,
         ],
         citations: match mem_cfg.citations {
-            moltis_config::MemoryCitationsMode::On => {
-                moltis_memory::config::CitationMode::On
-            },
-            moltis_config::MemoryCitationsMode::Off => {
-                moltis_memory::config::CitationMode::Off
-            },
-            moltis_config::MemoryCitationsMode::Auto => {
-                moltis_memory::config::CitationMode::Auto
-            },
+            moltis_config::MemoryCitationsMode::On => moltis_memory::config::CitationMode::On,
+            moltis_config::MemoryCitationsMode::Off => moltis_memory::config::CitationMode::Off,
+            moltis_config::MemoryCitationsMode::Auto => moltis_memory::config::CitationMode::Auto,
         },
         llm_reranking: mem_cfg.llm_reranking,
         merge_strategy: match mem_cfg.search_merge_strategy {
@@ -296,37 +289,25 @@ async fn build_memory_runtime(
     ));
     let memory_dirs_for_watch = memory_runtime_config.memory_dirs.clone();
     let builtin_manager = Arc::new(if let Some(embedder) = embedder {
-        moltis_memory::manager::MemoryManager::new(
-            memory_runtime_config,
-            store,
-            embedder,
-        )
+        moltis_memory::manager::MemoryManager::new(memory_runtime_config, store, embedder)
     } else {
-        moltis_memory::manager::MemoryManager::keyword_only(
-            memory_runtime_config,
-            store,
-        )
+        moltis_memory::manager::MemoryManager::keyword_only(memory_runtime_config, store)
     });
     let manager: moltis_memory::runtime::DynMemoryRuntime = match mem_cfg.backend {
         moltis_config::MemoryBackend::Builtin => builtin_manager.clone(),
         moltis_config::MemoryBackend::Qmd => {
             #[cfg(feature = "qmd")]
             {
-                let qmd_manager = Arc::new(moltis_qmd::QmdManager::new(
-                    moltis_qmd::QmdManagerConfig {
-                        command: mem_cfg
-                            .qmd
-                            .command
-                            .clone()
-                            .unwrap_or_else(|| "qmd".into()),
+                let qmd_manager =
+                    Arc::new(moltis_qmd::QmdManager::new(moltis_qmd::QmdManagerConfig {
+                        command: mem_cfg.qmd.command.clone().unwrap_or_else(|| "qmd".into()),
                         collections: super::helpers::build_qmd_collections(data_dir, &mem_cfg.qmd),
                         max_results: mem_cfg.qmd.max_results.unwrap_or(20),
                         timeout_ms: mem_cfg.qmd.timeout_ms.unwrap_or(30_000),
                         work_dir: data_dir.to_path_buf(),
                         index_name: super::helpers::sanitize_qmd_index_name(data_dir),
                         env_overrides: HashMap::new(),
-                    },
-                ));
+                    }));
 
                 if qmd_manager.is_available().await {
                     info!(
@@ -389,8 +370,7 @@ async fn build_memory_runtime(
         #[cfg(feature = "file-watcher")]
         {
             let watcher_manager = Arc::clone(&sync_manager);
-            let watch_specs =
-                moltis_memory::watcher::build_watch_specs(&memory_dirs_for_watch);
+            let watch_specs = moltis_memory::watcher::build_watch_specs(&memory_dirs_for_watch);
             match moltis_memory::watcher::MemoryFileWatcher::start(watch_specs) {
                 Ok((_watcher, mut rx)) => {
                     info!("memory: file watcher started");
@@ -413,8 +393,7 @@ async fn build_memory_runtime(
                                 },
                             };
                             if let Some(path) = path
-                                && let Err(e) =
-                                    watcher_manager.sync_path(&path).await
+                                && let Err(e) = watcher_manager.sync_path(&path).await
                             {
                                 tracing::warn!(
                                     path = %path.display(),
@@ -440,8 +419,7 @@ async fn build_memory_runtime(
         #[cfg(not(feature = "file-watcher"))]
         let _ = memory_dirs_for_watch;
 
-        let mut interval =
-            tokio::time::interval(std::time::Duration::from_secs(interval_secs));
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(interval_secs));
         interval.tick().await; // skip first immediate tick
         loop {
             interval.tick().await;

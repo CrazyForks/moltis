@@ -1,9 +1,8 @@
 //! Configuration helpers: API key resolution, model list normalization.
 
-use std::collections::{HashSet, HashMap};
+use std::collections::{HashMap, HashSet};
 
-use moltis_config::schema::ProvidersConfig;
-use secrecy::ExposeSecret;
+use {moltis_config::schema::ProvidersConfig, secrecy::ExposeSecret};
 
 use crate::model_id::configured_model_for_provider;
 
