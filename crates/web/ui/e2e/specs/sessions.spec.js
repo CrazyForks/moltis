@@ -361,6 +361,42 @@ test.describe("Session management", () => {
 		expect(pageErrors).toEqual([]);
 	});
 
+	test("archived sessions are hidden by default and can be restored with the sidebar toggle", async ({ page }) => {
+		const pageErrors = watchPageErrors(page);
+		await navigateAndWait(page, "/");
+		await waitForWsConnected(page);
+		await expectRpcOk(page, "sessions.clear_all", {});
+
+		await createSession(page);
+		const sessionPath = new URL(page.url()).pathname;
+		const sessionKey = sessionPath.replace(/^\/chats\//, "").replace(/\//g, ":");
+		const sessionItem = page.locator(`#sessionList .session-item[data-session-key="${sessionKey}"]`);
+
+		await expect(sessionItem).toBeVisible({ timeout: 10_000 });
+
+		await openChatMoreModal(page);
+		await page.locator('#chatMoreModal button[title="Archive session"]').click();
+		await expect(page).toHaveURL(/\/chats\/main$/);
+		await expect(sessionItem).toHaveCount(0);
+
+		const archivedToggle = page.locator("#showArchivedSessions");
+		await expect(archivedToggle).toBeVisible();
+		await archivedToggle.check();
+		await expect(sessionItem).toBeVisible({ timeout: 10_000 });
+
+		await sessionItem.click();
+		await expect(page).toHaveURL(new RegExp(`/chats/${sessionKey.replace(/:/g, "/")}$`));
+
+		await openChatMoreModal(page);
+		await page.locator('#chatMoreModal button[title="Unarchive session"]').click();
+		await expect(sessionItem).toBeVisible({ timeout: 10_000 });
+
+		await archivedToggle.uncheck();
+		await expect(sessionItem).toBeVisible({ timeout: 10_000 });
+
+		expect(pageErrors).toEqual([]);
+	});
+
 	test("stop action appears for active run and clears after abort", async ({ page }) => {
 		const pageErrors = watchPageErrors(page);
 		await page.goto("/");

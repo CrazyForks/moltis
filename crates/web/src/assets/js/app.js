@@ -523,11 +523,15 @@ function initSessionTabBar() {
 	var bar = S.$("sessionTabBar");
 	if (!bar) return;
 	var buttons = bar.querySelectorAll(".session-tab");
+	var archivedRow = S.$("archivedSessionsRow");
 
 	function updateActive() {
 		var current = sessionStore.sessionListTab.value;
 		for (var btn of buttons) {
 			btn.classList.toggle("active", btn.dataset.tab === current);
+		}
+		if (archivedRow) {
+			archivedRow.classList.toggle("hidden", current !== "sessions");
 		}
 	}
 
@@ -540,11 +544,21 @@ function initSessionTabBar() {
 	updateActive();
 }
 
+function initArchivedSessionsToggle() {
+	var checkbox = S.$("showArchivedSessions");
+	if (!checkbox) return;
+	checkbox.checked = sessionStore.showArchivedSessions.value;
+	checkbox.addEventListener("change", function () {
+		sessionStore.setShowArchivedSessions(this.checked);
+	});
+}
+
 function startApp() {
 	// Mount the reactive SessionList once — signals drive all re-renders.
 	var sessionListEl = S.$("sessionList");
 	if (sessionListEl) render(html`<${SessionList} />`, sessionListEl);
 	initSessionTabBar();
+	initArchivedSessionsToggle();
 
 	var path = location.pathname;
 	if (path === "/") {

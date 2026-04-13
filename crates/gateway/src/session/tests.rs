@@ -1129,6 +1129,48 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn patch_archived_updates_metadata() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(SessionStore::new(dir.path().to_path_buf()));
+        let pool = sqlite_pool().await;
+        let metadata = Arc::new(SqliteSessionMetadata::new(pool));
+        metadata
+            .upsert("session:archive-me", Some("Test".to_string()))
+            .await
+            .unwrap();
+
+        let svc = LiveSessionService::new(Arc::clone(&store), Arc::clone(&metadata));
+
+        let result = svc
+            .patch(serde_json::json!({ "key": "session:archive-me", "archived": true }))
+            .await
+            .unwrap();
+        assert_eq!(result.get("archived").and_then(|v| v.as_bool()), Some(true));
+        assert!(metadata.get("session:archive-me").await.unwrap().archived);
+    }
+
+    #[tokio::test]
+    async fn patch_archived_rejects_main_session() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(SessionStore::new(dir.path().to_path_buf()));
+        let pool = sqlite_pool().await;
+        let metadata = Arc::new(SqliteSessionMetadata::new(pool));
+        metadata
+            .upsert("main", Some("Main".to_string()))
+            .await
+            .unwrap();
+
+        let svc = LiveSessionService::new(Arc::clone(&store), Arc::clone(&metadata));
+
+        let error = svc
+            .patch(serde_json::json!({ "key": "main", "archived": true }))
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("cannot be archived"));
+        assert!(!metadata.get("main").await.unwrap().archived);
+    }
+
     #[cfg(feature = "fs-tools")]
     #[tokio::test]
     async fn delete_clears_fs_state_for_session() {

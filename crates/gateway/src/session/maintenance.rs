@@ -230,28 +230,43 @@ impl LiveSessionService {
         }
 
         let max = params.get("limit").and_then(|v| v.as_u64()).unwrap_or(20) as usize;
+        let include_archived = params
+            .get("includeArchived")
+            .and_then(|v| v.as_bool())
+            .or_else(|| params.get("include_archived").and_then(|v| v.as_bool()))
+            .unwrap_or(false);
+        let search_limit = if include_archived {
+            max
+        } else {
+            max.saturating_mul(10).min(200)
+        };
 
         let results = self
             .store
-            .search(query, max)
+            .search(query, search_limit)
             .await
             .map_err(ServiceError::message)?;
 
         let enriched: Vec<Value> = {
             let mut out = Vec::with_capacity(results.len());
             for r in results {
-                let label = self
-                    .metadata
-                    .get(&r.session_key)
-                    .await
-                    .and_then(|e| e.label);
+                let Some(entry) = self.metadata.get(&r.session_key).await else {
+                    continue;
+                };
+                if entry.archived && !include_archived {
+                    continue;
+                }
                 out.push(serde_json::json!({
                     "sessionKey": r.session_key,
                     "snippet": r.snippet,
                     "role": r.role,
                     "messageIndex": r.message_index,
-                    "label": label,
+                    "label": entry.label,
+                    "archived": entry.archived,
                 }));
+                if out.len() >= max {
+                    break;
+                }
             }
             out
         };

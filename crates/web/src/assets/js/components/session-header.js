@@ -11,6 +11,7 @@ import { parseAgentsListPayload, sendRpc } from "../helpers.js";
 import {
 	clearActiveSession,
 	fetchSessions,
+	isArchivableSession,
 	setSessionActiveRunId,
 	setSessionReplying,
 	switchSession,
@@ -71,10 +72,12 @@ export function SessionHeader({
 	showStop = true,
 	showClear = true,
 	showDelete = true,
+	showArchive = true,
 	nameOwnLine = false,
 	showRenameButton = false,
 	actionButtonClass = "chat-session-btn",
 	onBeforeShare = null,
+	onBeforeArchive = null,
 	onBeforeDelete = null,
 } = {}) {
 	var session = sessionStore.activeSession.value;
@@ -104,6 +107,8 @@ export function SessionHeader({
 	var isCron = currentKey.startsWith("cron:");
 	var canRename = !(isMain || isCron);
 	var canStop = !isCron && replying;
+	var canArchive = !!session && isArchivableSession(session);
+	var showArchivedSessions = sessionStore.showArchivedSessions.value;
 	var currentAgentId = session?.agent_id || defaultAgentId || "main";
 	var currentNodeId = session?.node_id || "";
 
@@ -280,6 +285,28 @@ export function SessionHeader({
 		});
 	}, [onBeforeShare, shareSnapshot]);
 
+	var onArchive = useCallback(() => {
+		if (!(session && canArchive)) return;
+		if (typeof onBeforeArchive === "function") {
+			onBeforeArchive();
+		}
+		var nextArchived = !session.archived;
+		sendRpc("sessions.patch", { key: currentKey, archived: nextArchived }).then((res) => {
+			if (!res?.ok) {
+				showToast(res?.error?.message || "Failed to update archive state", "error");
+				return;
+			}
+			if (session) {
+				session.archived = nextArchived;
+				session.dataVersion.value++;
+			}
+			if (nextArchived && !showArchivedSessions) {
+				switchSession("main");
+			}
+			fetchSessions();
+		});
+	}, [canArchive, currentKey, onBeforeArchive, session, showArchivedSessions]);
+
 	var onAgentChange = useCallback(
 		(nextAgentId) => {
 			if (!nextAgentId || nextAgentId === currentAgentId || switchingAgent) {
@@ -454,6 +481,15 @@ export function SessionHeader({
 			}
 			${!nameOwnLine && showName && nameControl}
 			${!nameOwnLine && renameCta}
+				${
+					showArchive &&
+					canArchive &&
+					html`
+					<button class=${actionButtonClass} onClick=${onArchive} title=${session?.archived ? "Unarchive session" : "Archive session"}>
+						${session?.archived ? "Unarchive" : "Archive"}
+					</button>
+				`
+				}
 				${
 					showDelete &&
 					!isMain &&

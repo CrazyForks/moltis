@@ -168,6 +168,15 @@ impl SessionMetadata {
         }
     }
 
+    /// Set the archived flag for a session.
+    pub fn set_archived(&mut self, key: &str, archived: bool) {
+        if let Some(entry) = self.entries.get_mut(key) {
+            entry.archived = archived;
+            entry.updated_at = now_ms();
+            entry.version += 1;
+        }
+    }
+
     /// Set the worktree branch for a session.
     pub fn set_worktree_branch(&mut self, key: &str, branch: Option<String>) {
         if let Some(entry) = self.entries.get_mut(key) {
@@ -567,6 +576,27 @@ impl SqliteSessionMetadata {
             .execute(&self.pool)
             .await
             .ok();
+        self.emit(crate::session_events::SessionEvent::Patched {
+            session_key: key.to_string(),
+        });
+    }
+
+    pub async fn set_archived(&self, key: &str, archived: bool) {
+        let now = now_ms() as i64;
+        let archived = if archived {
+            1
+        } else {
+            0
+        };
+        sqlx::query(
+            "UPDATE sessions SET archived = ?, updated_at = ?, version = version + 1 WHERE key = ?",
+        )
+        .bind(archived)
+        .bind(now)
+        .bind(key)
+        .execute(&self.pool)
+        .await
+        .ok();
         self.emit(crate::session_events::SessionEvent::Patched {
             session_key: key.to_string(),
         });

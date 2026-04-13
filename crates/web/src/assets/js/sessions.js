@@ -544,7 +544,7 @@ newSessionBtn.addEventListener("click", () => {
 	}
 });
 
-function isClearableSession(session) {
+export function isArchivableSession(session) {
 	var isChannelSessionKey =
 		session.key.startsWith("telegram:") ||
 		session.key.startsWith("msteams:") ||
@@ -552,6 +552,10 @@ function isClearableSession(session) {
 		session.key.startsWith("slack:") ||
 		session.key.startsWith("matrix:");
 	return session.key !== "main" && !session.key.startsWith("cron:") && !isChannelSessionKey && !session.channelBinding;
+}
+
+function isClearableSession(session) {
+	return isArchivableSession(session);
 }
 
 export function clearAllSessions() {

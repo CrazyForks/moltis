@@ -229,6 +229,23 @@ fn test_touch() {
 }
 
 #[test]
+fn test_archived() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("meta.json");
+    let mut meta = SessionMetadata::load(path.clone()).unwrap();
+
+    meta.upsert("main", None);
+    assert!(!meta.get("main").unwrap().archived);
+
+    meta.set_archived("main", true);
+    assert!(meta.get("main").unwrap().archived);
+
+    meta.save().unwrap();
+    let reloaded = SessionMetadata::load(path).unwrap();
+    assert!(reloaded.get("main").unwrap().archived);
+}
+
+#[test]
 fn test_sandbox_enabled() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("meta.json");
@@ -295,6 +312,21 @@ async fn test_sqlite_worktree_branch() {
 
     meta.set_worktree_branch("main", None).await;
     assert!(meta.get("main").await.unwrap().worktree_branch.is_none());
+}
+
+#[tokio::test]
+async fn test_sqlite_archived() {
+    let pool = sqlite_pool().await;
+    let meta = SqliteSessionMetadata::new(pool);
+
+    meta.upsert("main", None).await.unwrap();
+    assert!(!meta.get("main").await.unwrap().archived);
+
+    meta.set_archived("main", true).await;
+    assert!(meta.get("main").await.unwrap().archived);
+
+    meta.set_archived("main", false).await;
+    assert!(!meta.get("main").await.unwrap().archived);
 }
 
 #[test]

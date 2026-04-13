@@ -240,6 +240,7 @@ export function SessionList() {
 	var refreshingKey = sessionStore.refreshInProgressKey.value;
 	var filterId = projectStore.projectFilterId.value;
 	var tab = sessionStore.sessionListTab.value;
+	var showArchived = sessionStore.showArchivedSessions.value;
 
 	// Spinner animation via setInterval
 	var spinnersRef = useRef(null);
@@ -258,7 +259,7 @@ export function SessionList() {
 
 	var filtered = filterId ? allSessions.filter((s) => s.projectId === filterId) : allSessions;
 	if (tab === "sessions") {
-		filtered = filtered.filter((s) => !(s.key || "").startsWith("cron:"));
+		filtered = filtered.filter((s) => !(s.key || "").startsWith("cron:") && (showArchived || !s.archived));
 	} else if (tab === "cron") {
 		filtered = filtered.filter((s) => (s.key || "").startsWith("cron:"));
 	}

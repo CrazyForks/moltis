@@ -81,6 +81,19 @@ When you delete a forked session, the UI navigates back to its parent session.
 If the deleted session had no parent (or the parent no longer exists), it falls
 back to the next sibling or `main`.
 
+## Archive in the UI
+
+The web UI also lets you archive regular chat sessions when you want to keep
+them without leaving them in the main sidebar list.
+
+- Open **More controls** for a session and click **Archive**.
+- Archived sessions are hidden from the default sidebar list.
+- Enable **Show archived sessions** in the sidebar to reveal and restore them.
+
+Archive is intentionally limited to regular web chat sessions. It is not
+available for `main`, cron sessions, or channel-bound sessions such as
+Telegram or Teams chats.
+
 ```admonish info title="Independence"
 A forked session is fully independent after creation. Changes to the parent
 do not propagate to the fork, and vice versa.

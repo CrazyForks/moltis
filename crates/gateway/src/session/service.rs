@@ -1,5 +1,20 @@
 use super::*;
 
+fn is_channel_session_key(key: &str) -> bool {
+    key.starts_with("telegram:")
+        || key.starts_with("msteams:")
+        || key.starts_with("discord:")
+        || key.starts_with("slack:")
+        || key.starts_with("matrix:")
+}
+
+fn is_archivable_entry(entry: &moltis_sessions::metadata::SessionEntry) -> bool {
+    entry.key != "main"
+        && !entry.key.starts_with("cron:")
+        && !is_channel_session_key(&entry.key)
+        && entry.channel_binding.is_none()
+}
+
 /// Live session service backed by JSONL store + SQLite metadata.
 pub struct LiveSessionService {
     pub(super) store: Arc<SessionStore>,
@@ -293,6 +308,7 @@ impl SessionService for LiveSessionService {
                 "forkPoint": e.fork_point,
                 "mcpDisabled": e.mcp_disabled,
                 "preview": preview,
+                "archived": e.archived,
                 "agent_id": agent_id,
                 "agentId": agent_id,
                 "node_id": e.node_id,
@@ -447,6 +463,14 @@ impl SessionService for LiveSessionService {
         if p.model.is_some() {
             self.metadata.set_model(key, p.model).await;
         }
+        if let Some(archived) = p.archived {
+            if !is_archivable_entry(&entry) {
+                return Err(ServiceError::message(format!(
+                    "session '{key}' cannot be archived"
+                )));
+            }
+            self.metadata.set_archived(key, archived).await;
+        }
         if let Some(project_id_opt) = p.project_id {
             let project_id = project_id_opt.filter(|s| !s.is_empty());
             self.metadata.set_project_id(key, project_id).await;
@@ -517,6 +541,7 @@ impl SessionService for LiveSessionService {
             "key": entry.key,
             "label": entry.label,
             "model": entry.model,
+            "archived": entry.archived,
             "sandbox_enabled": entry.sandbox_enabled,
             "sandbox_image": entry.sandbox_image,
             "worktree_branch": entry.worktree_branch,

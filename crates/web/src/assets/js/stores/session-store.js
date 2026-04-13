@@ -124,6 +124,7 @@ export var switchInProgress = signal(false);
 export var refreshInProgressKey = signal("");
 /** Session list tab filter: "all" | "sessions" | "cron" */
 export var sessionListTab = signal(localStorage.getItem("moltis-session-tab") || "sessions");
+export var showArchivedSessions = signal(localStorage.getItem("moltis-show-archived-sessions") === "1");
 
 export var activeSession = computed(() => {
 	var key = activeSessionKey.value;
@@ -255,6 +256,12 @@ export function setSessionListTab(tab) {
 	localStorage.setItem("moltis-session-tab", tab);
 }
 
+/** Toggle whether archived sessions are shown in the sidebar. */
+export function setShowArchivedSessions(show) {
+	showArchivedSessions.value = !!show;
+	localStorage.setItem("moltis-show-archived-sessions", show ? "1" : "0");
+}
+
 export var sessionStore = {
 	sessions,
 	activeSessionKey,
@@ -262,6 +269,7 @@ export var sessionStore = {
 	switchInProgress,
 	refreshInProgressKey,
 	sessionListTab,
+	showArchivedSessions,
 	Session,
 	setAll,
 	upsert,
@@ -270,5 +278,6 @@ export var sessionStore = {
 	getByKey,
 	setActive,
 	setSessionListTab,
+	setShowArchivedSessions,
 	notify,
 };
