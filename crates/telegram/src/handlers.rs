@@ -14,8 +14,8 @@ use {
 
 use {
     moltis_channels::{
-        ChannelAttachment, ChannelEvent, ChannelMessageKind, ChannelMessageMeta, ChannelOutbound,
-        ChannelReplyTarget, ChannelType,
+        ChannelAttachment, ChannelDocumentFile, ChannelEvent, ChannelEventSink, ChannelMessageKind,
+        ChannelMessageMeta, ChannelOutbound, ChannelReplyTarget, ChannelType, SavedChannelFile,
         config_view::ChannelConfigView,
         message_log::MessageLogEntry,
         otp::{approve_sender_via_otp, emit_otp_challenge, emit_otp_resolution},
@@ -49,6 +49,16 @@ fn outbound_to_for_msg(msg: &Message) -> String {
     match extract_thread_id(msg) {
         Some(tid) => format!("{}:{}", msg.chat.id.0, tid),
         None => msg.chat.id.0.to_string(),
+    }
+}
+
+fn reply_target_for_msg(account_id: &str, msg: &Message) -> ChannelReplyTarget {
+    ChannelReplyTarget {
+        channel_type: ChannelType::Telegram,
+        account_id: account_id.to_string(),
+        chat_id: msg.chat.id.0.to_string(),
+        message_id: Some(msg.id.0.to_string()),
+        thread_id: extract_thread_id(msg),
     }
 }
 
@@ -240,10 +250,11 @@ pub async fn handle_message_direct(
     // transcription error, empty transcription), `handle_voice_message` sends
     // a direct user-facing reply and returns `None`, so we bail out here
     // without dispatching a placeholder string to the LLM (see issue #632).
-    let (body, attachments, voice_audio): (
+    let (body, attachments, voice_audio, documents): (
         String,
         Vec<ChannelAttachment>,
         Option<(Vec<u8>, String)>,
+        Option<Vec<ChannelDocumentFile>>,
     ) = if let Some(voice_file) = extract_voice_file(&msg) {
         match handle_voice_message(
             bot,
@@ -256,7 +267,7 @@ pub async fn handle_message_direct(
         )
         .await
         {
-            Some(triple) => triple,
+            Some(triple) => (triple.0, triple.1, triple.2, None),
             None => return Ok(()),
         }
     } else if let Some(photo_file) = extract_photo_file(&msg) {
@@ -300,7 +311,7 @@ pub async fn handle_message_direct(
                 };
                 // Use caption as text, or empty string if no caption
                 let caption = text.clone().unwrap_or_default();
-                (caption, vec![attachment], None)
+                (caption, vec![attachment], None, None)
             },
             Err(e) => {
                 warn!(account_id, error = %e, "failed to download photo");
@@ -308,6 +319,7 @@ pub async fn handle_message_direct(
                     text.clone()
                         .unwrap_or_else(|| "[Photo - download failed]".to_string()),
                     Vec::new(),
+                    None,
                     None,
                 )
             },
@@ -333,7 +345,7 @@ pub async fn handle_message_direct(
             } else {
                 format!("{caption}\n{doc_label}")
             };
-            (body, Vec::new(), None)
+            (body, Vec::new(), None, None)
         } else {
             match download_telegram_file(bot, &document_file.file_id).await {
                 Ok(document_data) => {
@@ -345,6 +357,23 @@ pub async fn handle_message_direct(
                         size = document_data.len(),
                         "downloaded document"
                     );
+                    let reply_target = reply_target_for_msg(account_id, &msg);
+                    let saved_document = save_inbound_document(
+                        event_sink.as_ref(),
+                        &reply_target,
+                        document_file.file_name.as_deref(),
+                        &document_file.media_type,
+                        &document_file.file_id,
+                        &document_data,
+                    )
+                    .await;
+                    let document_files = saved_document.as_ref().map(|saved| {
+                        vec![channel_document_file(
+                            saved,
+                            document_file.file_name.as_deref(),
+                            &document_file.media_type,
+                        )]
+                    });
 
                     if document_file.media_type.starts_with("image/") {
                         // Optimize image documents the same way as photo messages
@@ -372,23 +401,31 @@ pub async fn handle_message_direct(
                             media_type,
                             data: final_data,
                         };
-                        (caption, vec![attachment], None)
+                        (
+                            build_document_body(&caption, &doc_label, None),
+                            vec![attachment],
+                            None,
+                            document_files,
+                        )
+                    } else if is_pdf_document_type(&document_file.media_type) {
+                        if let Some(extracted_text) =
+                            extract_pdf_document_content(document_data).await
+                        {
+                            let body =
+                                build_document_body(&caption, &doc_label, Some(&extracted_text));
+                            (body, Vec::new(), None, document_files)
+                        } else {
+                            let body = build_document_body(&caption, &doc_label, None);
+                            (body, Vec::new(), None, document_files)
+                        }
                     } else if let Some(extracted_text) =
                         extract_text_document_content(&document_data, &document_file.media_type)
                     {
-                        let body = if caption.is_empty() {
-                            format!("{doc_label}\n\n{extracted_text}")
-                        } else {
-                            format!("{caption}\n\n{doc_label}\n\n{extracted_text}")
-                        };
-                        (body, Vec::new(), None)
+                        let body = build_document_body(&caption, &doc_label, Some(&extracted_text));
+                        (body, Vec::new(), None, document_files)
                     } else {
-                        let body = if caption.is_empty() {
-                            doc_label
-                        } else {
-                            format!("{caption}\n{doc_label}")
-                        };
-                        (body, Vec::new(), None)
+                        let body = build_document_body(&caption, &doc_label, None);
+                        (body, Vec::new(), None, document_files)
                     }
                 },
                 Err(e) => {
@@ -407,7 +444,7 @@ pub async fn handle_message_direct(
                         format!("{caption}\n{doc_label}\n[Document - download failed]")
                     };
 
-                    (body, Vec::new(), None)
+                    (body, Vec::new(), None, None)
                 },
             }
         }
@@ -478,6 +515,7 @@ pub async fn handle_message_direct(
             format!("I'm sharing my location: {lat}, {lon}"),
             Vec::new(),
             None,
+            None,
         )
     } else {
         // Log unhandled media types so we know when users are sending attachments we don't process
@@ -487,7 +525,7 @@ pub async fn handle_message_direct(
                 peer_id, media_type, "received unhandled attachment type"
             );
         }
-        (text.unwrap_or_default(), Vec::new(), None)
+        (text.unwrap_or_default(), Vec::new(), None, None)
     };
 
     // Dispatch to the chat session (per-channel session key derived by the sink).
@@ -505,13 +543,7 @@ pub async fn handle_message_direct(
     if let Some(ref sink) = event_sink
         && has_content
     {
-        let reply_target = ChannelReplyTarget {
-            channel_type: ChannelType::Telegram,
-            account_id: account_id.to_string(),
-            chat_id: msg.chat.id.0.to_string(),
-            message_id: Some(msg.id.0.to_string()),
-            thread_id: extract_thread_id(&msg),
-        };
+        let reply_target = reply_target_for_msg(account_id, &msg);
 
         info!(
             account_id,
@@ -714,6 +746,7 @@ pub async fn handle_message_direct(
                 .resolve_agent_id(&msg.chat.id.0.to_string(), &peer_id)
                 .map(String::from),
             audio_filename,
+            documents,
         };
 
         if attachments.is_empty() {
@@ -766,7 +799,7 @@ async fn handle_otp_flow(
     sender_name: Option<&str>,
     text: Option<&str>,
     msg: &Message,
-    event_sink: Option<&dyn moltis_channels::ChannelEventSink>,
+    event_sink: Option<&dyn ChannelEventSink>,
 ) {
     let chat_id = msg.chat.id;
 
@@ -1534,7 +1567,7 @@ async fn handle_voice_message(
     msg: &Message,
     account_id: &str,
     caption: Option<&str>,
-    event_sink: Option<&Arc<dyn moltis_channels::ChannelEventSink>>,
+    event_sink: Option<&Arc<dyn ChannelEventSink>>,
     outbound: &dyn ChannelOutbound,
     voice_file: &VoiceFileInfo,
 ) -> Option<(String, Vec<ChannelAttachment>, Option<(Vec<u8>, String)>)> {
@@ -1770,6 +1803,77 @@ fn format_document_label(file_name: Option<&str>, media_type: &str) -> String {
     }
 }
 
+fn sanitize_document_filename(name: &str) -> String {
+    let sanitized: String = name
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_' || *c == '.')
+        .collect();
+    sanitized.trim_start_matches('.').to_string()
+}
+
+fn build_saved_document_filename(
+    file_name: Option<&str>,
+    media_type: &str,
+    file_id: &str,
+) -> String {
+    let ext = moltis_media::mime::extension_for_mime(media_type);
+    let file_id_prefix: String = sanitize_document_filename(file_id)
+        .chars()
+        .take(16)
+        .collect();
+
+    let base_name = file_name
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(sanitize_document_filename)
+        .filter(|name| !name.is_empty())
+        .map(|name| {
+            if name.contains('.') {
+                name
+            } else {
+                format!("{name}.{ext}")
+            }
+        })
+        .unwrap_or_else(|| format!("document.{ext}"));
+
+    if file_id_prefix.is_empty() {
+        base_name
+    } else {
+        format!("{file_id_prefix}_{base_name}")
+    }
+}
+
+fn channel_document_file(
+    saved: &SavedChannelFile,
+    file_name: Option<&str>,
+    media_type: &str,
+) -> ChannelDocumentFile {
+    ChannelDocumentFile {
+        display_name: file_name
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+            .unwrap_or(&saved.filename)
+            .to_string(),
+        stored_filename: saved.filename.clone(),
+        mime_type: media_type.to_string(),
+    }
+}
+
+fn build_document_body(caption: &str, doc_label: &str, extracted_text: Option<&str>) -> String {
+    let mut sections = Vec::new();
+    if !caption.is_empty() {
+        sections.push(caption.to_string());
+    }
+    sections.push(doc_label.to_string());
+    if let Some(text) = extracted_text
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+    {
+        sections.push(text.to_string());
+    }
+    sections.join("\n\n")
+}
+
 /// Normalize a MIME type by stripping parameters (e.g. `; charset=utf-8`) and
 /// lower-casing. Returns the base media type only.
 fn normalize_media_type(media_type: &str) -> String {
@@ -1797,40 +1901,26 @@ fn should_inline_document_text(media_type: &str) -> bool {
         || media_type.ends_with("+xml")
 }
 
+fn is_pdf_document_type(media_type: &str) -> bool {
+    media_type == "application/pdf"
+}
+
 /// Returns `true` for document types we can actually process (text inlining or
 /// image attachment). Used to skip downloading unsupported files.
 /// Expects input from `normalize_media_type`.
 fn is_supported_document_type(media_type: &str) -> bool {
-    media_type.starts_with("image/") || should_inline_document_text(media_type)
+    media_type.starts_with("image/")
+        || should_inline_document_text(media_type)
+        || is_pdf_document_type(media_type)
 }
 
-/// Expects a normalized `media_type` (from `normalize_media_type`).
-fn extract_text_document_content(data: &[u8], media_type: &str) -> Option<String> {
-    if data.is_empty() || !should_inline_document_text(media_type) {
+fn truncate_inline_document_text(text: &str) -> Option<String> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
         return None;
     }
 
     let mut truncated = false;
-
-    // Byte-limit: truncate to the last valid UTF-8 boundary within the cap
-    // so we never inject U+FFFD from slicing a multi-byte sequence.
-    let bounded = if data.len() > MAX_INLINE_DOCUMENT_BYTES {
-        truncated = true;
-        let slice = &data[..MAX_INLINE_DOCUMENT_BYTES];
-        match std::str::from_utf8(slice) {
-            Ok(_) => slice,
-            Err(e) => &slice[..e.valid_up_to()],
-        }
-    } else {
-        data
-    };
-
-    // Lossy-convert for files with stray invalid bytes in the middle.
-    let lossy = String::from_utf8_lossy(bounded);
-    let trimmed = lossy.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
 
     // Char-limit: find the byte offset of the Nth char boundary in one pass.
     let mut text =
@@ -1846,6 +1936,56 @@ fn extract_text_document_content(data: &[u8], media_type: &str) -> Option<String
     }
 
     Some(text)
+}
+
+/// Expects a normalized `media_type` (from `normalize_media_type`).
+fn extract_text_document_content(data: &[u8], media_type: &str) -> Option<String> {
+    if data.is_empty() || !should_inline_document_text(media_type) {
+        return None;
+    }
+
+    // Byte-limit: truncate to the last valid UTF-8 boundary within the cap
+    // so we never inject U+FFFD from slicing a multi-byte sequence.
+    let bounded = if data.len() > MAX_INLINE_DOCUMENT_BYTES {
+        let slice = &data[..MAX_INLINE_DOCUMENT_BYTES];
+        match std::str::from_utf8(slice) {
+            Ok(_) => slice,
+            Err(e) => &slice[..e.valid_up_to()],
+        }
+    } else {
+        data
+    };
+
+    // Lossy-convert for files with stray invalid bytes in the middle.
+    let lossy = String::from_utf8_lossy(bounded);
+    truncate_inline_document_text(&lossy)
+}
+
+async fn extract_pdf_document_content(data: Vec<u8>) -> Option<String> {
+    let extracted = tokio::task::spawn_blocking(move || {
+        use std::io::Write as _;
+
+        let mut file = tempfile::Builder::new().suffix(".pdf").tempfile().ok()?;
+        file.write_all(&data).ok()?;
+        pdf_extract::extract_text(file.path()).ok()
+    })
+    .await
+    .ok()??;
+    truncate_inline_document_text(&extracted)
+}
+
+async fn save_inbound_document(
+    event_sink: Option<&Arc<dyn ChannelEventSink>>,
+    reply_to: &ChannelReplyTarget,
+    file_name: Option<&str>,
+    media_type: &str,
+    file_id: &str,
+    data: &[u8],
+) -> Option<SavedChannelFile> {
+    let sink = event_sink?;
+    let filename = build_saved_document_filename(file_name, media_type, file_id);
+    sink.save_channel_attachment(data, &filename, reply_to)
+        .await
 }
 
 /// Extracted location info from a Telegram message.
@@ -2165,6 +2305,7 @@ mod tests {
         dispatch_calls: std::sync::atomic::AtomicUsize,
         dispatched_texts: Mutex<Vec<String>>,
         dispatched_with_attachments: Mutex<Vec<DispatchedAttachment>>,
+        dispatched_documents: Mutex<Vec<Option<Vec<ChannelDocumentFile>>>>,
         stt_available: bool,
         transcription_result: Mutex<Option<Result<String>>>,
     }
@@ -2206,7 +2347,7 @@ mod tests {
             &self,
             text: &str,
             _reply_to: ChannelReplyTarget,
-            _meta: ChannelMessageMeta,
+            meta: ChannelMessageMeta,
         ) {
             self.dispatch_calls
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -2214,6 +2355,10 @@ mod tests {
                 .lock()
                 .expect("lock")
                 .push(text.to_string());
+            self.dispatched_documents
+                .lock()
+                .expect("lock")
+                .push(meta.documents);
         }
 
         async fn dispatch_to_chat_with_attachments(
@@ -2221,7 +2366,7 @@ mod tests {
             text: &str,
             attachments: Vec<ChannelAttachment>,
             _reply_to: ChannelReplyTarget,
-            _meta: ChannelMessageMeta,
+            meta: ChannelMessageMeta,
         ) {
             let media_types = attachments
                 .iter()
@@ -2239,6 +2384,10 @@ mod tests {
                     media_types,
                     sizes,
                 });
+            self.dispatched_documents
+                .lock()
+                .expect("lock")
+                .push(meta.documents);
         }
 
         async fn dispatch_command(
@@ -2256,6 +2405,19 @@ mod tests {
             _account_id: &str,
             _reason: &str,
         ) {
+        }
+
+        async fn save_channel_attachment(
+            &self,
+            _file_data: &[u8],
+            filename: &str,
+            _reply_to: &ChannelReplyTarget,
+        ) -> Option<SavedChannelFile> {
+            Some(SavedChannelFile {
+                filename: filename.to_string(),
+                media_ref: format!("media/mock/{filename}"),
+                absolute_path: format!("/tmp/mock-saved/{filename}"),
+            })
         }
 
         async fn transcribe_voice(&self, _audio_data: &[u8], _format: &str) -> Result<String> {
@@ -2456,7 +2618,7 @@ mod tests {
         assert!(is_supported_document_type("image/png"));
         assert!(is_supported_document_type("text/plain"));
         assert!(is_supported_document_type("application/json"));
-        assert!(!is_supported_document_type("application/pdf"));
+        assert!(is_supported_document_type("application/pdf"));
         assert!(!is_supported_document_type("application/octet-stream"));
     }
 
@@ -2609,12 +2771,177 @@ mod tests {
             assert!(texts[0].contains("[Document: pinned.html (text/html)]"));
             assert!(texts[0].contains("<h1>Pinned</h1>"));
         }
+        {
+            let documents = sink.dispatched_documents.lock().expect("lock");
+            let files = documents[0].as_ref().expect("document metadata");
+            assert_eq!(files.len(), 1);
+            assert_eq!(files[0].display_name, "pinned.html");
+            assert_eq!(files[0].stored_filename, "doc-file-id_pinned.html");
+            assert_eq!(files[0].mime_type, "text/html");
+        }
 
         {
             let attachments = sink.dispatched_with_attachments.lock().expect("lock");
             assert!(
                 attachments.is_empty(),
                 "text/html documents should not be sent as image attachments"
+            );
+        }
+
+        let _ = shutdown_tx.send(());
+        server.await.expect("server join");
+    }
+
+    #[tokio::test]
+    async fn document_pdf_is_inlined_into_chat_body() {
+        use axum::{http::Method, routing::any};
+
+        fn generated_pdf_fixture_bytes() -> Option<Vec<u8>> {
+            let dir = tempfile::tempdir().ok()?;
+            let text_path = dir.path().join("fixture.txt");
+            std::fs::write(&text_path, "Hello from generated PDF fixture\n").ok()?;
+
+            let output = std::process::Command::new("cupsfilter")
+                .arg(&text_path)
+                .output()
+                .ok()?;
+            if !output.status.success() || output.stdout.is_empty() {
+                return None;
+            }
+            Some(output.stdout)
+        }
+
+        let Some(pdf_fixture) = generated_pdf_fixture_bytes() else {
+            eprintln!("skipping PDF fixture test because cupsfilter is unavailable");
+            return;
+        };
+
+        async fn combined_handler(
+            method: Method,
+            State(state): State<MockTelegramApi>,
+            uri: Uri,
+            body: Bytes,
+            pdf_fixture: Vec<u8>,
+        ) -> axum::response::Response {
+            use axum::response::IntoResponse;
+            if method == Method::GET {
+                return Bytes::from(pdf_fixture).into_response();
+            }
+            telegram_api_handler(State(state), uri, body)
+                .await
+                .into_response()
+        }
+
+        let recorded_requests = Arc::new(Mutex::new(Vec::<CapturedTelegramRequest>::new()));
+        let mock_api = MockTelegramApi {
+            requests: Arc::clone(&recorded_requests),
+        };
+        let app = Router::new()
+            .route(
+                "/{*path}",
+                any(move |method, state, uri, body| {
+                    combined_handler(method, state, uri, body, pdf_fixture.clone())
+                }),
+            )
+            .with_state(mock_api);
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let addr = listener.local_addr().expect("local addr");
+        let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app)
+                .with_graceful_shutdown(async {
+                    let _ = shutdown_rx.await;
+                })
+                .await
+                .expect("serve mock telegram api");
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let api_url = reqwest::Url::parse(&format!("http://{addr}/")).expect("parse api url");
+        let bot = Bot::new("test-token").set_api_url(api_url);
+
+        let accounts: AccountStateMap = Arc::new(std::sync::RwLock::new(HashMap::new()));
+        let outbound = Arc::new(TelegramOutbound {
+            accounts: Arc::clone(&accounts),
+        });
+        let sink = Arc::new(MockSink::default());
+        let account_id = "test-account";
+
+        {
+            let mut map = accounts.write().expect("accounts write lock");
+            map.insert(account_id.to_string(), AccountState {
+                bot: bot.clone(),
+                bot_username: Some("test_bot".into()),
+                account_id: account_id.to_string(),
+                config: TelegramAccountConfig {
+                    token: Secret::new("test-token".to_string()),
+                    dm_policy: DmPolicy::Open,
+                    ..Default::default()
+                },
+                outbound: Arc::clone(&outbound),
+                cancel: CancellationToken::new(),
+                message_log: None,
+                event_sink: Some(Arc::clone(&sink) as Arc<dyn ChannelEventSink>),
+                otp: Mutex::new(OtpState::new(300)),
+            });
+        }
+
+        let msg: Message = serde_json::from_value(json!({
+            "message_id": 10,
+            "date": 1,
+            "chat": { "id": 42, "type": "private", "first_name": "Alice" },
+            "from": {
+                "id": 1001,
+                "is_bot": false,
+                "first_name": "Alice",
+                "username": "alice"
+            },
+            "caption": "Summarize this PDF",
+            "document": {
+                "file_id": "doc-pdf-file-id",
+                "file_unique_id": "doc-pdf-unique-id",
+                "file_name": "report.pdf",
+                "mime_type": "application/pdf",
+                "file_size": 512
+            }
+        }))
+        .expect("deserialize document message");
+
+        handle_message_direct(msg, &bot, account_id, &accounts)
+            .await
+            .expect("handle message");
+
+        assert_eq!(
+            sink.dispatch_calls
+                .load(std::sync::atomic::Ordering::Relaxed),
+            1,
+            "PDF documents should be dispatched as text content"
+        );
+
+        {
+            let texts = sink.dispatched_texts.lock().expect("lock");
+            assert_eq!(texts.len(), 1);
+            assert!(texts[0].contains("Summarize this PDF"));
+            assert!(texts[0].contains("[Document: report.pdf (application/pdf)]"));
+            assert!(texts[0].contains("Hello from generated PDF fixture"));
+        }
+        {
+            let documents = sink.dispatched_documents.lock().expect("lock");
+            let files = documents[0].as_ref().expect("document metadata");
+            assert_eq!(files.len(), 1);
+            assert_eq!(files[0].display_name, "report.pdf");
+            assert_eq!(files[0].stored_filename, "doc-pdf-file-id_report.pdf");
+            assert_eq!(files[0].mime_type, "application/pdf");
+        }
+
+        {
+            let attachments = sink.dispatched_with_attachments.lock().expect("lock");
+            assert!(
+                attachments.is_empty(),
+                "PDF documents should not be sent as image attachments"
             );
         }
 
@@ -2728,9 +3055,22 @@ mod tests {
         {
             let attachments = sink.dispatched_with_attachments.lock().expect("lock");
             assert_eq!(attachments.len(), 1);
-            assert_eq!(attachments[0].text, "What is in this image?");
+            assert!(attachments[0].text.contains("What is in this image?"));
+            assert!(
+                attachments[0]
+                    .text
+                    .contains("[Document: screenshot.png (image/png)]")
+            );
             assert_eq!(attachments[0].media_types, vec!["image/png".to_string()]);
             assert_eq!(attachments[0].sizes, vec![13]);
+        }
+        {
+            let documents = sink.dispatched_documents.lock().expect("lock");
+            let files = documents[0].as_ref().expect("document metadata");
+            assert_eq!(files.len(), 1);
+            assert_eq!(files[0].display_name, "screenshot.png");
+            assert_eq!(files[0].stored_filename, "doc-image-file-i_screenshot.png");
+            assert_eq!(files[0].mime_type, "image/png");
         }
 
         let _ = shutdown_tx.send(());

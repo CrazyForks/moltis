@@ -476,6 +476,7 @@ impl MsTeamsPlugin {
                 .resolve_agent_id(&chat_id, &peer_id)
                 .map(String::from),
             audio_filename: None,
+            documents: None,
         };
 
         if !downloaded_attachments.is_empty() {

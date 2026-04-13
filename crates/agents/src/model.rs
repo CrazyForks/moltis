@@ -1,4 +1,4 @@
-use std::{pin::Pin, sync::Arc, time::Duration};
+use std::{path::Path, pin::Pin, sync::Arc, time::Duration};
 
 use {async_trait::async_trait, futures::StreamExt, tokio_stream::Stream};
 
@@ -8,6 +8,18 @@ use crate::multimodal::parse_data_uri;
 
 /// Re-export from config so downstream crates can use `moltis_agents::model::ReasoningEffort`.
 pub use moltis_config::schema::ReasoningEffort;
+
+fn document_absolute_path_from_media_ref(media_ref: &str) -> String {
+    if Path::new(media_ref).is_absolute() {
+        return media_ref.to_string();
+    }
+
+    moltis_config::data_dir()
+        .join("sessions")
+        .join(media_ref)
+        .to_string_lossy()
+        .to_string()
+}
 
 // ── Typed chat messages ─────────────────────────────────────────────────────
 
@@ -206,11 +218,46 @@ pub fn values_to_chat_messages(values: &[serde_json::Value]) -> Vec<ChatMessage>
                 messages.push(ChatMessage::system(content));
             },
             "user" => {
+                let document_context = val["documents"].as_array().and_then(|documents| {
+                    let mut sections = Vec::new();
+                    for document in documents {
+                        let Some(display_name) = document["display_name"].as_str() else {
+                            continue;
+                        };
+                        let Some(mime_type) = document["mime_type"].as_str() else {
+                            continue;
+                        };
+                        let Some(media_ref) = document["media_ref"].as_str() else {
+                            continue;
+                        };
+                        let absolute_path = document_absolute_path_from_media_ref(media_ref);
+                        sections.push(format!(
+                            "filename: {display_name}\nmime_type: {mime_type}\nlocal_path: {absolute_path}\nmedia_ref: {media_ref}"
+                        ));
+                    }
+                    if sections.is_empty() {
+                        None
+                    } else {
+                        let mut rendered = vec!["[Inbound documents available]".to_string()];
+                        rendered.extend(sections);
+                        Some(rendered.join("\n\n"))
+                    }
+                });
+
                 // Content can be a string or an array (multimodal).
                 if let Some(text) = val["content"].as_str() {
-                    messages.push(ChatMessage::user(text));
+                    let content = if let Some(ref document_context) = document_context {
+                        if text.trim().is_empty() {
+                            document_context.clone()
+                        } else {
+                            format!("{text}\n\n{document_context}")
+                        }
+                    } else {
+                        text.to_string()
+                    };
+                    messages.push(ChatMessage::user(content));
                 } else if let Some(arr) = val["content"].as_array() {
-                    let parts: Vec<ContentPart> = arr
+                    let mut parts: Vec<ContentPart> = arr
                         .iter()
                         .filter_map(|block| {
                             let block_type = block["type"].as_str()?;
@@ -231,9 +278,22 @@ pub fn values_to_chat_messages(values: &[serde_json::Value]) -> Vec<ChatMessage>
                             }
                         })
                         .collect();
+                    if let Some(document_context) = document_context {
+                        if let Some(ContentPart::Text(text)) = parts
+                            .iter_mut()
+                            .find(|part| matches!(part, ContentPart::Text(_)))
+                        {
+                            if !text.trim().is_empty() {
+                                text.push_str("\n\n");
+                            }
+                            text.push_str(&document_context);
+                        } else {
+                            parts.insert(0, ContentPart::Text(document_context));
+                        }
+                    }
                     messages.push(ChatMessage::user_multimodal(parts));
                 } else {
-                    messages.push(ChatMessage::user(""));
+                    messages.push(ChatMessage::user(document_context.unwrap_or_default()));
                 }
             },
             "assistant" => {
@@ -655,6 +715,68 @@ mod tests {
         assert!(val.get("inputTokens").is_none());
         assert!(val.get("outputTokens").is_none());
         assert!(val.get("channel").is_none());
+    }
+
+    #[test]
+    fn convert_user_message_appends_document_context() {
+        let expected_path = document_absolute_path_from_media_ref("media/session_abc/report.pdf");
+        let values = vec![serde_json::json!({
+            "role": "user",
+            "content": "review this",
+            "documents": [{
+                "display_name": "report.pdf",
+                "mime_type": "application/pdf",
+                "absolute_path": "/stale/path/report.pdf",
+                "media_ref": "media/session_abc/report.pdf"
+            }]
+        })];
+        let msgs = values_to_chat_messages(&values);
+        assert_eq!(msgs.len(), 1);
+        match &msgs[0] {
+            ChatMessage::User {
+                content: UserContent::Text(text),
+            } => {
+                assert!(text.contains("review this"));
+                assert!(text.contains("[Inbound documents available]"));
+                assert!(text.contains("filename: report.pdf"));
+                assert!(text.contains(&format!("local_path: {expected_path}")));
+                assert!(!text.contains("/stale/path/report.pdf"));
+            },
+            _ => panic!("expected user text message"),
+        }
+    }
+
+    #[test]
+    fn convert_user_message_skips_malformed_documents_individually() {
+        let expected_path =
+            document_absolute_path_from_media_ref("media/session_abc/valid-report.pdf");
+        let values = vec![serde_json::json!({
+            "role": "user",
+            "content": "review these",
+            "documents": [
+                {
+                    "display_name": "broken.pdf",
+                    "mime_type": "application/pdf"
+                },
+                {
+                    "display_name": "valid-report.pdf",
+                    "mime_type": "application/pdf",
+                    "media_ref": "media/session_abc/valid-report.pdf"
+                }
+            ]
+        })];
+        let msgs = values_to_chat_messages(&values);
+        assert_eq!(msgs.len(), 1);
+        match &msgs[0] {
+            ChatMessage::User {
+                content: UserContent::Text(text),
+            } => {
+                assert!(text.contains("filename: valid-report.pdf"));
+                assert!(text.contains(&format!("local_path: {expected_path}")));
+                assert!(!text.contains("filename: broken.pdf"));
+            },
+            _ => panic!("expected user text message"),
+        }
     }
 
     #[test]

@@ -571,6 +571,7 @@ pub(crate) async fn handle_inbound(
                 .resolve_agent_id(channel_id, user_id)
                 .map(String::from),
             audio_filename: None,
+            documents: None,
         };
 
         #[cfg(feature = "metrics")]

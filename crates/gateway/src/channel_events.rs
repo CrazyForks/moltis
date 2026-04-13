@@ -10,7 +10,7 @@ use {
 use {
     moltis_channels::{
         ChannelAttachment, ChannelEvent, ChannelEventSink, ChannelMessageMeta, ChannelReplyTarget,
-        Error as ChannelError, Result as ChannelResult,
+        Error as ChannelError, Result as ChannelResult, SavedChannelFile,
     },
     moltis_sessions::metadata::{SessionEntry, SqliteSessionMetadata},
     moltis_tools::approval::PendingApprovalView,
@@ -582,6 +582,9 @@ impl ChannelEventSink for GatewayChannelEventSink {
             if let Some(ref audio_filename) = meta.audio_filename {
                 params["_audio_filename"] = serde_json::json!(audio_filename);
             }
+            if let Some(ref documents) = meta.documents {
+                params["_document_files"] = serde_json::json!(documents);
+            }
 
             // Forward the channel's default model to chat.send() if configured.
             // If no channel model is set, check if the session already has a model.
@@ -782,6 +785,47 @@ impl ChannelEventSink for GatewayChannelEventSink {
             },
             Err(e) => {
                 warn!(session_key, filename, error = %e, "failed to save channel voice audio");
+                None
+            },
+        }
+    }
+
+    async fn save_channel_attachment(
+        &self,
+        file_data: &[u8],
+        filename: &str,
+        reply_to: &ChannelReplyTarget,
+    ) -> Option<SavedChannelFile> {
+        let state = self.state.get()?;
+        let session_key = if let Some(ref sm) = state.services.session_metadata {
+            resolve_channel_session(reply_to, sm).await
+        } else {
+            default_channel_session_key(reply_to)
+        };
+        let store = state.services.session_store.as_ref()?;
+        match store.save_media(&session_key, filename, file_data).await {
+            Ok(media_ref) => {
+                let absolute_path = store
+                    .media_path_for(&session_key, filename)
+                    .to_string_lossy()
+                    .to_string();
+                debug!(
+                    session_key,
+                    filename, media_ref, absolute_path, "saved channel attachment to session media"
+                );
+                Some(SavedChannelFile {
+                    filename: filename.to_string(),
+                    media_ref,
+                    absolute_path,
+                })
+            },
+            Err(e) => {
+                warn!(
+                    session_key,
+                    filename,
+                    error = %e,
+                    "failed to save channel attachment"
+                );
                 None
             },
         }
@@ -1100,6 +1144,9 @@ impl ChannelEventSink for GatewayChannelEventSink {
             // starts executing this message (after semaphore acquire).
             "_channel_reply_target": &reply_to,
         });
+        if let Some(ref documents) = meta.documents {
+            params["_document_files"] = serde_json::json!(documents);
+        }
 
         // Forward the channel's default model if configured
         if let Some(ref model) = meta.model {

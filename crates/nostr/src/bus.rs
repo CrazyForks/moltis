@@ -288,6 +288,7 @@ async fn handle_event(
         model: None,
         agent_id: None,
         audio_filename: None,
+        documents: None,
     };
 
     let reply_to = moltis_channels::ChannelReplyTarget {

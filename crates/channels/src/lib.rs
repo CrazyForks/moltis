@@ -26,11 +26,12 @@ pub use {
     media_download::{InboundMediaDownloader, InboundMediaSource},
     plugin::{
         ButtonRow, ButtonStyle, ChannelAttachment, ChannelCapabilities, ChannelDescriptor,
-        ChannelEvent, ChannelEventSink, ChannelHealthSnapshot, ChannelMessageKind,
-        ChannelMessageMeta, ChannelOtpProvider, ChannelOutbound, ChannelPlugin, ChannelReplyTarget,
-        ChannelStatus, ChannelStreamOutbound, ChannelThreadContext, ChannelType, InboundMode,
-        InteractiveButton, InteractiveMessage, StreamEvent, StreamReceiver, StreamSender,
-        ThreadMessage, resolve_session_channel_binding, web_session_channel_binding,
+        ChannelDocumentFile, ChannelEvent, ChannelEventSink, ChannelHealthSnapshot,
+        ChannelMessageKind, ChannelMessageMeta, ChannelOtpProvider, ChannelOutbound, ChannelPlugin,
+        ChannelReplyTarget, ChannelStatus, ChannelStreamOutbound, ChannelThreadContext,
+        ChannelType, InboundMode, InteractiveButton, InteractiveMessage, SavedChannelFile,
+        StreamEvent, StreamReceiver, StreamSender, ThreadMessage, resolve_session_channel_binding,
+        web_session_channel_binding,
     },
     registry::{ChannelRegistry, RegistryOutboundRouter},
 };

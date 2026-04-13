@@ -32,6 +32,9 @@ pub enum PersistedMessage {
         /// Relative media path for uploaded user audio (e.g. "media/main/voice-123.webm").
         #[serde(skip_serializing_if = "Option::is_none")]
         audio: Option<String>,
+        /// Saved inbound documents attached to this user message.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        documents: Option<Vec<UserDocument>>,
         /// Channel metadata for UI display (e.g., Telegram sender info).
         #[serde(skip_serializing_if = "Option::is_none")]
         channel: Option<serde_json::Value>,
@@ -139,6 +142,17 @@ pub struct ImageUrl {
     pub url: String,
 }
 
+/// Saved inbound user document metadata.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserDocument {
+    pub display_name: String,
+    pub stored_filename: String,
+    pub mime_type: String,
+    pub media_ref: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub absolute_path: Option<String>,
+}
+
 /// A tool call stored in an assistant message.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PersistedToolCall {
@@ -162,6 +176,7 @@ impl PersistedMessage {
             content: MessageContent::Text(text.into()),
             created_at: Some(now_ms()),
             audio: None,
+            documents: None,
             channel: None,
             seq: None,
             run_id: None,
@@ -174,6 +189,7 @@ impl PersistedMessage {
             content: MessageContent::Text(text.into()),
             created_at: Some(now_ms()),
             audio: None,
+            documents: None,
             channel: Some(channel),
             seq: None,
             run_id: None,
@@ -186,6 +202,7 @@ impl PersistedMessage {
             content: MessageContent::Multimodal(blocks),
             created_at: Some(now_ms()),
             audio: None,
+            documents: None,
             channel: None,
             seq: None,
             run_id: None,
@@ -201,6 +218,7 @@ impl PersistedMessage {
             content: MessageContent::Multimodal(blocks),
             created_at: Some(now_ms()),
             audio: None,
+            documents: None,
             channel: Some(channel),
             seq: None,
             run_id: None,
@@ -372,6 +390,7 @@ mod tests {
             content: MessageContent::Text("hello".to_string()),
             created_at: Some(12345),
             audio: None,
+            documents: None,
             channel: None,
             seq: None,
             run_id: None,
@@ -392,6 +411,7 @@ mod tests {
             ]),
             created_at: Some(12345),
             audio: None,
+            documents: None,
             channel: None,
             seq: None,
             run_id: None,
@@ -477,6 +497,7 @@ mod tests {
             content: MessageContent::Text("voice note".to_string()),
             created_at: Some(12345),
             audio: Some("media/main/voice-123.webm".to_string()),
+            documents: None,
             channel: None,
             seq: None,
             run_id: None,
@@ -488,6 +509,31 @@ mod tests {
     }
 
     #[test]
+    fn user_with_documents_serializes_correctly() {
+        let msg = PersistedMessage::User {
+            content: MessageContent::Text("review this".to_string()),
+            created_at: Some(12345),
+            audio: None,
+            documents: Some(vec![UserDocument {
+                display_name: "report.pdf".to_string(),
+                stored_filename: "abc_report.pdf".to_string(),
+                mime_type: "application/pdf".to_string(),
+                media_ref: "media/main/abc_report.pdf".to_string(),
+                absolute_path: Some("/tmp/main/abc_report.pdf".to_string()),
+            }]),
+            channel: None,
+            seq: None,
+            run_id: None,
+        };
+        let json = serde_json::to_value(&msg).unwrap();
+        assert_eq!(json["documents"][0]["display_name"], "report.pdf");
+        assert_eq!(
+            json["documents"][0]["media_ref"],
+            "media/main/abc_report.pdf"
+        );
+    }
+
+    #[test]
     fn user_without_audio_field_deserializes() {
         let json = serde_json::json!({
             "role": "user",
@@ -496,9 +542,15 @@ mod tests {
         });
         let msg: PersistedMessage = serde_json::from_value(json).unwrap();
         match msg {
-            PersistedMessage::User { content, audio, .. } => {
+            PersistedMessage::User {
+                content,
+                audio,
+                documents,
+                ..
+            } => {
                 assert!(matches!(content, MessageContent::Text(t) if t == "old user message"));
                 assert!(audio.is_none());
+                assert!(documents.is_none());
             },
             _ => panic!("expected User message"),
         }

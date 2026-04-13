@@ -992,6 +992,7 @@ impl EventHandler for Handler {
                 .resolve_agent_id(&chat_id, &peer_id)
                 .map(String::from),
             audio_filename,
+            documents: None,
         };
 
         if attachments.is_empty() {

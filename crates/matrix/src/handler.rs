@@ -332,6 +332,7 @@ pub async fn handle_room_message(
             .resolve_agent_id(&room_id, &sender_id)
             .map(String::from),
         audio_filename: None,
+        documents: None,
     };
 
     if let Some(sink) = &event_sink {

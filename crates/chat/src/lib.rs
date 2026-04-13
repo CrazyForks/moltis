@@ -42,7 +42,7 @@ use {
     },
     moltis_providers::{ProviderRegistry, raw_model_id},
     moltis_sessions::{
-        ContentBlock, MessageContent, PersistedMessage,
+        ContentBlock, MessageContent, PersistedMessage, UserDocument,
         message::{PersistedFunction, PersistedToolCall},
         metadata::{SessionEntry, SqliteSessionMetadata},
         state_store::SessionStateStore,
@@ -131,11 +131,48 @@ use moltis_metrics::{counter, histogram, labels, llm as llm_metrics};
 /// The two types have different image representations:
 /// - `ContentBlock::ImageUrl` stores a data URI string
 /// - `ContentPart::Image` stores separated `media_type` + `data` fields
-fn to_user_content(mc: &MessageContent) -> UserContent {
+fn format_user_documents_context(documents: &[UserDocument]) -> Option<String> {
+    if documents.is_empty() {
+        return None;
+    }
+
+    let mut sections = Vec::with_capacity(documents.len() + 1);
+    sections.push("[Inbound documents available]".to_string());
+    for document in documents {
+        sections.push(format!(
+            "filename: {}\nmime_type: {}\nlocal_path: {}\nmedia_ref: {}",
+            document.display_name,
+            document.mime_type,
+            document
+                .absolute_path
+                .as_deref()
+                .unwrap_or(&document.media_ref),
+            document.media_ref
+        ));
+    }
+
+    Some(sections.join("\n\n"))
+}
+
+fn append_user_documents_to_text(text: &str, documents: &[UserDocument]) -> String {
+    if let Some(context) = format_user_documents_context(documents) {
+        if text.trim().is_empty() {
+            context
+        } else {
+            format!("{text}\n\n{context}")
+        }
+    } else {
+        text.to_string()
+    }
+}
+
+fn to_user_content(mc: &MessageContent, documents: &[UserDocument]) -> UserContent {
     match mc {
-        MessageContent::Text(text) => UserContent::Text(text.clone()),
+        MessageContent::Text(text) => {
+            UserContent::Text(append_user_documents_to_text(text, documents))
+        },
         MessageContent::Multimodal(blocks) => {
-            let parts: Vec<ContentPart> = blocks
+            let mut parts: Vec<ContentPart> = blocks
                 .iter()
                 .filter_map(|block| match block {
                     ContentBlock::Text { text } => Some(ContentPart::Text(text.clone())),
@@ -161,6 +198,19 @@ fn to_user_content(mc: &MessageContent) -> UserContent {
                     },
                 })
                 .collect();
+            if let Some(context) = format_user_documents_context(documents) {
+                if let Some(ContentPart::Text(text)) = parts
+                    .iter_mut()
+                    .find(|part| matches!(part, ContentPart::Text(_)))
+                {
+                    if !text.trim().is_empty() {
+                        text.push_str("\n\n");
+                    }
+                    text.push_str(&context);
+                } else {
+                    parts.insert(0, ContentPart::Text(context));
+                }
+            }
             let text_count = parts
                 .iter()
                 .filter(|p| matches!(p, ContentPart::Text(_)))
@@ -254,6 +304,13 @@ fn truncate_at_char_boundary(text: &str, max_bytes: usize) -> &str {
 struct InputChannelMeta {
     #[serde(default)]
     message_kind: Option<InputMessageKind>,
+}
+
+#[derive(Debug, Deserialize)]
+struct InputChannelDocumentFile {
+    display_name: String,
+    stored_filename: String,
+    mime_type: String,
 }
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]
@@ -1155,6 +1212,15 @@ fn is_safe_user_audio_filename(filename: &str) -> bool {
             .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' || ch == '.')
 }
 
+fn sanitize_user_document_display_name(name: &str) -> Option<String> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() || trimmed.len() > 255 || trimmed.chars().any(char::is_control) {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
 fn user_audio_path_from_params(params: &Value, session_key: &str) -> Option<String> {
     let filename = params
         .get("_audio_filename")
@@ -1173,6 +1239,66 @@ fn user_audio_path_from_params(params: &Value, session_key: &str) -> Option<Stri
 
     let key = SessionStore::key_to_filename(session_key);
     Some(format!("media/{key}/{filename}"))
+}
+
+fn user_documents_from_params(
+    params: &Value,
+    session_key: &str,
+    session_store: &SessionStore,
+) -> Option<Vec<UserDocument>> {
+    let documents = params.get("_document_files")?.as_array()?;
+    let media_dir_key = SessionStore::key_to_filename(session_key);
+    let mut parsed = Vec::new();
+
+    for document in documents {
+        let Ok(document) = serde_json::from_value::<InputChannelDocumentFile>(document.clone())
+        else {
+            continue;
+        };
+        let stored_filename = document.stored_filename.trim();
+        let mime_type = document.mime_type.trim();
+        if !is_safe_user_audio_filename(stored_filename) || mime_type.is_empty() {
+            continue;
+        }
+
+        let display_name = sanitize_user_document_display_name(&document.display_name)
+            .unwrap_or_else(|| stored_filename.to_string());
+        parsed.push(UserDocument {
+            display_name,
+            stored_filename: stored_filename.to_string(),
+            mime_type: mime_type.to_string(),
+            media_ref: format!("media/{media_dir_key}/{stored_filename}"),
+            absolute_path: Some(
+                session_store
+                    .media_path_for(session_key, stored_filename)
+                    .to_string_lossy()
+                    .to_string(),
+            ),
+        });
+    }
+
+    if parsed.is_empty() {
+        None
+    } else {
+        Some(parsed)
+    }
+}
+
+fn user_documents_for_persistence(documents: &[UserDocument]) -> Option<Vec<UserDocument>> {
+    if documents.is_empty() {
+        return None;
+    }
+
+    Some(
+        documents
+            .iter()
+            .cloned()
+            .map(|mut document| {
+                document.absolute_path = None;
+                document
+            })
+            .collect(),
+    )
 }
 
 fn detect_runtime_shell() -> Option<String> {
@@ -3604,10 +3730,15 @@ impl ChatService for LiveChatService {
             let run_id_clone = run_id.clone();
             let channel_meta = params.get("channel").cloned();
             let user_audio = user_audio_path_from_params(&params, &session_key);
+            let user_documents =
+                user_documents_from_params(&params, &session_key, self.session_store.as_ref());
             let user_msg = PersistedMessage::User {
                 content: message_content,
                 created_at: Some(now_ms()),
                 audio: user_audio,
+                documents: user_documents
+                    .as_deref()
+                    .and_then(user_documents_for_persistence),
                 channel: channel_meta,
                 seq: client_seq,
                 run_id: Some(run_id.clone()),
@@ -4171,7 +4302,10 @@ impl ChatService for LiveChatService {
         // must happen AFTER the MessageReceived hook dispatch so a
         // `ModifyPayload` rewrite is reflected in both `user_content` (what
         // the LLM sees) and `user_msg` (what gets persisted).
-        let user_content = to_user_content(&message_content);
+        let user_documents =
+            user_documents_from_params(&params, &session_key, self.session_store.as_ref())
+                .unwrap_or_default();
+        let user_content = to_user_content(&message_content, &user_documents);
 
         // Build the user message for later persistence (deferred until we
         // know the message won't be queued — avoids double-persist when a
@@ -4182,6 +4316,7 @@ impl ChatService for LiveChatService {
             content: message_content,
             created_at: Some(now_ms()),
             audio: user_audio,
+            documents: user_documents_for_persistence(&user_documents),
             channel: channel_meta,
             seq: client_seq,
             run_id: Some(run_id.clone()),
@@ -4748,11 +4883,16 @@ impl ChatService for LiveChatService {
         };
 
         let user_audio = user_audio_path_from_params(&params, &session_key);
+        let user_documents =
+            user_documents_from_params(&params, &session_key, self.session_store.as_ref());
         // Persist the user message.
         let user_msg = PersistedMessage::User {
             content: MessageContent::Text(text.clone()),
             created_at: Some(now_ms()),
             audio: user_audio,
+            documents: user_documents
+                .as_deref()
+                .and_then(user_documents_for_persistence),
             channel: None,
             seq: None,
             run_id: None,
@@ -10529,6 +10669,58 @@ mod tests {
         assert!(user_audio_path_from_params(&params, "main").is_none());
     }
 
+    #[test]
+    fn user_documents_from_params_builds_session_scoped_paths() {
+        let params = serde_json::json!({
+            "_document_files": [{
+                "display_name": "report.pdf",
+                "stored_filename": "doc-file-id_report.pdf",
+                "mime_type": "application/pdf"
+            }]
+        });
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store = SessionStore::new(dir.path().to_path_buf());
+        let documents =
+            user_documents_from_params(&params, "session:abc", &store).expect("documents");
+        assert_eq!(documents.len(), 1);
+        assert_eq!(documents[0].display_name, "report.pdf");
+        assert_eq!(documents[0].stored_filename, "doc-file-id_report.pdf");
+        assert_eq!(
+            documents[0].media_ref,
+            "media/session_abc/doc-file-id_report.pdf"
+        );
+        assert_eq!(
+            documents[0].absolute_path,
+            Some(
+                dir.path()
+                    .join("media")
+                    .join("session_abc")
+                    .join("doc-file-id_report.pdf")
+                    .to_string_lossy()
+                    .to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn user_documents_for_persistence_drops_absolute_paths() {
+        let documents = vec![UserDocument {
+            display_name: "report.pdf".to_string(),
+            stored_filename: "doc-file-id_report.pdf".to_string(),
+            mime_type: "application/pdf".to_string(),
+            media_ref: "media/session_abc/doc-file-id_report.pdf".to_string(),
+            absolute_path: Some("/tmp/session_abc/doc-file-id_report.pdf".to_string()),
+        }];
+        let persisted = user_documents_for_persistence(&documents).expect("documents");
+        assert_eq!(persisted.len(), 1);
+        assert_eq!(persisted[0].display_name, "report.pdf");
+        assert_eq!(
+            persisted[0].media_ref,
+            "media/session_abc/doc-file-id_report.pdf"
+        );
+        assert!(persisted[0].absolute_path.is_none());
+    }
+
     #[async_trait]
     impl moltis_channels::plugin::ChannelOutbound for MockChannelOutbound {
         async fn send_text(
@@ -13727,9 +13919,31 @@ mod tests {
     #[test]
     fn to_user_content_text_only() {
         let mc = MessageContent::Text("hello".to_string());
-        let uc = to_user_content(&mc);
+        let uc = to_user_content(&mc, &[]);
         match uc {
             UserContent::Text(t) => assert_eq!(t, "hello"),
+            _ => panic!("expected Text variant"),
+        }
+    }
+
+    #[test]
+    fn to_user_content_text_appends_document_context() {
+        let mc = MessageContent::Text("please review".to_string());
+        let documents = vec![UserDocument {
+            display_name: "report.pdf".to_string(),
+            stored_filename: "abc_report.pdf".to_string(),
+            mime_type: "application/pdf".to_string(),
+            media_ref: "media/session_abc/abc_report.pdf".to_string(),
+            absolute_path: Some("/tmp/session_abc/abc_report.pdf".to_string()),
+        }];
+        let uc = to_user_content(&mc, &documents);
+        match uc {
+            UserContent::Text(t) => {
+                assert!(t.contains("please review"));
+                assert!(t.contains("[Inbound documents available]"));
+                assert!(t.contains("filename: report.pdf"));
+                assert!(t.contains("local_path: /tmp/session_abc/abc_report.pdf"));
+            },
             _ => panic!("expected Text variant"),
         }
     }
@@ -13748,7 +13962,7 @@ mod tests {
                 },
             },
         ]);
-        let uc = to_user_content(&mc);
+        let uc = to_user_content(&mc, &[]);
         match uc {
             UserContent::Multimodal(parts) => {
                 assert_eq!(parts.len(), 2);
@@ -13782,13 +13996,51 @@ mod tests {
                 },
             },
         ]);
-        let uc = to_user_content(&mc);
+        let uc = to_user_content(&mc, &[]);
         match uc {
             UserContent::Multimodal(parts) => {
                 // The https URL is not a data URI, so it should be dropped
                 assert_eq!(parts.len(), 1);
                 match &parts[0] {
                     ContentPart::Text(t) => assert_eq!(t, "just text"),
+                    _ => panic!("expected Text part"),
+                }
+            },
+            _ => panic!("expected Multimodal variant"),
+        }
+    }
+
+    #[test]
+    fn to_user_content_multimodal_appends_document_context_to_text_block() {
+        use moltis_sessions::message::{ContentBlock, ImageUrl as SessionImageUrl};
+
+        let mc = MessageContent::Multimodal(vec![
+            ContentBlock::Text {
+                text: "describe this".to_string(),
+            },
+            ContentBlock::ImageUrl {
+                image_url: SessionImageUrl {
+                    url: "data:image/png;base64,AAAA".to_string(),
+                },
+            },
+        ]);
+        let documents = vec![UserDocument {
+            display_name: "screenshot.png".to_string(),
+            stored_filename: "doc-image-file-id_screenshot.png".to_string(),
+            mime_type: "image/png".to_string(),
+            media_ref: "media/session_abc/doc-image-file-id_screenshot.png".to_string(),
+            absolute_path: Some("/tmp/session_abc/doc-image-file-id_screenshot.png".to_string()),
+        }];
+        let uc = to_user_content(&mc, &documents);
+        match uc {
+            UserContent::Multimodal(parts) => {
+                assert_eq!(parts.len(), 2);
+                match &parts[0] {
+                    ContentPart::Text(t) => {
+                        assert!(t.contains("describe this"));
+                        assert!(t.contains("[Inbound documents available]"));
+                        assert!(t.contains("filename: screenshot.png"));
+                    },
                     _ => panic!("expected Text part"),
                 }
             },

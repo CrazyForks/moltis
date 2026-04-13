@@ -415,6 +415,19 @@ pub trait ChannelEventSink: Send + Sync {
         None
     }
 
+    /// Save a non-audio inbound file to the session's media directory.
+    ///
+    /// Returns both the relative media reference and the absolute local path
+    /// on success so the agent can inspect the exact saved file.
+    async fn save_channel_attachment(
+        &self,
+        _file_data: &[u8],
+        _filename: &str,
+        _reply_to: &ChannelReplyTarget,
+    ) -> Option<SavedChannelFile> {
+        None
+    }
+
     /// Transcribe voice audio to text using the configured STT provider.
     ///
     /// Returns the transcribed text, or an error if transcription fails.
@@ -506,6 +519,9 @@ pub struct ChannelMessageMeta {
     /// Filename of saved voice audio (set by `save_channel_voice`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub audio_filename: Option<String>,
+    /// Saved inbound documents/files attached to this user message.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub documents: Option<Vec<ChannelDocumentFile>>,
 }
 
 /// Inbound channel message media kind.
@@ -529,6 +545,28 @@ pub struct ChannelAttachment {
     pub media_type: String,
     /// Raw binary data of the attachment.
     pub data: Vec<u8>,
+}
+
+/// Metadata for a saved inbound channel document.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ChannelDocumentFile {
+    /// User-facing original filename when available.
+    pub display_name: String,
+    /// Sanitized stored filename inside session media.
+    pub stored_filename: String,
+    /// MIME type reported by the channel.
+    pub mime_type: String,
+}
+
+/// Metadata for an inbound channel file saved to session media.
+#[derive(Debug, Clone)]
+pub struct SavedChannelFile {
+    /// Original or generated filename used in session media storage.
+    pub filename: String,
+    /// Relative media reference (e.g. `media/main/report.pdf`).
+    pub media_ref: String,
+    /// Absolute filesystem path for local tooling access.
+    pub absolute_path: String,
 }
 
 /// Where to send the LLM response back.

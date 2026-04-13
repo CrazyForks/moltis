@@ -388,6 +388,7 @@ async fn handle_message(
             .resolve_agent_id(&chat_id, &peer_id)
             .map(String::from),
         audio_filename: None,
+        documents: None,
     };
 
     // Dispatch based on message kind.
