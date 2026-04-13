@@ -19,6 +19,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [20260413.06] - 2026-04-13
+### Fixed
+- [web] Gate openai live e2e server on api key
+
+## [20260413.05] - 2026-04-13
+### Added
+- [voice] Add local whisper web setup
+- [chat] Show cached input tokens
+
+
+### Changed
+- [providers] Normalize openai schemas with schema crates
+- [providers] Move schema normalization out of mod.rs
+- [chat] Unify usage propagation paths
+
+
+### Removed
+- [httpd] Remove unused route import
+- [httpd] Drop unused get import
+
+
+### Fixed
+- [providers] Sanitize openai tool schemas
+- [providers] Address PR review feedback
+- [providers] Keep openai compat module under file limit
+- [providers] Avoid expect in schema tests
+- [web] Restore nostr channel icons
+- [voice] Address PR review feedback
+- [chat] Satisfy clippy in cached token tests
+- [agents] Preserve streamed cache token usage
+- [openai] Add live e2e coverage and schema guard
+- [sessions] Wire archived sessions through gateway and web ui
+- [sessions] Address archived review feedback
+- [sessions] Allow archiving non-current channel chats
+- [sessions] Preserve orphaned search hits
+- [sessions] Allow unarchiving active channel chats
+
 ## [20260413.04] - 2026-04-13
 ### Changed
 - Split oversized rust modules
