@@ -405,12 +405,18 @@ fn to_anthropic_messages(
                         out.push(serde_json::json!({"role": "user", "content": content_str}));
                     },
                     UserContent::Multimodal(parts) => {
+                        let mut prefixed_first_text = false;
                         let mut blocks: Vec<serde_json::Value> = parts
                             .iter()
                             .map(|part| match part {
                                 ContentPart::Text(text) => {
-                                    let prefixed = format!("{prefix}{text}");
-                                    serde_json::json!({"type": "text", "text": prefixed})
+                                    let content = if !prefix.is_empty() && !prefixed_first_text {
+                                        prefixed_first_text = true;
+                                        format!("{prefix}{text}")
+                                    } else {
+                                        text.clone()
+                                    };
+                                    serde_json::json!({"type": "text", "text": content})
                                 },
                                 ContentPart::Image { media_type, data } => {
                                     serde_json::json!({
@@ -1327,6 +1333,43 @@ mod tests {
 
         // Last block (image) should have cache_control.
         assert_eq!(content[1]["cache_control"]["type"], "ephemeral");
+    }
+
+    #[test]
+    fn named_multimodal_prefixes_only_first_text_block() {
+        let messages = vec![ChatMessage::User {
+            content: UserContent::Multimodal(vec![
+                ContentPart::Text("first".into()),
+                ContentPart::Image {
+                    media_type: "image/png".into(),
+                    data: "base64data".into(),
+                },
+                ContentPart::Text("second".into()),
+            ]),
+            name: Some("Alice".into()),
+        }];
+
+        let (_, out) = to_anthropic_messages(&messages, false);
+        let content = out[0]["content"].as_array().expect("should be array");
+        assert_eq!(content[0]["text"], "[Alice]: first");
+        assert_eq!(content[2]["text"], "second");
+    }
+
+    #[test]
+    fn named_multimodal_without_text_inserts_prefix_block() {
+        let messages = vec![ChatMessage::User {
+            content: UserContent::Multimodal(vec![ContentPart::Image {
+                media_type: "image/png".into(),
+                data: "base64data".into(),
+            }]),
+            name: Some("Alice".into()),
+        }];
+
+        let (_, out) = to_anthropic_messages(&messages, false);
+        let content = out[0]["content"].as_array().expect("should be array");
+        assert_eq!(content[0]["type"], "text");
+        assert_eq!(content[0]["text"], "[Alice]:");
+        assert_eq!(content[1]["type"], "image");
     }
 
     #[test]

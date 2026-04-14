@@ -495,6 +495,7 @@ impl AgentTool for SpawnAgentTool {
             None, // no history
             Some(tool_context),
             None, // no hooks for sub-agents
+            None, // no sender name for spawned agents
         );
 
         let result = if let Some(timeout_secs) = preset.as_ref().and_then(|p| p.timeout_secs) {
