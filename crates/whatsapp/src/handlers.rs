@@ -87,6 +87,14 @@ pub async fn handle_event(
             }
             mirror_latest_qr(&accounts, &state.account_id, None);
 
+            // Auto-approve the owner's phone number so they don't need
+            // to manually add themselves to the allowlist.
+            if let Some(own_pn) = state.client.get_pn().await {
+                let pn_user = own_pn.user.clone();
+                let pn_jid = own_pn.to_string();
+                auto_approve_owner(&accounts, &state.account_id, &pn_user, &pn_jid);
+            }
+
             let display_name = state.client.get_push_name().await;
             let display = if display_name.is_empty() {
                 None
@@ -808,6 +816,28 @@ fn message_mentions_owner(msg: &wa::Message, own_pn: Option<&Jid>, own_lid: Opti
         own_pn,
         own_lid,
     )
+}
+
+/// Auto-add the owner's phone number to the allowlist so they're always
+/// approved without needing manual configuration or OTP.
+fn auto_approve_owner(accounts: &AccountStateMap, account_id: &str, pn_user: &str, pn_jid: &str) {
+    let mut map = accounts.write().unwrap_or_else(|e| e.into_inner());
+    let Some(state) = map.get_mut(account_id) else {
+        return;
+    };
+    let already = state
+        .config
+        .allowlist
+        .iter()
+        .any(|entry| entry == pn_user || entry == pn_jid);
+    if !already {
+        info!(
+            account_id,
+            phone = pn_user,
+            "auto-adding owner phone number to allowlist"
+        );
+        state.config.allowlist.push(pn_jid.to_string());
+    }
 }
 
 fn should_ignore_inbound_chat(source: &wacore::types::message::MessageSource) -> bool {
