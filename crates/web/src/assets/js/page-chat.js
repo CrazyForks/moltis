@@ -45,7 +45,6 @@ var slashMenuIdx = 0;
 var slashMenuItems = [];
 var chatMoreModalKeydownHandler = null;
 var disposeSessionControlsVisibility = null;
-var disposePromptMemoryToolbar = null;
 var promptMemoryToolbarRequestId = 0;
 
 function slashInjectStyles() {
@@ -1311,13 +1310,6 @@ var chatPageHTML =
 	"</div>" +
 	"</div>" +
 	'<div id="sessionHeaderToolbarMount" class="ml-auto flex items-center gap-1.5"></div>' +
-	'<div id="promptMemoryToolbar" class="hidden items-center gap-1">' +
-	'<button id="promptMemoryStatusBtn" type="button" class="text-xs border border-[var(--border)] px-2 py-1 rounded-md transition-colors cursor-pointer bg-transparent font-[var(--font-body)] inline-flex items-center gap-1 text-[var(--muted)]" title="Prompt memory status">' +
-	'<span class="icon icon-md icon-database shrink-0"></span>' +
-	'<span id="promptMemoryStatusLabel">Memory</span>' +
-	"</button>" +
-	'<button id="promptMemoryRefreshBtn" type="button" class="hidden text-xs border border-[var(--border)] px-2 py-1 rounded-md transition-colors cursor-pointer bg-transparent font-[var(--font-mono)] inline-flex items-center gap-1 text-[var(--muted)]" aria-label="Refresh prompt memory" title="Refresh frozen prompt memory">↻</button>' +
-	"</div>" +
 	'<button id="chatMoreBtn" type="button" class="model-combo-btn" title="More controls" aria-label="More controls">' +
 	'<span class="icon icon-lg icon-menu-dots-horizontal"></span>' +
 	"</button>" +
@@ -1486,18 +1478,6 @@ function bindSessionControlsVisibility() {
 	});
 }
 
-function bindPromptMemoryToolbar() {
-	var statusBtn = S.$("promptMemoryStatusBtn");
-	var refreshBtn = S.$("promptMemoryRefreshBtn");
-	if (statusBtn) statusBtn.addEventListener("click", toggleFullContextPanel);
-	if (refreshBtn) refreshBtn.addEventListener("click", refreshPromptMemoryToolbarSnapshot);
-	disposePromptMemoryToolbar?.();
-	disposePromptMemoryToolbar = effect(() => {
-		var activeKey = sessionStore.activeSessionKey.value || "main";
-		if (!activeKey) return;
-		refreshPromptMemoryToolbar();
-	});
-}
 
 function bindChatMoreModal(debugModal, fullContextModal, closeDebugModal, closeFullContextModal) {
 	var chatMoreModal = S.$("chatMoreModal");
@@ -1682,7 +1662,6 @@ function startInitialChatSession(sessionKey) {
 	if (!S.connected) return;
 	S.chatSendBtn.disabled = false;
 	switchSession(sessionKey);
-	refreshPromptMemoryToolbar();
 }
 
 function initializeChatMediaDrop() {
@@ -1708,7 +1687,6 @@ registerPrefix(
 		var closeChatMore = null;
 		mountSessionHeaderControls(() => closeChatMore?.());
 		bindSessionControlsVisibility();
-		bindPromptMemoryToolbar();
 
 		var mcpToggle = S.$("mcpToggleBtn");
 		if (mcpToggle) mcpToggle.addEventListener("click", toggleMcp);
@@ -1754,8 +1732,6 @@ registerPrefix(
 		}
 		disposeSessionControlsVisibility?.();
 		disposeSessionControlsVisibility = null;
-		disposePromptMemoryToolbar?.();
-		disposePromptMemoryToolbar = null;
 		var headerToolbarMount = S.$("sessionHeaderToolbarMount");
 		if (headerToolbarMount) render(null, headerToolbarMount);
 		var headerModalMount = S.$("sessionHeaderModalMount");
