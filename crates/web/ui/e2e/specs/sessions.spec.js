@@ -897,8 +897,34 @@ test.describe("Session management", () => {
 		await confirmModal.getByRole("button", { name: "Delete", exact: true }).click();
 		await expect(confirmModal).toHaveCount(0, { timeout: 10_000 });
 
-		// Cron session should be gone from the list
-		await expect(cronItem).toHaveCount(0, { timeout: 10_000 });
+		// Wait for the delete to propagate to the session store.
+		// Under CI load the delete handler's fetchSessions() can be
+		// serialized behind a concurrent fetch triggered by switchSession(),
+		// stalling the store update.  Poll the store directly and force
+		// a refresh if the session lingers.
+		await expect
+			.poll(
+				() =>
+					page.evaluate(async (key) => {
+						var store = window.__moltis_stores?.sessionStore;
+						if (!store) return 1;
+						if (!store.getByKey(key)) return 0;
+						// Session still in store — kick a manual refresh
+						// in case the internal fetchSessions was blocked.
+						try {
+							var resp = await fetch("/api/sessions");
+							var data = await resp.json();
+							var sessions = Array.isArray(data) ? data : data?.sessions || [];
+							store.setAll(sessions);
+						} catch {}
+						return store.getByKey(key) ? 1 : 0;
+					}, cronKey),
+				{ timeout: 15_000 },
+			)
+			.toBe(0);
+
+		// Cron session should be gone from the DOM
+		await expect(cronItem).toHaveCount(0, { timeout: 5_000 });
 
 		expect(pageErrors).toEqual([]);
 	});

@@ -695,6 +695,9 @@ test.describe("Settings navigation", () => {
 		const pageErrors = watchPageErrors(page);
 		await navigateAndWait(page, "/settings/identity");
 
+		// Wait for the identity form to be fully initialised (no pending save).
+		await expect(page.locator('button[type="submit"]')).not.toHaveText(/Saving/, { timeout: 5_000 });
+
 		const nextValues = await page.evaluate(() => {
 			var id = window.__MOLTIS__?.identity || {};
 			var nextBotName = id.name === "AutoBotNameA" ? "AutoBotNameB" : "AutoBotNameA";
@@ -704,18 +707,26 @@ test.describe("Settings navigation", () => {
 
 		const botNameInput = page.getByPlaceholder("e.g. Rex");
 		await botNameInput.fill(nextValues.nextBotName);
+		// Ensure fill() has propagated before triggering blur
+		await expect(botNameInput).toHaveValue(nextValues.nextBotName);
 		await botNameInput.blur();
-		await expect(page.getByText("Saved", { exact: true })).toBeVisible();
+		// The autosave RPC can be slow under CI load; wait for the
+		// data update (authoritative) rather than the transient "Saved"
+		// flash which only lasts 2 s and can be missed.
 		await expect
-			.poll(() => page.evaluate(() => (window.__MOLTIS__?.identity?.name || "").trim()))
+			.poll(() => page.evaluate(() => (window.__MOLTIS__?.identity?.name || "").trim()), { timeout: 15_000 })
 			.toBe(nextValues.nextBotName);
+
+		// Wait for the first save to fully settle (nameSaving → false)
+		// before triggering the second blur-save.
+		await expect(page.locator('button[type="submit"]')).not.toHaveText(/Saving/, { timeout: 5_000 });
 
 		const userNameInput = page.getByPlaceholder("e.g. Alice");
 		await userNameInput.fill(nextValues.nextUserName);
+		await expect(userNameInput).toHaveValue(nextValues.nextUserName);
 		await userNameInput.blur();
-		await expect(page.getByText("Saved", { exact: true })).toBeVisible();
 		await expect
-			.poll(() => page.evaluate(() => (window.__MOLTIS__?.identity?.user_name || "").trim()))
+			.poll(() => page.evaluate(() => (window.__MOLTIS__?.identity?.user_name || "").trim()), { timeout: 15_000 })
 			.toBe(nextValues.nextUserName);
 
 		expect(pageErrors).toEqual([]);
