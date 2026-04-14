@@ -1492,7 +1492,7 @@ dependencies = [
  "tracing",
  "url",
  "which 8.0.0",
- "windows-registry 0.5.3",
+ "windows-registry",
 ]
 
 [[package]]
@@ -2749,7 +2749,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users 0.5.2",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -3106,7 +3106,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -5243,6 +5243,20 @@ dependencies = [
 
 [[package]]
 name = "hyper-rustls"
+version = "0.24.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ec3efd23720e2049821a693cbc7e65ea87c72f1c58ff2f9522ff332b1491e590"
+dependencies = [
+ "futures-util",
+ "http 0.2.12",
+ "hyper 0.14.32",
+ "rustls 0.21.12",
+ "tokio",
+ "tokio-rustls 0.24.1",
+]
+
+[[package]]
+name = "hyper-rustls"
 version = "0.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a0bea761b46ae2b24eb4aef630d8d1c398157b6fc29e6350ecf090a0b70c952c"
@@ -5275,7 +5289,6 @@ dependencies = [
  "tokio",
  "tokio-rustls 0.26.4",
  "tower-service",
- "webpki-roots 1.0.6",
 ]
 
 [[package]]
@@ -5324,12 +5337,12 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.6.2",
+ "socket2 0.5.10",
  "system-configuration 0.7.0",
  "tokio",
  "tower-service",
  "tracing",
- "windows-registry 0.6.1",
+ "windows-registry",
 ]
 
 [[package]]
@@ -5886,7 +5899,7 @@ dependencies = [
  "portable-atomic",
  "portable-atomic-util",
  "serde_core",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -7079,7 +7092,7 @@ dependencies = [
  "moltis-web",
  "open",
  "rand 0.10.0",
- "reqwest 0.12.28",
+ "reqwest 0.13.2",
  "secrecy 0.8.0",
  "serde_json",
  "sqlx",
@@ -7108,7 +7121,7 @@ dependencies = [
  "moltis-metrics",
  "moltis-sessions",
  "moltis-skills",
- "reqwest 0.12.28",
+ "reqwest 0.13.2",
  "secrecy 0.8.0",
  "serde",
  "serde_json",
@@ -7289,7 +7302,7 @@ dependencies = [
  "futures",
  "ipnet",
  "moltis-metrics",
- "reqwest 0.12.28",
+ "reqwest 0.13.2",
  "secrecy 0.8.0",
  "serde",
  "serde_json",
@@ -7371,7 +7384,7 @@ dependencies = [
  "moltis-common",
  "moltis-media",
  "moltis-metrics",
- "reqwest 0.12.28",
+ "reqwest 0.13.2",
  "secrecy 0.8.0",
  "serde",
  "serde_json",
@@ -7446,7 +7459,7 @@ dependencies = [
  "pulldown-cmark 0.12.2",
  "qrcode",
  "rand 0.10.0",
- "reqwest 0.12.28",
+ "reqwest 0.13.2",
  "secrecy 0.8.0",
  "serde",
  "serde_json",
@@ -7529,7 +7542,7 @@ dependencies = [
  "moltis-webhooks",
  "ngrok",
  "rand 0.10.0",
- "reqwest 0.12.28",
+ "reqwest 0.13.2",
  "rustls 0.23.36",
  "secrecy 0.8.0",
  "serde",
@@ -7562,7 +7575,7 @@ dependencies = [
  "moltis-common",
  "moltis-config",
  "moltis-metrics",
- "reqwest 0.12.28",
+ "reqwest 0.13.2",
  "secrecy 0.8.0",
  "serde",
  "serde_json",
@@ -7584,7 +7597,7 @@ dependencies = [
  "moltis-config",
  "moltis-metrics",
  "moltis-oauth",
- "reqwest 0.12.28",
+ "reqwest 0.13.2",
  "secrecy 0.8.0",
  "serde",
  "serde_json",
@@ -7619,7 +7632,7 @@ dependencies = [
  "mime_guess",
  "moltis-common",
  "moltis-metrics",
- "reqwest 0.12.28",
+ "reqwest 0.13.2",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -7641,7 +7654,7 @@ dependencies = [
  "moltis-common",
  "moltis-metrics",
  "notify-debouncer-full",
- "reqwest 0.12.28",
+ "reqwest 0.13.2",
  "secrecy 0.8.0",
  "serde",
  "serde_json",
@@ -7701,7 +7714,7 @@ dependencies = [
  "moltis-common",
  "moltis-metrics",
  "rand 0.10.0",
- "reqwest 0.12.28",
+ "reqwest 0.13.2",
  "secrecy 0.8.0",
  "serde",
  "serde_json",
@@ -7737,7 +7750,7 @@ dependencies = [
  "moltis-config",
  "moltis-metrics",
  "moltis-protocol",
- "reqwest 0.12.28",
+ "reqwest 0.13.2",
  "serde",
  "serde_json",
  "sysinfo",
@@ -7780,7 +7793,7 @@ dependencies = [
  "moltis-config",
  "moltis-metrics",
  "rand 0.10.0",
- "reqwest 0.12.28",
+ "reqwest 0.13.2",
  "secrecy 0.8.0",
  "serde",
  "serde_json",
@@ -7889,7 +7902,7 @@ dependencies = [
  "moltis-oauth",
  "moltis-providers",
  "moltis-service-traits",
- "reqwest 0.12.28",
+ "reqwest 0.13.2",
  "secrecy 0.8.0",
  "serde",
  "serde_json",
@@ -7922,7 +7935,7 @@ dependencies = [
  "moltis-config",
  "moltis-metrics",
  "moltis-oauth",
- "reqwest 0.12.28",
+ "reqwest 0.13.2",
  "schemars 1.2.1",
  "secrecy 0.8.0",
  "serde",
@@ -8028,7 +8041,7 @@ dependencies = [
  "moltis-config",
  "moltis-metrics",
  "notify-debouncer-full",
- "reqwest 0.12.28",
+ "reqwest 0.13.2",
  "rstest",
  "serde",
  "serde_json",
@@ -8052,7 +8065,7 @@ dependencies = [
  "moltis-channels",
  "moltis-common",
  "moltis-metrics",
- "reqwest 0.12.28",
+ "reqwest 0.13.2",
  "secrecy 0.8.0",
  "serde",
  "serde_json",
@@ -8118,7 +8131,7 @@ dependencies = [
  "moltis-metrics",
  "pdf-extract",
  "rand 0.10.0",
- "reqwest 0.12.28",
+ "reqwest 0.13.2",
  "rstest",
  "secrecy 0.8.0",
  "serde",
@@ -8183,7 +8196,7 @@ dependencies = [
  "moltis-skills",
  "pdf-extract",
  "regex",
- "reqwest 0.12.28",
+ "reqwest 0.13.2",
  "rstest",
  "secrecy 0.8.0",
  "serde",
@@ -8235,7 +8248,7 @@ dependencies = [
  "bytes",
  "dirs",
  "futures",
- "reqwest 0.12.28",
+ "reqwest 0.13.2",
  "secrecy 0.8.0",
  "serde",
  "serde_json",
@@ -8716,7 +8729,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -8852,7 +8865,7 @@ version = "5.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "51e219e79014df21a225b1860a479e2dcd7cbd9130f4defd4bd0e191ea31d67d"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.21.7",
  "chrono",
  "getrandom 0.2.17",
  "http 1.4.0",
@@ -9873,7 +9886,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash",
  "rustls 0.23.36",
- "socket2 0.6.2",
+ "socket2 0.5.10",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -9911,9 +9924,9 @@ dependencies = [
  "cfg_aliases 0.2.1",
  "libc",
  "once_cell",
- "socket2 0.6.2",
+ "socket2 0.5.10",
  "tracing",
- "windows-sys 0.60.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -10252,6 +10265,7 @@ dependencies = [
  "http 0.2.12",
  "http-body 0.4.6",
  "hyper 0.14.32",
+ "hyper-rustls 0.24.2",
  "hyper-tls 0.5.0",
  "ipnet",
  "js-sys",
@@ -10262,6 +10276,7 @@ dependencies = [
  "once_cell",
  "percent-encoding",
  "pin-project-lite",
+ "rustls 0.21.12",
  "rustls-pemfile 1.0.4",
  "serde",
  "serde_json",
@@ -10270,6 +10285,7 @@ dependencies = [
  "system-configuration 0.5.1",
  "tokio",
  "tokio-native-tls",
+ "tokio-rustls 0.24.1",
  "tokio-util",
  "tower-service",
  "url",
@@ -10277,6 +10293,7 @@ dependencies = [
  "wasm-bindgen-futures",
  "wasm-streams 0.4.2",
  "web-sys",
+ "webpki-roots 0.25.4",
  "winreg 0.50.0",
 ]
 
@@ -10288,8 +10305,6 @@ checksum = "eddd3ca559203180a307f12d114c268abf583f59b03cb906fd0b3ff8646c1147"
 dependencies = [
  "base64 0.22.1",
  "bytes",
- "encoding_rs",
- "futures-channel",
  "futures-core",
  "futures-util",
  "h2 0.4.13",
@@ -10302,7 +10317,6 @@ dependencies = [
  "hyper-util",
  "js-sys",
  "log",
- "mime",
  "mime_guess",
  "native-tls",
  "percent-encoding",
@@ -10327,7 +10341,6 @@ dependencies = [
  "wasm-bindgen-futures",
  "wasm-streams 0.4.2",
  "web-sys",
- "webpki-roots 1.0.6",
 ]
 
 [[package]]
@@ -10339,6 +10352,7 @@ dependencies = [
  "base64 0.22.1",
  "bytes",
  "encoding_rs",
+ "futures-channel",
  "futures-core",
  "futures-util",
  "h2 0.4.13",
@@ -10351,6 +10365,7 @@ dependencies = [
  "js-sys",
  "log",
  "mime",
+ "mime_guess",
  "percent-encoding",
  "pin-project-lite",
  "quinn",
@@ -10359,6 +10374,7 @@ dependencies = [
  "rustls-platform-verifier",
  "serde",
  "serde_json",
+ "serde_urlencoded",
  "sync_wrapper 1.0.2",
  "tokio",
  "tokio-rustls 0.26.4",
@@ -10746,7 +10762,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.11.0",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -10757,6 +10773,18 @@ checksum = "2fc84bf7e9aa16c4f2c758f27412dc9841341e16aa682d9c7ac308fe3ee12056"
 dependencies = [
  "once_cell",
  "rustix 1.1.3",
+]
+
+[[package]]
+name = "rustls"
+version = "0.21.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f56a14d1f48b391359b22f731fd4bd7e43c97f3c50eee276f3aa09c94784d3e"
+dependencies = [
+ "log",
+ "ring",
+ "rustls-webpki 0.101.7",
+ "sct",
 ]
 
 [[package]]
@@ -10860,7 +10888,7 @@ dependencies = [
  "security-framework 3.5.1",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -10868,6 +10896,16 @@ name = "rustls-platform-verifier-android"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f87165f0995f63a9fbeea62b64d10b4d9d8e78ec6d7d51fb2125fda7bb36788f"
+
+[[package]]
+name = "rustls-webpki"
+version = "0.101.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b6275d1ee7a1cd780b64aca7726599a1dbc893b1e64144529e55c3c2f745765"
+dependencies = [
+ "ring",
+ "untrusted 0.9.0",
+]
 
 [[package]]
 name = "rustls-webpki"
@@ -11013,6 +11051,16 @@ dependencies = [
  "pbkdf2",
  "salsa20",
  "sha2",
+]
+
+[[package]]
+name = "sct"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "da046153aa2352493d6cb7da4b6e5c0c057d8a1d0a9aa8560baffdd945acd414"
+dependencies = [
+ "ring",
+ "untrusted 0.9.0",
 ]
 
 [[package]]
@@ -11387,7 +11435,7 @@ dependencies = [
  "mime_guess",
  "parking_lot 0.12.5",
  "percent-encoding",
- "reqwest 0.12.28",
+ "reqwest 0.11.27",
  "rustc-hash",
  "secrecy 0.8.0",
  "serde",
@@ -12363,7 +12411,7 @@ dependencies = [
  "getrandom 0.3.4",
  "once_cell",
  "rustix 1.1.3",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -12597,6 +12645,16 @@ checksum = "7f57eb36ecbe0fc510036adff84824dd3c24bb781e21bfa67b69d556aa85214f"
 dependencies = [
  "pin-project",
  "rand 0.8.5",
+ "tokio",
+]
+
+[[package]]
+name = "tokio-rustls"
+version = "0.24.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c28327cf380ac148141087fbfb9de9d7bd4e84ab5d2c28fbc911d753de8a7081"
+dependencies = [
+ "rustls 0.21.12",
  "tokio",
 ]
 
@@ -14454,6 +14512,12 @@ dependencies = [
 
 [[package]]
 name = "webpki-roots"
+version = "0.25.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5f20c57d8d7db6d3b86154206ae5d8fba62dd39573114de97c2cb0578251f8e1"
+
+[[package]]
+name = "webpki-roots"
 version = "0.26.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "521bc38abb08001b01866da9f51eb7c5d647a19260e00054a8c7fd5f9e57f7a9"
@@ -14645,7 +14709,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -14738,18 +14802,7 @@ checksum = "5b8a9ed28765efc97bbc954883f4e6796c33a06546ebafacbabee9696967499e"
 dependencies = [
  "windows-link 0.1.3",
  "windows-result 0.3.4",
- "windows-strings 0.4.2",
-]
-
-[[package]]
-name = "windows-registry"
-version = "0.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "02752bf7fbdcce7f2a27a742f798510f3e5ad88dbe84871e5168e2120c3d5720"
-dependencies = [
- "windows-link 0.2.1",
- "windows-result 0.4.1",
- "windows-strings 0.5.1",
+ "windows-strings",
 ]
 
 [[package]]
@@ -14771,30 +14824,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "windows-result"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7781fa89eaf60850ac3d2da7af8e5242a5ea78d1a11c49bf2910bb5a73853eb5"
-dependencies = [
- "windows-link 0.2.1",
-]
-
-[[package]]
 name = "windows-strings"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "56e6c93f3a0c3b36176cb1327a4958a0353d5d166c2a35cb268ace15e91d3b57"
 dependencies = [
  "windows-link 0.1.3",
-]
-
-[[package]]
-name = "windows-strings"
-version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7837d08f69c77cf6b07689544538e017c1bfcf57e34b4c0ff58e6c2cd3b37091"
-dependencies = [
- "windows-link 0.2.1",
 ]
 
 [[package]]
