@@ -1,0 +1,481 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Compaction - Moltis Documentation</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="Documentation for Moltis - Your AI coding assistant">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon.svg">
+        <link rel="shortcut icon" href="favicon.png">
+        <link rel="stylesheet" href="css/variables.css">
+        <link rel="stylesheet" href="css/general.css">
+        <link rel="stylesheet" href="css/chrome.css">
+        <link rel="stylesheet" href="css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="highlight-css" href="highlight.css">
+        <link rel="stylesheet" id="tomorrow-night-css" href="tomorrow-night.css">
+        <link rel="stylesheet" id="ayu-highlight-css" href="ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+        <link rel="stylesheet" href="theme/admonish.css">
+        <link rel="stylesheet" href="theme/custom.css">
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "searchindex.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Moltis Documentation</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/moltis-org/moltis" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+                        <a href="https://github.com/moltis-org/moltis/edit/main/docs/src/src/compaction.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                            <i id="git-edit-button" class="fa fa-edit"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <i class="fa fa-spinner fa-spin"></i>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="compaction"><a class="header" href="#compaction">Compaction</a></h1>
+<p>When a chat session fills up the model’s context window, Moltis compacts the
+conversation so the agent can keep working. Compaction replaces (or rewrites)
+older messages with a summary so the retry fits inside the context budget.</p>
+<p>The <strong>compaction mode</strong> you choose controls the cost/fidelity trade-off:
+faster and free, or slower and higher quality. Moltis supports four modes
+out of the box.</p>
+<h2 id="why-compaction-matters"><a class="header" href="#why-compaction-matters">Why compaction matters</a></h2>
+<p>A long coding session can produce thousands of messages, tool calls, and
+tool results. Every turn has to re-send the full history, so eventually you
+hit the context window limit and the provider rejects the request. Without
+compaction the session is dead — you lose the thread of work. With
+compaction the agent keeps going.</p>
+<p>The trade-off: any compaction strategy loses <em>some</em> information. The
+different modes choose different things to preserve.</p>
+<h2 id="the-four-modes"><a class="header" href="#the-four-modes">The four modes</a></h2>
+<h3 id="deterministic-default"><a class="header" href="#deterministic-default"><code>deterministic</code> (default)</a></h3>
+<p><strong>Zero LLM calls, instant, offline.</strong> Inspects the message history directly
+and builds a structured summary: message counts, tool names, file-path
+mentions, recent user requests, keyword-matched pending work, and a
+head-3 + tail-5 timeline. Replaces the entire history with that one summary
+as a single user message.</p>
+<p><strong>Strengths</strong></p>
+<ul>
+<li>Free (no tokens, no network).</li>
+<li>Deterministic output — two runs on the same history produce the same
+summary, so debugging and testing is easy.</li>
+<li>Works offline and on air-gapped deployments.</li>
+<li>Zero prompt-injection surface (the LLM never sees the raw history).</li>
+</ul>
+<p><strong>Weaknesses</strong></p>
+<ul>
+<li>Can’t preserve decisions or reasoning chains — it’s a navigation index,
+not a narrative.</li>
+<li>“Pending work” relies on keyword matches (<code>todo</code>, <code>next</code>, <code>pending</code>…)
+which miss naturally-phrased follow-ups.</li>
+<li>Middle history is dropped entirely; only the head and tail show up in the
+timeline preview.</li>
+<li>Tail context is not preserved verbatim, so the LLM retry doesn’t see the
+most-recent turns word-for-word.</li>
+</ul>
+<p><strong>Pick this when</strong> the session is a short chat channel, you’re cost-sensitive,
+or you’re running without network access. This is the default so new
+installs don’t silently spend tokens on compaction.</p>
+<h3 id="recency_preserving"><a class="header" href="#recency_preserving"><code>recency_preserving</code></a></h3>
+<p><strong>Zero LLM calls, higher fidelity.</strong> Keeps the first few messages (system
+prompt + first exchange) and the most recent ~20 % of the context window
+verbatim. The middle region is collapsed into a short marker message
+(<code>"N earlier messages were elided… Recent messages are preserved verbatim below."</code>) and any bulky tool-result content in the retained slice is
+replaced with a placeholder so a single multi-KB tool output can’t blow
+through the context window on its own.</p>
+<p><strong>Strengths</strong></p>
+<ul>
+<li>No LLM cost, still offline-safe.</li>
+<li>Tail context is preserved verbatim, so the retry sees the most-recent
+turns exactly as they happened.</li>
+<li>Keeps reasoning chains from the middle that don’t depend on tool output.</li>
+<li>Repairs orphaned tool-call / tool-result pairs so strict providers
+(Anthropic, OpenAI strict mode) don’t reject the retry.</li>
+</ul>
+<p><strong>Weaknesses</strong></p>
+<ul>
+<li>Cannot merge redundant discussions (same topic raised five times
+survives five times).</li>
+<li>No semantic understanding of what’s important.</li>
+</ul>
+<p><strong>Pick this when</strong> you want a significant quality boost over <code>deterministic</code>
+without paying any tokens — the best free option for most agentic coding
+sessions.</p>
+<h3 id="structured"><a class="header" href="#structured"><code>structured</code></a></h3>
+<p><strong>Head + LLM structured summary + tail.</strong> The highest-fidelity mode. Same
+head and tail boundary logic as <code>recency_preserving</code>, but the middle is
+summarised with a single LLM call using a structured template:</p>
+<pre><code>## Goal
+## Constraints &amp; Preferences
+## Progress
+### Done / ### In Progress / ### Blocked
+## Key Decisions
+## Relevant Files
+## Next Steps
+## Critical Context
+</code></pre>
+<p>This is the same convention used by <code>hermes-agent</code>’s <code>ContextCompressor</code>
+and <code>openclaw</code>’s compaction safeguard. Iterative re-compaction preserves
+and updates prior summary sections (work moves from <em>In Progress</em> to
+<em>Done</em> as it completes).</p>
+<p><strong>Strengths</strong></p>
+<ul>
+<li>Highest fidelity — preserves reasoning, decisions, and cross-session
+context.</li>
+<li>Supports a cheap auxiliary summary model via <code>summary_model</code>, so you can
+run a big frontier model for coding and a small fast model for
+compaction.</li>
+<li>Automatic fallback to <code>recency_preserving</code> on LLM failure, so compaction
+never silently drops information.</li>
+</ul>
+<p><strong>Weaknesses</strong></p>
+<ul>
+<li>Costs a summary LLM call per compaction.</li>
+<li>Quality depends on the summary model’s instruction-following.</li>
+</ul>
+<p><strong>Pick this when</strong> session quality matters more than per-compaction cost —
+e.g. long agentic coding sessions where losing a decision would mean
+re-doing hours of work.</p>
+<h3 id="llm_replace"><a class="header" href="#llm_replace"><code>llm_replace</code></a></h3>
+<p><strong>Replace entire history with a single LLM-generated summary.</strong> The
+pre-PR-#653 behaviour: stream a plain-text summary from the session’s
+provider, replace the history with one user message containing the
+summary. No head/tail preservation.</p>
+<p><strong>Strengths</strong></p>
+<ul>
+<li>Maximum token reduction — the retry sees one message, period.</li>
+<li>Works with any provider that supports streaming.</li>
+</ul>
+<p><strong>Weaknesses</strong></p>
+<ul>
+<li>Loses recent turns verbatim (strictly worse than <code>structured</code> for the
+same cost).</li>
+<li>No structured template, so summary quality varies with the model.</li>
+<li>No automatic fallback — an LLM failure aborts compaction.</li>
+</ul>
+<p><strong>Pick this when</strong> you need the smallest possible post-compaction history
+and <code>structured</code> isn’t available yet (or you explicitly want the old
+behaviour).</p>
+<h2 id="comparison-at-a-glance"><a class="header" href="#comparison-at-a-glance">Comparison at a glance</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>Feature</th><th><code>deterministic</code></th><th><code>recency_preserving</code></th><th><code>structured</code></th><th><code>llm_replace</code></th></tr></thead><tbody>
+<tr><td>LLM calls</td><td>0</td><td>0</td><td>1</td><td>1</td></tr>
+<tr><td>Token cost</td><td>none</td><td>none</td><td>medium</td><td>medium</td></tr>
+<tr><td>Latency</td><td>~0 ms</td><td>~0 ms</td><td>1–10 s</td><td>1–10 s</td></tr>
+<tr><td>Head preserved verbatim</td><td>✗</td><td>✓</td><td>✓</td><td>✗</td></tr>
+<tr><td>Tail preserved verbatim</td><td>✗</td><td>✓ (token-budget)</td><td>✓ (token-budget)</td><td>✗</td></tr>
+<tr><td>Middle strategy</td><td>drop</td><td>prune tool output</td><td>LLM summary</td><td>drop</td></tr>
+<tr><td>Decisions / rationale</td><td>✗</td><td>partial</td><td>✓</td><td>partial</td></tr>
+<tr><td>Iterative re-compaction</td><td>merge</td><td>N/A</td><td>template update</td><td>re-summarise</td></tr>
+<tr><td>Tool-pair integrity</td><td>N/A</td><td>✓</td><td>✓</td><td>N/A</td></tr>
+<tr><td>Fallback on LLM failure</td><td>N/A</td><td>N/A</td><td>→ <code>recency_preserving</code></td><td>abort</td></tr>
+<tr><td>Works offline</td><td>✓</td><td>✓</td><td>✗</td><td>✗</td></tr>
+<tr><td>Deterministic</td><td>✓</td><td>✓</td><td>✗</td><td>✗</td></tr>
+<tr><td>Status</td><td>shipped</td><td>shipped</td><td>shipped</td><td>shipped</td></tr>
+</tbody></table>
+</div>
+<h2 id="configuration"><a class="header" href="#configuration">Configuration</a></h2>
+<p>All compaction settings live under <code>[chat.compaction]</code> in <code>moltis.toml</code>:</p>
+<pre><code class="language-toml">[chat.compaction]
+mode = "deterministic"              # "deterministic" | "recency_preserving" | "structured" | "llm_replace"
+threshold_percent = 0.95            # Auto-compact trigger AND tail-budget multiplier. See below.
+protect_head = 3                    # Head messages kept verbatim (recency/structured).
+protect_tail_min = 20               # Minimum tail messages kept verbatim (recency/structured).
+tail_budget_ratio = 0.20            # Tail size as fraction of threshold_percent × context_window.
+tool_prune_char_threshold = 200     # Middle tool results longer than this get placeholder-replaced.
+summary_model = "openrouter/google/gemini-2.5-flash"   # RESERVED — see note below.
+max_summary_tokens = 4096           # RESERVED — see note below.
+show_settings_hint = true           # Show "Change chat.compaction.mode in moltis.toml…" footer.
+</code></pre>
+<h3 id="hiding-the-settings-hint"><a class="header" href="#hiding-the-settings-hint">Hiding the settings hint</a></h3>
+<p>By default, every compaction notice (web UI compact card and channel
+messages) includes a short footer pointing at the config key:</p>
+<blockquote>
+<p><em>Change <code>chat.compaction.mode</code> in <code>moltis.toml</code> (or the web UI settings
+panel) to pick a different compaction strategy.</em></p>
+</blockquote>
+<p>Once you know the setting exists, this becomes noise. Set:</p>
+<pre><code class="language-toml">[chat.compaction]
+show_settings_hint = false
+</code></pre>
+<p>The mode and token counts still ship with every compaction notice — only
+the footer is stripped.</p>
+<p>All fields are optional. When a field is omitted the default shown above is
+used. <code>deterministic</code> mode ignores every field except <code>mode</code> and
+<code>threshold_percent</code>.</p>
+<h3 id="picking-a-threshold"><a class="header" href="#picking-a-threshold">Picking a threshold</a></h3>
+<p><code>threshold_percent</code> serves two related purposes:</p>
+<ol>
+<li><strong>Auto-compact trigger.</strong> When the estimated next request would
+exceed <code>threshold_percent × context_window</code> tokens, <code>send()</code> fires a
+compaction pre-emptively. On a 200 K model with the default <code>0.95</code>,
+compaction starts when the session reaches 190 K tokens. (The
+default matches the pre-PR-#653 hardcoded trigger so upgrades are
+behaviour-neutral.)</li>
+<li><strong>Tail-budget multiplier.</strong> For <code>recency_preserving</code> and <code>structured</code>
+modes, the size of the verbatim tail is
+<code>threshold_percent × tail_budget_ratio × context_window</code>. With the
+defaults that’s 200 K × 0.95 × 0.20 = 38 K tokens of tail preserved.</li>
+</ol>
+<p>Both uses move together: lowering <code>threshold_percent</code> compacts earlier
+<strong>and</strong> shrinks the preserved tail, which is usually what you want on a
+tight context window.</p>
+<ul>
+<li>Lower values (≈ 0.5) compact more aggressively and leave more headroom for
+a new burst of tool calls.</li>
+<li>Higher values (≈ 0.9) delay compaction as long as possible but risk
+blowing through the window on a single large tool result. The config
+validator clamps the effective value to <code>0.95</code> as an upper bound so
+auto-compact can’t be accidentally disabled.</li>
+</ul>
+<p>Manual <code>chat.compact</code> RPC calls ignore <code>threshold_percent</code> for the
+trigger check and compact whatever’s there, but still use it for the
+tail-budget math inside recency-preserving and structured modes.</p>
+<h3 id="picking-a-summary-model"><a class="header" href="#picking-a-summary-model">Picking a summary model</a></h3>
+<blockquote>
+<p>⚠️ <strong><code>summary_model</code> / <code>max_summary_tokens</code> are reserved for a
+follow-up</strong> — beads issue <strong>moltis-8me</strong>. They’re present in the
+config schema so you can start setting them today, but the
+<code>structured</code> and <code>llm_replace</code> strategies currently <strong>ignore</strong> them
+and always use the session’s primary provider. Setting either field
+to a non-default value triggers a one-shot runtime WARN that names
+the fields and the tracking issue so you’re not billed for the wrong
+model without warning.</p>
+</blockquote>
+<p>When the auxiliary-model subsystem lands, <code>summary_model</code> will take
+a provider-qualified model identifier understood by the provider
+registry (e.g. <code>"openrouter/google/gemini-2.5-flash"</code>,
+<code>"anthropic/claude-3-5-haiku-20241022"</code>). Leave it unset to reuse the
+session’s primary model.</p>
+<p>Small fast models are usually the right choice for compaction: they’re
+cheap, respond in seconds, and are good at instruction-following on a
+structured template. Reserve the frontier model for the actual coding work.</p>
+<h2 id="migration-notes"><a class="header" href="#migration-notes">Migration notes</a></h2>
+<p>Upgrading from a pre-PR-#653 install? The default changed from implicit
+LLM compaction to <code>deterministic</code>. If you want the old behaviour back,
+set:</p>
+<pre><code class="language-toml">[chat.compaction]
+mode = "llm_replace"
+</code></pre>
+<p>No other changes needed — <code>llm_replace</code> uses the session’s primary model
+just like the pre-PR behaviour did.</p>
+<h2 id="tracking-issues"><a class="header" href="#tracking-issues">Tracking issues</a></h2>
+<ul>
+<li>Epic: <strong>moltis-dxw</strong> — pluggable compaction modes</li>
+<li><strong>moltis-g37</strong> — config scaffolding, docs, <code>llm_replace</code> mode ✓</li>
+<li><strong>moltis-h0c</strong> — <code>recency_preserving</code> mode ✓</li>
+<li><strong>moltis-aff</strong> — <code>structured</code> mode ✓</li>
+<li><strong>moltis-8me</strong> — auxiliary-model subsystem for cheap summary models <em>(follow-up, lets users route compaction to a cheap auxiliary model instead of the session’s primary model)</em></li>
+</ul>
+<h2 id="further-reading"><a class="header" href="#further-reading">Further reading</a></h2>
+<ul>
+<li><code>hermes-agent/agent/context_compressor.py</code> — reference implementation of
+the head + LLM summary + tail strategy that inspired <code>structured</code> mode.</li>
+<li><code>openclaw/src/agents/compaction.ts</code> + <code>pi-hooks/compaction-safeguard.ts</code>
+— LLM compaction with quality auditing and tool-pair repair.</li>
+<li><code>crates/chat/src/compaction.rs</code> — current <code>deterministic</code> mode
+implementation.</li>
+</ul>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="checkpoints.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="scheduling.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="checkpoints.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="scheduling.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr.min.js"></script>
+        <script src="mark.min.js"></script>
+        <script src="searcher.js"></script>
+
+        <script src="clipboard.min.js"></script>
+        <script src="highlight.js"></script>
+        <script src="book.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+
+    </div>
+    </body>
+</html>

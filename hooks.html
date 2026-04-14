@@ -218,17 +218,23 @@
 <tr><td><code>AfterLLMCall</code></td><td>After LLM response, before tool execution</td><td>yes</td><td>yes</td></tr>
 <tr><td><code>BeforeToolCall</code></td><td>Before a tool executes</td><td>yes</td><td>yes</td></tr>
 <tr><td><code>BeforeCompaction</code></td><td>Before context compaction</td><td>yes</td><td>yes</td></tr>
+<tr><td><code>MessageReceived</code></td><td>When an inbound channel/UI message arrives</td><td>yes</td><td>yes</td></tr>
 <tr><td><code>MessageSending</code></td><td>Before sending a response</td><td>yes</td><td>yes</td></tr>
 <tr><td><code>ToolResultPersist</code></td><td>When a tool result is persisted</td><td>yes</td><td>yes</td></tr>
 </tbody></table>
 </div>
+<p>For <code>MessageReceived</code>, <code>Block(reason)</code> aborts the turn — the user message is
+not persisted, no run starts, and the reason is delivered back to the sender
+via the originating channel (or broadcast as a <code>chat</code> rejection event for web
+clients). <code>ModifyPayload</code> must return an object of shape <code>{"content": "..."}</code>;
+the <code>content</code> string replaces the inbound text before it reaches the model or
+the session store.</p>
 <h3 id="read-only-events-parallel"><a class="header" href="#read-only-events-parallel">Read-Only Events (Parallel)</a></h3>
 <p>These events run hooks in parallel for performance. They cannot modify or block.</p>
 <div class="table-wrapper"><table><thead><tr><th>Event</th><th>Description</th></tr></thead><tbody>
 <tr><td><code>AfterToolCall</code></td><td>After a tool completes</td></tr>
 <tr><td><code>AfterCompaction</code></td><td>After context is compacted</td></tr>
 <tr><td><code>AgentEnd</code></td><td>When agent loop completes</td></tr>
-<tr><td><code>MessageReceived</code></td><td>When a user message arrives</td></tr>
 <tr><td><code>MessageSent</code></td><td>After response is delivered</td></tr>
 <tr><td><code>SessionStart</code></td><td>When a new session begins</td></tr>
 <tr><td><code>SessionEnd</code></td><td>When a session ends</td></tr>
@@ -271,6 +277,37 @@
 <tr><td><code>iteration</code></td><td>number</td><td>1-based loop iteration</td></tr>
 </tbody></table>
 </div>
+<h2 id="channel-provenance"><a class="header" href="#channel-provenance">Channel Provenance</a></h2>
+<p><code>BeforeToolCall</code>, <code>AfterToolCall</code>, <code>SessionStart</code>, and <code>MessageReceived</code> currently include channel provenance. The fields are optional so hooks keep working for sessions that do not originate from a channel integration.</p>
+<p><code>MessageReceived</code> keeps its legacy <code>channel</code> string field and adds the richer object as <code>channel_binding</code>. <code>BeforeToolCall</code>, <code>AfterToolCall</code>, and <code>SessionStart</code> expose the same richer object as <code>channel</code>. <code>ToolResultPersist</code> has a schema field reserved for the same shape, but that event is not currently dispatched.</p>
+<div class="table-wrapper"><table><thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>surface</code></td><td>string/null</td><td>Runtime surface, for example <code>telegram</code>, <code>discord</code>, <code>web</code>, <code>cron</code>, <code>heartbeat</code></td></tr>
+<tr><td><code>session_kind</code></td><td>string/null</td><td>High-level source kind, usually <code>channel</code>, <code>web</code>, or <code>cron</code></td></tr>
+<tr><td><code>channel_type</code></td><td>string/null</td><td>Channel plugin type when channel-bound</td></tr>
+<tr><td><code>account_id</code></td><td>string/null</td><td>Channel account identifier</td></tr>
+<tr><td><code>chat_id</code></td><td>string/null</td><td>Channel chat, room, or peer identifier</td></tr>
+<tr><td><code>chat_type</code></td><td>string/null</td><td>Best-effort chat classification, currently most useful for Telegram</td></tr>
+<tr><td><code>sender_id</code></td><td>string/null</td><td>Reserved for future sender provenance, currently omitted</td></tr>
+</tbody></table>
+</div>
+<p>Example <code>BeforeToolCall</code> payload excerpt:</p>
+<pre><code class="language-json">{
+  "event": "BeforeToolCall",
+  "session_key": "telegram:bot-main:-100123",
+  "tool_name": "exec",
+  "arguments": {
+    "command": "pwd"
+  },
+  "channel": {
+    "surface": "telegram",
+    "session_kind": "channel",
+    "channel_type": "telegram",
+    "account_id": "bot-main",
+    "chat_id": "-100123",
+    "chat_type": "channel_or_supergroup"
+  }
+}
+</code></pre>
 <h3 id="example-block-suspicious-tool-calls"><a class="header" href="#example-block-suspicious-tool-calls">Example: Block Suspicious Tool Calls</a></h3>
 <pre><code class="language-bash">#!/bin/bash
 # filter-injection.sh — subscribe to AfterLLMCall
@@ -364,16 +401,25 @@ exit 0
 <p>The event payload is passed as JSON on stdin:</p>
 <pre><code class="language-json">{
   "event": "BeforeToolCall",
-  "data": {
-    "tool": "bash",
-    "arguments": {
-      "command": "ls -la"
-    }
+  "session_key": "abc123",
+  "tool_name": "exec",
+  "arguments": {
+    "command": "ls -la"
   },
-  "session_id": "abc123",
-  "timestamp": "2024-01-15T10:30:00Z"
+  "channel": {
+    "surface": "telegram",
+    "session_kind": "channel",
+    "channel_type": "telegram",
+    "account_id": "bot-main",
+    "chat_id": "-100123",
+    "chat_type": "channel_or_supergroup"
+  }
 }
 </code></pre>
+<p>For modifying events, stdin is the full tagged <code>HookPayload</code>. If your hook returns
+<code>{"action":"modify","data":...}</code>, the <code>data</code> value replaces the event-specific
+mutable portion of the payload. For <code>BeforeToolCall</code>, that means the replacement
+value becomes the new <code>arguments</code> object.</p>
 <h3 id="output"><a class="header" href="#output">Output</a></h3>
 <div class="table-wrapper"><table><thead><tr><th>Exit Code</th><th>Stdout</th><th>Result</th></tr></thead><tbody>
 <tr><td><code>0</code></td><td>(empty)</td><td>Continue normally</td></tr>
@@ -384,12 +430,12 @@ exit 0
 <h3 id="example-modify-tool-arguments"><a class="header" href="#example-modify-tool-arguments">Example: Modify Tool Arguments</a></h3>
 <pre><code class="language-bash">#!/bin/bash
 payload=$(cat)
-tool=$(echo "$payload" | jq -r '.data.tool')
+tool=$(echo "$payload" | jq -r '.tool_name')
 
-if [ "$tool" = "bash" ]; then
-    # Add safety flag to all bash commands
-    modified=$(echo "$payload" | jq '.data.arguments.command = "set -e; " + .data.arguments.command')
-    echo "{\"action\":\"modify\",\"data\":$(echo "$modified" | jq '.data')}"
+if [ "$tool" = "exec" ]; then
+    # Add safety flag to shell commands executed by the exec tool
+    modified_args=$(echo "$payload" | jq '.arguments.command = "set -e; " + .arguments.command | .arguments')
+    echo "{\"action\":\"modify\",\"data\":$modified_args}"
 fi
 
 exit 0
@@ -397,7 +443,7 @@ exit 0
 <h3 id="example-block-dangerous-commands"><a class="header" href="#example-block-dangerous-commands">Example: Block Dangerous Commands</a></h3>
 <pre><code class="language-bash">#!/bin/bash
 payload=$(cat)
-command=$(echo "$payload" | jq -r '.data.arguments.command // ""')
+command=$(echo "$payload" | jq -r '.arguments.command // ""')
 
 # Block rm -rf /
 if echo "$command" | grep -qE 'rm\s+-rf\s+/'; then
@@ -446,7 +492,7 @@ env = ["SLACK_WEBHOOK_URL"]    # Required environment variables
 <h2 id="circuit-breaker"><a class="header" href="#circuit-breaker">Circuit Breaker</a></h2>
 <p>Hooks that fail repeatedly are automatically disabled:</p>
 <ul>
-<li><strong>Threshold</strong>: 5 consecutive failures</li>
+<li><strong>Threshold</strong>: 3 consecutive failures</li>
 <li><strong>Cooldown</strong>: 60 seconds</li>
 <li><strong>Recovery</strong>: Auto-re-enabled after cooldown</li>
 </ul>
@@ -528,38 +574,39 @@ defense layer with broader pattern coverage.</p>
 <pre><code class="language-bash">#!/bin/bash
 # slack-notify.sh
 payload=$(cat)
-session_id=$(echo "$payload" | jq -r '.session_id')
-message_count=$(echo "$payload" | jq -r '.data.message_count')
+session_key=$(echo "$payload" | jq -r '.session_key')
 
 curl -X POST "$SLACK_WEBHOOK_URL" \
   -H 'Content-Type: application/json' \
-  -d "{\"text\":\"Session $session_id ended with $message_count messages\"}"
+  -d "{\"text\":\"Session $session_key ended\"}"
 
 exit 0
 </code></pre>
-<h3 id="redact-secrets-from-tool-output"><a class="header" href="#redact-secrets-from-tool-output">Redact Secrets from Tool Output</a></h3>
+<h3 id="redact-secrets-from-tool-arguments"><a class="header" href="#redact-secrets-from-tool-arguments">Redact Secrets from Tool Arguments</a></h3>
 <pre><code class="language-bash">#!/bin/bash
 # redact-secrets.sh
 payload=$(cat)
 
-# Redact common secret patterns
-redacted=$(echo "$payload" | sed -E '
+# Redact secrets from exec-tool command arguments before execution
+command=$(echo "$payload" | jq -r '.arguments.command // ""')
+redacted=$(printf '%s' "$command" | sed -E '
   s/sk-[a-zA-Z0-9]{32,}/[REDACTED]/g
   s/ghp_[a-zA-Z0-9]{36}/[REDACTED]/g
-  s/password=[^&amp;\s]+/password=[REDACTED]/g
+  s/password=[^&amp;[:space:]]+/password=[REDACTED]/g
 ')
 
-echo "{\"action\":\"modify\",\"data\":$(echo "$redacted" | jq '.data')}"
+modified_args=$(echo "$payload" | jq --arg command "$redacted" '.arguments.command = $command | .arguments')
+echo "{\"action\":\"modify\",\"data\":$modified_args}"
 exit 0
 </code></pre>
 <h3 id="block-file-writes-outside-project"><a class="header" href="#block-file-writes-outside-project">Block File Writes Outside Project</a></h3>
 <pre><code class="language-bash">#!/bin/bash
 # sandbox-writes.sh
 payload=$(cat)
-tool=$(echo "$payload" | jq -r '.data.tool')
+tool=$(echo "$payload" | jq -r '.tool_name')
 
 if [ "$tool" = "write_file" ]; then
-    path=$(echo "$payload" | jq -r '.data.arguments.path')
+    path=$(echo "$payload" | jq -r '.arguments.path')
 
     # Only allow writes under current project
     if [[ ! "$path" =~ ^/workspace/ ]]; then
