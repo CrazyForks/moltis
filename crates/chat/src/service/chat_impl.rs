@@ -232,6 +232,7 @@ impl ChatService for LiveChatService {
                 user_message_index,
                 &[],
                 Some(&runtime_context),
+                None, // send_sync: no sender name
                 Some(&self.session_store),
                 None, // send_sync: no client seq
                 None, // send_sync: no partial assistant tracking
@@ -268,6 +269,7 @@ impl ChatService for LiveChatService {
                 None,  // send_sync: no partial assistant tracking
                 &active_event_forwarders,
                 &terminal_runs,
+                None, // send_sync: no sender name
             )
             .await
         };

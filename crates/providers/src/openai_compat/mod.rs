@@ -319,7 +319,7 @@ pub fn to_responses_input(messages: &[ChatMessage]) -> Vec<serde_json::Value> {
                 // System messages are extracted into `instructions`.
                 vec![]
             },
-            ChatMessage::User { content } => {
+            ChatMessage::User { content, .. } => {
                 let content_blocks = match content {
                     UserContent::Text(t) => {
                         vec![serde_json::json!({"type": "input_text", "text": t})]

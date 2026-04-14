@@ -747,6 +747,15 @@ impl LiveChatService {
         // know the message won't be queued — avoids double-persist when a
         // queued message is replayed via send()).
         let channel_meta = params.get("channel").cloned();
+        // Extract sender name from channel metadata for LLM identity.
+        let sender_name = channel_meta
+            .as_ref()
+            .and_then(|ch| {
+                ch["sender_name"]
+                    .as_str()
+                    .or_else(|| ch["username"].as_str())
+            })
+            .map(|s| s.to_string());
         let user_audio = user_audio_path_from_params(&params, &session_key);
         let user_msg = PersistedMessage::User {
             content: message_content,
@@ -1062,6 +1071,7 @@ impl LiveChatService {
                         user_message_index,
                         &discovered_skills,
                         Some(&runtime_context),
+                        sender_name,
                         Some(&session_store),
                         client_seq,
                         Some(Arc::clone(&active_partial_assistant)),
@@ -1098,6 +1108,7 @@ impl LiveChatService {
                         Some(Arc::clone(&active_partial_assistant)),
                         &active_event_forwarders,
                         &terminal_runs,
+                        sender_name,
                     )
                     .await
                 }

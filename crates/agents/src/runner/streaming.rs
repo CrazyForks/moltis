@@ -60,6 +60,7 @@ pub async fn run_agent_loop_streaming(
     history: Option<Vec<ChatMessage>>,
     tool_context: Option<serde_json::Value>,
     hook_registry: Option<Arc<HookRegistry>>,
+    sender_name: Option<String>,
 ) -> Result<AgentRunResult, AgentRunError> {
     let native_tools = provider.supports_tools();
     let config = moltis_config::discover_and_load();
@@ -93,6 +94,7 @@ pub async fn run_agent_loop_streaming(
 
     messages.push(ChatMessage::User {
         content: user_content.clone(),
+        name: sender_name,
     });
     let explicit_shell_command = explicit_shell_command_from_user_content(user_content);
 

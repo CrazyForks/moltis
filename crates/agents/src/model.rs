@@ -50,6 +50,8 @@ pub enum ChatMessage {
     },
     User {
         content: UserContent,
+        /// Optional sender name for channel messages (Telegram, Discord, etc.).
+        name: Option<String>,
     },
     Assistant {
         content: Option<String>,
@@ -94,6 +96,15 @@ impl ChatMessage {
     pub fn user(content: impl Into<String>) -> Self {
         Self::User {
             content: UserContent::Text(content.into()),
+            name: None,
+        }
+    }
+
+    /// Create a user message with plain text and a sender name.
+    pub fn user_named(content: impl Into<String>, name: impl Into<String>) -> Self {
+        Self::User {
+            content: UserContent::Text(content.into()),
+            name: Some(name.into()),
         }
     }
 
@@ -101,6 +112,15 @@ impl ChatMessage {
     pub fn user_multimodal(parts: Vec<ContentPart>) -> Self {
         Self::User {
             content: UserContent::Multimodal(parts),
+            name: None,
+        }
+    }
+
+    /// Create a user message with multimodal content and a sender name.
+    pub fn user_multimodal_named(parts: Vec<ContentPart>, name: impl Into<String>) -> Self {
+        Self::User {
+            content: UserContent::Multimodal(parts),
+            name: Some(name.into()),
         }
     }
 
@@ -138,28 +158,34 @@ impl ChatMessage {
             ChatMessage::System { content } => {
                 serde_json::json!({ "role": "system", "content": content })
             },
-            ChatMessage::User { content } => match content {
-                UserContent::Text(text) => {
-                    serde_json::json!({ "role": "user", "content": text })
-                },
-                UserContent::Multimodal(parts) => {
-                    let blocks: Vec<serde_json::Value> = parts
-                        .iter()
-                        .map(|part| match part {
-                            ContentPart::Text(text) => {
-                                serde_json::json!({ "type": "text", "text": text })
-                            },
-                            ContentPart::Image { media_type, data } => {
-                                let data_uri = format!("data:{media_type};base64,{data}");
-                                serde_json::json!({
-                                    "type": "image_url",
-                                    "image_url": { "url": data_uri }
-                                })
-                            },
-                        })
-                        .collect();
-                    serde_json::json!({ "role": "user", "content": blocks })
-                },
+            ChatMessage::User { content, name } => {
+                let mut msg = match content {
+                    UserContent::Text(text) => {
+                        serde_json::json!({ "role": "user", "content": text })
+                    },
+                    UserContent::Multimodal(parts) => {
+                        let blocks: Vec<serde_json::Value> = parts
+                            .iter()
+                            .map(|part| match part {
+                                ContentPart::Text(text) => {
+                                    serde_json::json!({ "type": "text", "text": text })
+                                },
+                                ContentPart::Image { media_type, data } => {
+                                    let data_uri = format!("data:{media_type};base64,{data}");
+                                    serde_json::json!({
+                                        "type": "image_url",
+                                        "image_url": { "url": data_uri }
+                                    })
+                                },
+                            })
+                            .collect();
+                        serde_json::json!({ "role": "user", "content": blocks })
+                    },
+                };
+                if let Some(n) = name {
+                    msg["name"] = serde_json::Value::String(n.clone());
+                }
+                msg
             },
             ChatMessage::Assistant {
                 content,
@@ -233,6 +259,16 @@ pub fn values_to_chat_messages(values: &[serde_json::Value]) -> Vec<ChatMessage>
                 messages.push(ChatMessage::system(content));
             },
             "user" => {
+                // Extract sender name from persisted channel metadata.
+                let sender_name = val
+                    .get("channel")
+                    .and_then(|ch| {
+                        ch["sender_name"]
+                            .as_str()
+                            .or_else(|| ch["username"].as_str())
+                    })
+                    .map(|s| s.to_string());
+
                 let document_context = val["documents"].as_array().and_then(|documents| {
                     let mut sections = Vec::new();
                     for document in documents {
@@ -270,7 +306,10 @@ pub fn values_to_chat_messages(values: &[serde_json::Value]) -> Vec<ChatMessage>
                     } else {
                         text.to_string()
                     };
-                    messages.push(ChatMessage::user(content));
+                    messages.push(ChatMessage::User {
+                        content: UserContent::Text(content),
+                        name: sender_name,
+                    });
                 } else if let Some(arr) = val["content"].as_array() {
                     let mut parts: Vec<ContentPart> = arr
                         .iter()
@@ -306,9 +345,15 @@ pub fn values_to_chat_messages(values: &[serde_json::Value]) -> Vec<ChatMessage>
                             parts.insert(0, ContentPart::Text(document_context));
                         }
                     }
-                    messages.push(ChatMessage::user_multimodal(parts));
+                    messages.push(ChatMessage::User {
+                        content: UserContent::Multimodal(parts),
+                        name: sender_name,
+                    });
                 } else {
-                    messages.push(ChatMessage::user(document_context.unwrap_or_default()));
+                    messages.push(ChatMessage::User {
+                        content: UserContent::Text(document_context.unwrap_or_default()),
+                        name: sender_name,
+                    });
                 }
             },
             "assistant" => {
@@ -628,7 +673,9 @@ mod tests {
     #[test]
     fn user_message_text() {
         let msg = ChatMessage::user("Hello");
-        assert!(matches!(msg, ChatMessage::User { content: UserContent::Text(t) } if t == "Hello"));
+        assert!(
+            matches!(msg, ChatMessage::User { content: UserContent::Text(t), .. } if t == "Hello")
+        );
     }
 
     #[test]
@@ -771,7 +818,7 @@ mod tests {
         assert_eq!(msgs.len(), 3);
         assert!(matches!(&msgs[0], ChatMessage::System { content } if content == "sys"));
         assert!(
-            matches!(&msgs[1], ChatMessage::User { content: UserContent::Text(t) } if t == "hi")
+            matches!(&msgs[1], ChatMessage::User { content: UserContent::Text(t), .. } if t == "hi")
         );
         assert!(
             matches!(&msgs[2], ChatMessage::Assistant { content: Some(t), .. } if t == "hello")
@@ -820,6 +867,7 @@ mod tests {
         match &msgs[0] {
             ChatMessage::User {
                 content: UserContent::Text(text),
+                ..
             } => {
                 assert!(text.contains("review this"));
                 assert!(text.contains("[Inbound documents available]"));
@@ -855,6 +903,7 @@ mod tests {
         match &msgs[0] {
             ChatMessage::User {
                 content: UserContent::Text(text),
+                ..
             } => {
                 assert!(text.contains("filename: valid-report.pdf"));
                 assert!(text.contains(&format!("local_path: {expected_path}")));
@@ -1024,6 +1073,7 @@ mod tests {
         match &msgs[0] {
             ChatMessage::User {
                 content: UserContent::Text(t),
+                ..
             } => {
                 assert_eq!(t, injected_content);
             },
@@ -1204,5 +1254,111 @@ mod tests {
         let meta = provider.model_metadata().await.unwrap();
         assert_eq!(meta.id, "stub-model");
         assert_eq!(meta.context_length, 42_000);
+    }
+
+    // ── Sender name tests ─────────────────────────────────────────────
+
+    #[test]
+    fn user_named_constructor() {
+        let msg = ChatMessage::user_named("hello", "Alice");
+        match msg {
+            ChatMessage::User {
+                content: UserContent::Text(t),
+                name,
+            } => {
+                assert_eq!(t, "hello");
+                assert_eq!(name.as_deref(), Some("Alice"));
+            },
+            _ => panic!("expected User message"),
+        }
+    }
+
+    #[test]
+    fn user_multimodal_named_constructor() {
+        let msg = ChatMessage::user_multimodal_named(vec![ContentPart::Text("hi".into())], "Bob");
+        match msg {
+            ChatMessage::User {
+                content: UserContent::Multimodal(_),
+                name,
+            } => {
+                assert_eq!(name.as_deref(), Some("Bob"));
+            },
+            _ => panic!("expected multimodal User message"),
+        }
+    }
+
+    #[test]
+    fn to_openai_value_includes_name_when_present() {
+        let msg = ChatMessage::user_named("hi", "Alice");
+        let val = msg.to_openai_value();
+        assert_eq!(val["role"], "user");
+        assert_eq!(val["content"], "hi");
+        assert_eq!(val["name"], "Alice");
+    }
+
+    #[test]
+    fn to_openai_value_omits_name_when_none() {
+        let msg = ChatMessage::user("hi");
+        let val = msg.to_openai_value();
+        assert_eq!(val["role"], "user");
+        assert_eq!(val["content"], "hi");
+        assert!(val.get("name").is_none());
+    }
+
+    #[test]
+    fn values_to_chat_messages_extracts_sender_name_from_channel() {
+        let values = vec![serde_json::json!({
+            "role": "user",
+            "content": "hello from telegram",
+            "channel": {
+                "sender_name": "Alice",
+                "username": "alice42",
+                "channel_type": "telegram"
+            }
+        })];
+        let msgs = values_to_chat_messages(&values);
+        assert_eq!(msgs.len(), 1);
+        match &msgs[0] {
+            ChatMessage::User { name, .. } => {
+                assert_eq!(name.as_deref(), Some("Alice"));
+            },
+            _ => panic!("expected User message"),
+        }
+    }
+
+    #[test]
+    fn values_to_chat_messages_falls_back_to_username() {
+        let values = vec![serde_json::json!({
+            "role": "user",
+            "content": "hello",
+            "channel": {
+                "username": "bob99",
+                "channel_type": "discord"
+            }
+        })];
+        let msgs = values_to_chat_messages(&values);
+        assert_eq!(msgs.len(), 1);
+        match &msgs[0] {
+            ChatMessage::User { name, .. } => {
+                assert_eq!(name.as_deref(), Some("bob99"));
+            },
+            _ => panic!("expected User message"),
+        }
+    }
+
+    #[test]
+    fn values_to_chat_messages_no_channel_means_no_name() {
+        let values = vec![serde_json::json!({
+            "role": "user",
+            "content": "web message"
+        })];
+        let msgs = values_to_chat_messages(&values);
+        assert_eq!(msgs.len(), 1);
+        match &msgs[0] {
+            ChatMessage::User { name, .. } => {
+                assert!(name.is_none());
+            },
+            _ => panic!("expected User message"),
+        }
     }
 }

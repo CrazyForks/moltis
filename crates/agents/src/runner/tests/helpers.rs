@@ -630,6 +630,7 @@ pub(super) fn last_user_text(messages: &[ChatMessage]) -> &str {
         .find_map(|message| match message {
             ChatMessage::User {
                 content: UserContent::Text(text),
+                ..
             } => Some(text.as_str()),
             _ => None,
         })
@@ -665,6 +666,7 @@ pub(super) fn history_contains_intervention(messages: &[ChatMessage]) -> bool {
     messages.iter().any(|m| match m {
         ChatMessage::User {
             content: UserContent::Text(text),
+            ..
         } => text.contains("LOOP DETECTED") || text.contains("TOOLS DISABLED"),
         _ => false,
     })

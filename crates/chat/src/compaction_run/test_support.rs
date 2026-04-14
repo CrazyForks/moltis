@@ -94,9 +94,11 @@ fn message_contains(msg: &ChatMessage, needle: &str) -> bool {
         ChatMessage::System { content } => content.contains(needle),
         ChatMessage::User {
             content: UserContent::Text(t),
+            ..
         } => t.contains(needle),
         ChatMessage::User {
             content: UserContent::Multimodal(parts),
+            ..
         } => parts
             .iter()
             .any(|p| matches!(p, ContentPart::Text(t) if t.contains(needle))),

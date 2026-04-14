@@ -84,6 +84,7 @@ pub(crate) async fn run_with_tools(
     active_partial_assistant: Option<Arc<RwLock<HashMap<String, ActiveAssistantDraft>>>>,
     active_event_forwarders: &Arc<RwLock<HashMap<String, tokio::task::JoinHandle<String>>>>,
     terminal_runs: &Arc<RwLock<HashSet<String>>>,
+    sender_name: Option<String>,
 ) -> Option<AssistantTurnOutput> {
     let run_started = Instant::now();
 
@@ -787,6 +788,7 @@ pub(crate) async fn run_with_tools(
         hist,
         Some(tool_context.clone()),
         hook_registry.clone(),
+        sender_name.clone(),
     )
     .await;
 
@@ -889,6 +891,7 @@ pub(crate) async fn run_with_tools(
                         retry_hist,
                         Some(tool_context),
                         hook_registry,
+                        sender_name,
                     )
                     .await
                 },

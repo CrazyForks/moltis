@@ -393,31 +393,49 @@ fn to_anthropic_messages(
                     None => content.clone(),
                 });
             },
-            ChatMessage::User { content } => match content {
-                UserContent::Text(text) => {
-                    out.push(serde_json::json!({"role": "user", "content": text}));
-                },
-                UserContent::Multimodal(parts) => {
-                    let blocks: Vec<serde_json::Value> = parts
-                        .iter()
-                        .map(|part| match part {
-                            ContentPart::Text(text) => {
-                                serde_json::json!({"type": "text", "text": text})
-                            },
-                            ContentPart::Image { media_type, data } => {
-                                serde_json::json!({
-                                    "type": "image",
-                                    "source": {
-                                        "type": "base64",
-                                        "media_type": media_type,
-                                        "data": data,
-                                    }
-                                })
-                            },
-                        })
-                        .collect();
-                    out.push(serde_json::json!({"role": "user", "content": blocks}));
-                },
+            ChatMessage::User { content, name } => {
+                // Anthropic doesn't have a `name` field — prepend `[name]: ` to content.
+                let prefix = name
+                    .as_ref()
+                    .map(|n| format!("[{n}]: "))
+                    .unwrap_or_default();
+                match content {
+                    UserContent::Text(text) => {
+                        let content_str = format!("{prefix}{text}");
+                        out.push(serde_json::json!({"role": "user", "content": content_str}));
+                    },
+                    UserContent::Multimodal(parts) => {
+                        let mut blocks: Vec<serde_json::Value> = parts
+                            .iter()
+                            .map(|part| match part {
+                                ContentPart::Text(text) => {
+                                    let prefixed = format!("{prefix}{text}");
+                                    serde_json::json!({"type": "text", "text": prefixed})
+                                },
+                                ContentPart::Image { media_type, data } => {
+                                    serde_json::json!({
+                                        "type": "image",
+                                        "source": {
+                                            "type": "base64",
+                                            "media_type": media_type,
+                                            "data": data,
+                                        }
+                                    })
+                                },
+                            })
+                            .collect();
+                        // If name prefix is present but no text block exists, prepend one.
+                        if !prefix.is_empty()
+                            && !blocks.iter().any(|b| b["type"].as_str() == Some("text"))
+                        {
+                            blocks.insert(
+                                0,
+                                serde_json::json!({"type": "text", "text": prefix.trim_end()}),
+                            );
+                        }
+                        out.push(serde_json::json!({"role": "user", "content": blocks}));
+                    },
+                }
             },
             ChatMessage::Assistant {
                 content,
@@ -1202,10 +1220,12 @@ mod tests {
             ChatMessage::system("You are a helpful assistant."),
             ChatMessage::User {
                 content: UserContent::Text("hello".into()),
+                name: None,
             },
             ChatMessage::system("The current user datetime is 2026-03-24 01:23:45 CET."),
             ChatMessage::User {
                 content: UserContent::Text("what time is it?".into()),
+                name: None,
             },
         ];
 
@@ -1236,6 +1256,7 @@ mod tests {
             ChatMessage::system("You are a coding assistant."),
             ChatMessage::User {
                 content: UserContent::Text("hi".into()),
+                name: None,
             },
         ];
 
@@ -1257,6 +1278,7 @@ mod tests {
             ChatMessage::system("sys"),
             ChatMessage::User {
                 content: UserContent::Text("first".into()),
+                name: None,
             },
             ChatMessage::Assistant {
                 content: Some("reply".into()),
@@ -1264,6 +1286,7 @@ mod tests {
             },
             ChatMessage::User {
                 content: UserContent::Text("second".into()),
+                name: None,
             },
         ];
 
@@ -1292,6 +1315,7 @@ mod tests {
                     data: "base64data".into(),
                 },
             ]),
+            name: None,
         }];
 
         let (_, out) = to_anthropic_messages(&messages, true);
@@ -1309,6 +1333,7 @@ mod tests {
     fn no_system_returns_none() {
         let messages = vec![ChatMessage::User {
             content: UserContent::Text("hello".into()),
+            name: None,
         }];
         let (system_value, _) = to_anthropic_messages(&messages, true);
         assert!(system_value.is_none());
@@ -1318,6 +1343,7 @@ mod tests {
     fn caching_disabled_returns_plain_string_system() {
         let messages = vec![ChatMessage::system("You are helpful."), ChatMessage::User {
             content: UserContent::Text("hi".into()),
+            name: None,
         }];
 
         let (system_value, out) = to_anthropic_messages(&messages, false);

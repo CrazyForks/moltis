@@ -83,6 +83,7 @@ pub(crate) fn build_chat_response(request: ChatRequest) -> String {
                 let provider_name = provider.name().to_string();
                 let messages = vec![AgentChatMessage::User {
                     content: UserContent::text(&request.message),
+                    name: None,
                 }];
 
                 emit_log(
@@ -276,6 +277,7 @@ pub unsafe extern "C" fn moltis_chat_stream(
     let provider_name = provider.name().to_string();
     let messages = vec![AgentChatMessage::User {
         content: UserContent::text(&request.message),
+        name: None,
     }];
 
     let ctx = StreamCallbackCtx {

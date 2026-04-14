@@ -127,6 +127,7 @@ pub(crate) async fn run_streaming(
     user_message_index: usize,
     _skills: &[moltis_skills::types::SkillMetadata],
     runtime_context: Option<&PromptRuntimeContext>,
+    sender_name: Option<String>,
     session_store: Option<&Arc<SessionStore>>,
     client_seq: Option<u64>,
     active_partial_assistant: Option<Arc<RwLock<HashMap<String, ActiveAssistantDraft>>>>,
@@ -162,6 +163,7 @@ pub(crate) async fn run_streaming(
     }
     messages.push(ChatMessage::User {
         content: user_content.clone(),
+        name: sender_name,
     });
 
     let mut server_retries_remaining: u8 = STREAM_SERVER_MAX_RETRIES;

@@ -194,7 +194,7 @@ impl OpenAiCodexProvider {
                         // System messages are extracted as instructions; skip here
                         vec![]
                     },
-                    ChatMessage::User { content } => {
+                    ChatMessage::User { content, .. } => {
                         let content_blocks = match content {
                             UserContent::Text(t) => {
                                 vec![serde_json::json!({"type": "input_text", "text": t})]
@@ -1314,6 +1314,7 @@ mod tests {
                     data: "ABC123".to_string(),
                 },
             ]),
+            name: None,
         }];
         let converted = OpenAiCodexProvider::convert_messages(&messages);
         assert_eq!(converted.len(), 1);

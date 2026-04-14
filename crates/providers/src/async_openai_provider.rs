@@ -84,6 +84,7 @@ fn build_messages(messages: &[ChatMessage]) -> anyhow::Result<Vec<ChatCompletion
             },
             ChatMessage::User {
                 content: UserContent::Text(text),
+                ..
             } => {
                 out.push(
                     ChatCompletionRequestUserMessageArgs::default()
@@ -94,6 +95,7 @@ fn build_messages(messages: &[ChatMessage]) -> anyhow::Result<Vec<ChatCompletion
             },
             ChatMessage::User {
                 content: UserContent::Multimodal(parts),
+                ..
             } => {
                 let content_parts: Vec<ChatCompletionRequestUserMessageContentPart> = parts
                     .iter()

@@ -105,6 +105,7 @@ pub async fn run_agent_loop_with_context(
 
     messages.push(ChatMessage::User {
         content: user_content.clone(),
+        name: None,
     });
     let explicit_shell_command = explicit_shell_command_from_user_content(user_content);
 
