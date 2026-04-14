@@ -214,7 +214,7 @@ regex              = "1"
 secrecy            = { features = ["serde"], version = "0.8" }
 serenity           = { features = ["cache", "client", "gateway", "model", "rustls_backend"], version = "0.12" }
 sha2               = "0.10"
-slack-morphism     = { features = ["axum", "hyper"], version = "2.6" }
+slack-morphism     = { features = ["axum", "hyper"], version = "2.20" }
 sled               = "0.34"
 sysinfo            = "0.34"
 teloxide           = { features = ["macros"], version = "0.13" }
