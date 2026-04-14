@@ -308,6 +308,12 @@ impl ChannelStatus for WhatsAppPlugin {
             match accounts.get(account_id) {
                 Some(state) => {
                     let connected = state.connected.load(Ordering::Relaxed);
+                    let has_qr = state
+                        .latest_qr
+                        .read()
+                        .ok()
+                        .and_then(|q| q.clone())
+                        .is_some();
                     let details = if connected {
                         state
                             .config
@@ -315,16 +321,10 @@ impl ChannelStatus for WhatsAppPlugin {
                             .as_ref()
                             .map(|n| format!("WhatsApp: {n}"))
                             .or_else(|| Some("WhatsApp: connected".into()))
-                    } else if state
-                        .latest_qr
-                        .read()
-                        .ok()
-                        .and_then(|q| q.clone())
-                        .is_some()
-                    {
+                    } else if has_qr {
                         Some("waiting for QR scan".into())
                     } else {
-                        Some("disconnected".into())
+                        Some("connecting...".into())
                     };
                     let extra = state
                         .latest_qr

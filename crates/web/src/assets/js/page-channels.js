@@ -1794,7 +1794,7 @@ function AddWhatsAppModal() {
 							(c) => c.type === "whatsapp" && c.account_id === accountId,
 						);
 						if (!ch) return;
-						if (ch.status === "connected") {
+						if (ch.status === "connected" || (waQrData.value && !ch.extra?.qr_data)) {
 							clearInterval(qrPollRef.current);
 							qrPollRef.current = null;
 							showToast("WhatsApp connected!");

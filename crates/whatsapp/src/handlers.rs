@@ -111,6 +111,26 @@ pub async fn handle_event(
                 .await;
             }
         },
+        Event::PairSuccess(ref pair) => {
+            info!(account_id = %state.account_id, jid = %pair.id, "WhatsApp pairing succeeded");
+
+            // Clear QR immediately so the UI stops showing it.
+            if let Ok(mut qr) = state.latest_qr.write() {
+                *qr = None;
+            }
+            mirror_latest_qr(&accounts, &state.account_id, None);
+
+            // Emit PairingComplete now — don't wait for the reconnect cycle.
+            // The UI will transition from QR → success immediately.
+            if let Some(ref sink) = state.event_sink {
+                sink.emit(ChannelEvent::PairingComplete {
+                    channel_type: ChannelType::Whatsapp,
+                    account_id: state.account_id.clone(),
+                    display_name: None,
+                })
+                .await;
+            }
+        },
         Event::PairError(err) => {
             warn!(account_id = %state.account_id, error = ?err, "WhatsApp pairing failed");
             if let Some(ref sink) = state.event_sink {

@@ -3359,6 +3359,11 @@ function WhatsAppForm({ onConnected, error, setError }) {
 					onConnected(id, "whatsapp");
 					return;
 				}
+				// QR cleared + not connected = pairing succeeded, connecting.
+				if (qrData && !ch.extra?.qr_data) {
+					onConnected(id, "whatsapp");
+					return;
+				}
 				if (ch.extra?.qr_data && !qrData) {
 					setQrData(ch.extra.qr_data);
 					if (ch.extra.qr_svg) setQrSvg(ch.extra.qr_svg);
