@@ -1129,6 +1129,55 @@ async fn chat_history_query_forwards_session_key() {
 }
 
 #[tokio::test]
+async fn chat_send_requires_session_key() {
+    let mock = MockDispatch::new();
+    let (schema, _) = build_test_schema(mock);
+
+    let res = schema
+        .execute(Request::new(
+            r#"mutation { chat { send(message: "Hello") { ok } } }"#,
+        ))
+        .await;
+
+    assert!(
+        !res.errors.is_empty(),
+        "send without sessionKey should fail"
+    );
+}
+
+#[tokio::test]
+async fn chat_history_requires_session_key() {
+    let mock = MockDispatch::new();
+    let (schema, _) = build_test_schema(mock);
+
+    let res = schema
+        .execute(Request::new(r#"query { chat { history } }"#))
+        .await;
+
+    assert!(
+        !res.errors.is_empty(),
+        "history without sessionKey should fail"
+    );
+}
+
+#[tokio::test]
+async fn chat_event_subscription_requires_session_key() {
+    let mock = MockDispatch::new();
+    let (schema, _) = build_test_schema(mock);
+
+    let mut stream = schema.execute_stream(Request::new(r#"subscription { chatEvent { data } }"#));
+    let resp = timeout(Duration::from_millis(100), stream.next())
+        .await
+        .expect("timeout")
+        .expect("subscription response");
+
+    assert!(
+        !resp.errors.is_empty(),
+        "chatEvent without sessionKey should fail"
+    );
+}
+
+#[tokio::test]
 async fn agents_update_identity_mutation_returns_ok_on_success() {
     let mock = MockDispatch::new();
     mock.set_response(
