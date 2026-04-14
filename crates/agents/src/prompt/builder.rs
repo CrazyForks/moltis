@@ -565,8 +565,8 @@ fn append_guidelines_section(
     if let Some(text) = guidelines_text {
         if !text.is_empty() {
             prompt.push_str(text);
+            return;
         }
-        return;
     }
     prompt.push_str(if include_tools {
         TOOL_GUIDELINES

@@ -24,7 +24,7 @@ pub use {
         DEFAULT_SOUL, LoadedWorkspaceMarkdown, WorkspaceMarkdownSource, agent_workspace_dir,
         agents_path, apply_env_overrides, boot_path, clear_config_dir, clear_data_dir,
         clear_share_dir, config_dir, data_dir, discover_and_load, extract_yaml_frontmatter,
-        find_or_default_config_path, find_user_global_config_file, heartbeat_path, home_dir,
+        find_or_default_config_path, find_user_global_config_file, guidelines_path, heartbeat_path, home_dir,
         identity_path, load_agents_md, load_agents_md_for_agent, load_boot_md,
         load_boot_md_for_agent, load_guidelines_md, load_guidelines_md_for_agent,
         load_heartbeat_md, load_identity, load_identity_for_agent, load_memory_md,

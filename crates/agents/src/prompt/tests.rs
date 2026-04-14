@@ -1050,3 +1050,36 @@ fn text_mode_prompt_uses_compact_schema() {
     assert!(prompt.contains("## How to call tools"));
     assert!(prompt.contains("```tool_call"));
 }
+
+#[test]
+fn test_custom_guidelines_replaces_hardcoded() {
+    let tools = ToolRegistry::new();
+    let custom = "## My Guidelines\n- Always be terse.\n";
+    let prompt = build_system_prompt_with_session_runtime(
+        &tools, true, None, &[], None, None, None, None, None, None, None, None,
+        Some(custom),
+    );
+    assert!(prompt.contains("My Guidelines"));
+    assert!(!prompt.contains("## Silent Replies")); // hardcoded TOOL_GUIDELINES absent
+}
+
+#[test]
+fn test_none_guidelines_uses_tool_guidelines() {
+    let tools = ToolRegistry::new();
+    let prompt = build_system_prompt_with_session_runtime(
+        &tools, true, None, &[], None, None, None, None, None, None, None, None,
+        None,
+    );
+    assert!(prompt.contains("## Silent Replies"));
+}
+
+#[test]
+fn test_empty_string_guidelines_falls_through_to_hardcoded() {
+    let tools = ToolRegistry::new();
+    let prompt = build_system_prompt_with_session_runtime(
+        &tools, true, None, &[], None, None, None, None, None, None, None, None,
+        Some(""),
+    );
+    // Some("") should fall through to TOOL_GUIDELINES, not produce no guidelines
+    assert!(prompt.contains("## Silent Replies"));
+}
