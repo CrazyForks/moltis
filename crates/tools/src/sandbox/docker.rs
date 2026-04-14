@@ -181,14 +181,33 @@ impl DockerSandbox {
     /// non-prebuilt images need a writable root for `apt-get` provisioning.
     pub(crate) fn hardening_args(is_prebuilt: bool) -> Vec<String> {
         let mut args = vec![
+            // --- Capability / privilege ---
             "--cap-drop".to_string(),
             "ALL".to_string(),
             "--security-opt".to_string(),
             "no-new-privileges".to_string(),
+            // --- Writable tmpfs mounts ---
             "--tmpfs".to_string(),
             "/tmp:rw,nosuid,size=256m".to_string(),
             "--tmpfs".to_string(),
             "/run:rw,nosuid,size=64m".to_string(),
+            // --- Host metadata isolation ---
+            // Give the container its own hostname so /proc/sys/kernel/hostname
+            // and the `hostname` command do not reveal the host identity.
+            "--hostname".to_string(),
+            "sandbox".to_string(),
+            // Mask /sys subtrees that expose host hardware identifiers
+            // (serial numbers, BIOS/UEFI data, disk models, LUKS UUIDs).
+            // Empty read-only tmpfs overlays hide the underlying sysfs entries
+            // and work identically on Docker and Podman.
+            "--tmpfs".to_string(),
+            "/sys/firmware:ro,nosuid".to_string(),
+            "--tmpfs".to_string(),
+            "/sys/class/dmi:ro,nosuid".to_string(),
+            "--tmpfs".to_string(),
+            "/sys/devices/virtual/dmi:ro,nosuid".to_string(),
+            "--tmpfs".to_string(),
+            "/sys/class/block:ro,nosuid".to_string(),
         ];
         if is_prebuilt {
             args.push("--read-only".to_string());
