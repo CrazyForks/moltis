@@ -267,6 +267,18 @@ async fn handle_message(
         is_owner_self_chat = true;
     }
 
+    // For self-chat, the chat JID is the LID which doesn't work as a reply
+    // target. Use the PN JID instead so outbound messages are delivered.
+    let chat_id = if is_owner_self_chat {
+        if let Some(ref pn) = own_pn {
+            format!("{}@{}", pn.user, pn.server)
+        } else {
+            chat_id
+        }
+    } else {
+        chat_id
+    };
+
     // Extract text from the message.
     let text = msg
         .conversation
