@@ -109,6 +109,22 @@ fn make_nullable(schema: &mut serde_json::Value) {
     }
 }
 
+/// Check whether a schema's `type` field designates an object.
+///
+/// Matches both `"type": "object"` and `"type": ["object", ...]`.
+/// Downstream providers like Gemini (via OpenRouter) cannot represent type
+/// arrays, and OpenAI's strict mode requires `type` to be a single string.
+fn type_is_object(obj: &serde_json::Map<String, serde_json::Value>) -> bool {
+    let Some(ty) = obj.get("type") else {
+        return false;
+    };
+    match ty {
+        serde_json::Value::String(s) => s == "object",
+        serde_json::Value::Array(arr) => arr.iter().any(|v| v.as_str() == Some("object")),
+        _ => false,
+    }
+}
+
 /// Recursively patch schema for OpenAI strict mode compliance.
 ///
 /// OpenAI's strict mode requires:
@@ -118,6 +134,14 @@ fn make_nullable(schema: &mut serde_json::Value) {
 /// Properties not in the original `required` array are made nullable so the
 /// model can send `null` for unused optional fields instead of fabricating
 /// placeholder values.
+///
+/// Schemas with `type: ["object", "string", ...]` (union types) are collapsed
+/// to `type: "object"` because:
+/// - OpenAI strict mode requires `type` to be a single string
+/// - Gemini cannot represent type arrays at all
+/// - When `properties` is present, the object form is the intended shape for
+///   tool calling (bare strings/integers are convenience shorthand for non-tool
+///   contexts)
 ///
 /// This function recursively patches nested objects in `properties`, array
 /// `items`, `anyOf`/`oneOf`/`allOf` variants, etc.
@@ -131,8 +155,14 @@ pub fn patch_schema_for_strict_mode(schema: &mut serde_json::Value) {
     // would prevent the recursive pass from recognising nested objects).
     let mut optional_props: Vec<String> = Vec::new();
 
-    // If this is an object type, apply strict mode requirements
-    if obj.get("type").and_then(|t| t.as_str()) == Some("object") {
+    // If this is an object type, apply strict mode requirements.
+    // Also handles union types like ["object", "string"] by collapsing to "object".
+    if type_is_object(obj) {
+        // Collapse type arrays (e.g. ["object", "string"]) to "object".
+        // OpenAI strict mode and Gemini both require a single string type.
+        if obj.get("type").and_then(|t| t.as_array()).is_some() {
+            obj.insert("type".to_string(), serde_json::json!("object"));
+        }
         // Add additionalProperties: false
         obj.insert("additionalProperties".to_string(), serde_json::json!(false));
 
