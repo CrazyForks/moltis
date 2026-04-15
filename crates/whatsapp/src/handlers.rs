@@ -869,20 +869,22 @@ fn auto_approve_owner_jids(
     };
 
     for jid in own_pn.into_iter().chain(own_lid.into_iter()) {
-        let jid_str = jid.to_string();
+        // Use "user@server" without the device suffix — incoming messages
+        // arrive as e.g. "15551234567@s.whatsapp.net" (no ":35" device).
+        let canonical = format!("{}@{}", jid.user, jid.server);
         let user = &jid.user;
         let already = state
             .config
             .allowlist
             .iter()
-            .any(|entry| entry == user || entry == &jid_str);
+            .any(|entry| entry == user || entry == &canonical);
         if !already {
             info!(
                 account_id,
-                jid = %jid_str,
+                jid = %canonical,
                 "auto-adding owner JID to allowlist"
             );
-            state.config.allowlist.push(jid_str);
+            state.config.allowlist.push(canonical);
         }
     }
 }
