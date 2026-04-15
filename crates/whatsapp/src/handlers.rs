@@ -92,11 +92,7 @@ pub async fn handle_event(
             // needed — incoming messages always use the PN format.
             {
                 let own_pn = state.client.get_pn().await;
-                auto_approve_owner_jid(
-                    &accounts,
-                    &state.account_id,
-                    own_pn.as_ref(),
-                );
+                auto_approve_owner_jid(&accounts, &state.account_id, own_pn.as_ref());
             }
 
             let display_name = state.client.get_push_name().await;
@@ -873,12 +869,10 @@ fn message_mentions_owner(msg: &wa::Message, own_pn: Option<&Jid>, own_lid: Opti
 
 /// Auto-add the owner's phone and LID JIDs to the allowlist so they're
 /// always approved without manual configuration or OTP.
-fn auto_approve_owner_jid(
-    accounts: &AccountStateMap,
-    account_id: &str,
-    own_pn: Option<&Jid>,
-) {
-    let Some(jid) = own_pn else { return };
+fn auto_approve_owner_jid(accounts: &AccountStateMap, account_id: &str, own_pn: Option<&Jid>) {
+    let Some(jid) = own_pn else {
+        return;
+    };
     let mut map = accounts.write().unwrap_or_else(|e| e.into_inner());
     let Some(state) = map.get_mut(account_id) else {
         return;
