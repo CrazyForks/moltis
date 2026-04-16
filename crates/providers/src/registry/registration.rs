@@ -112,7 +112,8 @@ impl ProviderRegistry {
                     .with_stream_transport(stream_transport)
                     .with_context_window_overrides(
                         self.global_cw_overrides.clone(),
-                        config.get("openai")
+                        config
+                            .get("openai")
                             .map(|e| extract_cw_overrides(&e.model_overrides))
                             .unwrap_or_default(),
                     ),

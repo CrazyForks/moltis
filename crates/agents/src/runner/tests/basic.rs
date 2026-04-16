@@ -1501,7 +1501,11 @@ fn compact_oldest_first_compacts_earliest_tool_result() {
     assert!(reduced > 0, "should have compacted something");
 
     // Oldest message compacted.
-    let ChatMessage::Tool { tool_call_id, content } = &messages[0] else {
+    let ChatMessage::Tool {
+        tool_call_id,
+        content,
+    } = &messages[0]
+    else {
         panic!("expected Tool message");
     };
     assert_eq!(tool_call_id, "id1");
@@ -1510,7 +1514,7 @@ fn compact_oldest_first_compacts_earliest_tool_result() {
     match &messages[1] {
         ChatMessage::Tool { content, .. } => {
             assert_ne!(content, TOOL_RESULT_COMPACTION_PLACEHOLDER);
-        }
+        },
         _ => panic!("expected Tool message"),
     }
 }
@@ -1528,13 +1532,13 @@ fn compact_oldest_first_skips_already_compacted() {
     match &messages[0] {
         ChatMessage::Tool { content, .. } => {
             assert_eq!(content, TOOL_RESULT_COMPACTION_PLACEHOLDER);
-        }
+        },
         _ => panic!("expected Tool message"),
     }
     match &messages[1] {
         ChatMessage::Tool { content, .. } => {
             assert_eq!(content, TOOL_RESULT_COMPACTION_PLACEHOLDER);
-        }
+        },
         _ => panic!("expected Tool message"),
     }
 }
@@ -1543,7 +1547,7 @@ fn compact_oldest_first_skips_already_compacted() {
 fn compact_oldest_first_skips_small_results() {
     // Content below TOOL_RESULT_COMPACTION_MIN_BYTES (200) should be skipped.
     let mut messages = vec![
-        ChatMessage::tool("id1", &"a".repeat(50)), // too small
+        ChatMessage::tool("id1", &"a".repeat(50)),  // too small
         ChatMessage::tool("id2", &"b".repeat(300)), // should be compacted
     ];
     let reduced = compact_tool_results_oldest_first_in_place(&mut messages, 1);
@@ -1554,14 +1558,14 @@ fn compact_oldest_first_skips_small_results() {
         ChatMessage::Tool { content, .. } => {
             assert_ne!(content, TOOL_RESULT_COMPACTION_PLACEHOLDER);
             assert_eq!(content.len(), 50);
-        }
+        },
         _ => panic!("expected Tool message"),
     }
     // id2 compacted.
     match &messages[1] {
         ChatMessage::Tool { content, .. } => {
             assert_eq!(content, TOOL_RESULT_COMPACTION_PLACEHOLDER);
-        }
+        },
         _ => panic!("expected Tool message"),
     }
 }
@@ -1577,9 +1581,7 @@ fn compact_oldest_first_returns_zero_when_nothing_to_compact() {
 
 #[test]
 fn compact_oldest_first_returns_zero_for_zero_tokens_needed() {
-    let mut messages = vec![
-        ChatMessage::tool("id1", &"a".repeat(300)),
-    ];
+    let mut messages = vec![ChatMessage::tool("id1", &"a".repeat(300))];
     let reduced = compact_tool_results_oldest_first_in_place(&mut messages, 0);
     assert_eq!(reduced, 0);
 }
@@ -1598,14 +1600,14 @@ fn compact_oldest_first_stops_once_budget_freed() {
     match &messages[0] {
         ChatMessage::Tool { content, .. } => {
             assert_eq!(content, TOOL_RESULT_COMPACTION_PLACEHOLDER);
-        }
+        },
         _ => panic!("expected Tool message"),
     }
     // Last message should be untouched since we only needed 1 token.
     match &messages[2] {
         ChatMessage::Tool { content, .. } => {
             assert_ne!(content, TOOL_RESULT_COMPACTION_PLACEHOLDER);
-        }
+        },
         _ => panic!("expected Tool message"),
     }
 }
@@ -1614,9 +1616,7 @@ fn compact_oldest_first_stops_once_budget_freed() {
 fn enforce_budget_ratio_zero_disables_compaction_ok_when_under_overflow() {
     // compaction_ratio=0 should skip compaction entirely.
     // With a huge context window, even with tool results, we're under overflow.
-    let mut messages = vec![
-        ChatMessage::tool("id1", &"a".repeat(300)),
-    ];
+    let mut messages = vec![ChatMessage::tool("id1", &"a".repeat(300))];
     let result = enforce_tool_result_context_budget(
         &mut messages,
         &[],
@@ -1629,7 +1629,7 @@ fn enforce_budget_ratio_zero_disables_compaction_ok_when_under_overflow() {
     match &messages[0] {
         ChatMessage::Tool { content, .. } => {
             assert_ne!(content, TOOL_RESULT_COMPACTION_PLACEHOLDER);
-        }
+        },
         _ => panic!("expected Tool message"),
     }
 }
@@ -1637,9 +1637,7 @@ fn enforce_budget_ratio_zero_disables_compaction_ok_when_under_overflow() {
 #[test]
 fn enforce_budget_ratio_zero_errors_on_overflow() {
     // compaction_ratio=0 with a tiny context window → overflow error.
-    let mut messages = vec![
-        ChatMessage::tool("id1", &"a".repeat(500)),
-    ];
+    let mut messages = vec![ChatMessage::tool("id1", &"a".repeat(500))];
     let result = enforce_tool_result_context_budget(
         &mut messages,
         &[],
@@ -1666,9 +1664,9 @@ fn enforce_budget_compacts_when_over_compaction_threshold() {
     let result = enforce_tool_result_context_budget(
         &mut messages,
         &[],
-        100,  // small context window → compaction budget = 50 tokens
-        75,   // compaction ratio
-        90,   // overflow ratio
+        100, // small context window → compaction budget = 50 tokens
+        75,  // compaction ratio
+        90,  // overflow ratio
     );
     assert!(result.is_ok());
     // At least one message should have been compacted.
@@ -1683,7 +1681,7 @@ fn enforce_budget_errors_when_over_overflow_even_after_compaction() {
     // Even after compacting everything, if still over overflow → error.
     let mut messages = vec![
         ChatMessage::tool("id1", TOOL_RESULT_COMPACTION_PLACEHOLDER), // already compacted
-        ChatMessage::tool("id2", "tiny"),                              // too small to compact
+        ChatMessage::tool("id2", "tiny"),                             // too small to compact
     ];
     let result = enforce_tool_result_context_budget(
         &mut messages,
@@ -1697,29 +1695,19 @@ fn enforce_budget_errors_when_over_overflow_even_after_compaction() {
 
 #[test]
 fn enforce_budget_noop_when_no_tool_results() {
-    let mut messages = vec![
-        ChatMessage::user("hello"),
-    ];
-    let result = enforce_tool_result_context_budget(
-        &mut messages,
-        &[],
-        100,
-        75,
-        90,
-    );
+    let mut messages = vec![ChatMessage::user("hello")];
+    let result = enforce_tool_result_context_budget(&mut messages, &[], 100, 75, 90);
     assert!(result.is_ok());
     // Verify user message is untouched.
     match &messages[0] {
-        ChatMessage::User { .. } => {}
+        ChatMessage::User { .. } => {},
         _ => panic!("expected User message"),
     }
 }
 
 #[test]
 fn enforce_budget_noop_when_context_window_zero() {
-    let mut messages = vec![
-        ChatMessage::tool("id1", &"a".repeat(300)),
-    ];
+    let mut messages = vec![ChatMessage::tool("id1", &"a".repeat(300))];
     let result = enforce_tool_result_context_budget(
         &mut messages,
         &[],

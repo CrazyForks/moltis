@@ -1,7 +1,6 @@
 //! Model capability heuristics: context window, tool support, vision, reasoning.
 
-use crate::model_id::capability_model_id;
-use moltis_config::schema::ModelOverride;
+use {crate::model_id::capability_model_id, moltis_config::schema::ModelOverride};
 
 /// Extract a `HashMap<String, u32>` of model ID → context window from
 /// a `HashMap<String, ModelOverride>`, filtering out entries without a
@@ -812,37 +811,33 @@ mod tests {
 
 #[cfg(test)]
 mod tests_cw_overrides {
-    use super::*;
-    use std::collections::HashMap;
+    use {super::*, std::collections::HashMap};
 
     /// Verify provider-scoped override wins over global and heuristic.
     #[test]
     fn provider_override_wins() {
-        let global: HashMap<String, u32> =
-            vec![("claude-sonnet-4-20250514".into(), 300_000)].into_iter().collect();
-        let provider: HashMap<String, u32> =
-            vec![("claude-sonnet-4-20250514".into(), 999_000)].into_iter().collect();
+        let global: HashMap<String, u32> = vec![("claude-sonnet-4-20250514".into(), 300_000)]
+            .into_iter()
+            .collect();
+        let provider: HashMap<String, u32> = vec![("claude-sonnet-4-20250514".into(), 999_000)]
+            .into_iter()
+            .collect();
 
-        let cw = context_window_for_model_with_config(
-            "claude-sonnet-4-20250514",
-            &global,
-            &provider,
-        );
+        let cw =
+            context_window_for_model_with_config("claude-sonnet-4-20250514", &global, &provider);
         assert_eq!(cw, 999_000);
     }
 
     /// Verify global override wins over heuristic when no provider override.
     #[test]
     fn global_override_wins_over_heuristic() {
-        let global: HashMap<String, u32> =
-            vec![("claude-sonnet-4-20250514".into(), 500_000)].into_iter().collect();
+        let global: HashMap<String, u32> = vec![("claude-sonnet-4-20250514".into(), 500_000)]
+            .into_iter()
+            .collect();
         let provider: HashMap<String, u32> = HashMap::new();
 
-        let cw = context_window_for_model_with_config(
-            "claude-sonnet-4-20250514",
-            &global,
-            &provider,
-        );
+        let cw =
+            context_window_for_model_with_config("claude-sonnet-4-20250514", &global, &provider);
         assert_eq!(cw, 500_000);
     }
 
@@ -864,14 +859,12 @@ mod tests_cw_overrides {
         use moltis_config::schema::ModelOverride;
 
         let mut overrides = HashMap::new();
-        overrides.insert(
-            "claude-opus-4-20250514".into(),
-            ModelOverride { context_window: Some(1_000_000) },
-        );
-        overrides.insert(
-            "gpt-4o".into(),
-            ModelOverride { context_window: None },
-        );
+        overrides.insert("claude-opus-4-20250514".into(), ModelOverride {
+            context_window: Some(1_000_000),
+        });
+        overrides.insert("gpt-4o".into(), ModelOverride {
+            context_window: None,
+        });
 
         let extracted = extract_cw_overrides(&overrides);
         assert_eq!(extracted.len(), 1);
@@ -885,4 +878,3 @@ mod tests_cw_overrides {
         assert!(extracted.is_empty());
     }
 }
-

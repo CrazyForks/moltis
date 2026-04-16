@@ -9,7 +9,9 @@ use {
 
 use tracing::debug;
 
-use crate::{context_window_for_model_with_config, supports_tools_for_model, supports_vision_for_model};
+use crate::{
+    context_window_for_model_with_config, supports_tools_for_model, supports_vision_for_model,
+};
 
 use moltis_agents::model::{
     ChatMessage, CompletionResponse, LlmProvider, ModelMetadata, StreamEvent,

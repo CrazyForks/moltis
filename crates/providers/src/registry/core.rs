@@ -29,7 +29,7 @@ use crate::{
         DiscoveredModel, catalog_to_discovered, merge_discovered_with_fallback_catalog,
         merge_preferred_and_discovered_models,
     },
-    model_capabilities::{extract_cw_overrides, ModelCapabilities, ModelInfo},
+    model_capabilities::{ModelCapabilities, ModelInfo, extract_cw_overrides},
     model_catalogs::{ANTHROPIC_MODELS, OPENAI_COMPAT_PROVIDERS},
     model_id::{
         REASONING_SUFFIX_SEP, REASONING_SUFFIXES, namespaced_model_id, raw_model_id,
@@ -694,7 +694,7 @@ impl ProviderRegistry {
                         alias.clone(),
                     )
                     .with_cache_retention(cache_retention)
-                .with_context_window_overrides(global.clone(), provider_cw_overrides.clone()),
+                    .with_context_window_overrides(global.clone(), provider_cw_overrides.clone()),
                 );
                 (
                     ModelInfo {

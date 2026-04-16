@@ -1,4 +1,9 @@
-use std::{collections::{HashMap, HashSet}, pin::Pin, sync::mpsc, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    pin::Pin,
+    sync::mpsc,
+    time::Duration,
+};
 
 use {async_trait::async_trait, futures::StreamExt, secrecy::ExposeSecret, tokio_stream::Stream};
 

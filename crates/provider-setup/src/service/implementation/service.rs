@@ -183,7 +183,11 @@ impl LiveProviderSetupService {
             };
 
             let new_registry = match tokio::task::spawn_blocking(move || {
-                ProviderRegistry::from_env_with_config_and_overrides(&effective, &env_overrides, cw_overrides)
+                ProviderRegistry::from_env_with_config_and_overrides(
+                    &effective,
+                    &env_overrides,
+                    cw_overrides,
+                )
             })
             .await
             {
@@ -346,7 +350,11 @@ impl LiveProviderSetupService {
     }
 
     pub(crate) fn build_registry(&self, config: &ProvidersConfig) -> ProviderRegistry {
-        ProviderRegistry::from_env_with_config_and_overrides(config, &self.env_overrides, self.global_cw_overrides.clone())
+        ProviderRegistry::from_env_with_config_and_overrides(
+            config,
+            &self.env_overrides,
+            self.global_cw_overrides.clone(),
+        )
     }
 }
 
