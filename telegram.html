@@ -253,6 +253,7 @@ offered = ["telegram"]
 <tr><td><code>group_allowlist</code></td><td>no</td><td><code>[]</code></td><td>Group/chat IDs allowed to interact with the bot</td></tr>
 <tr><td><code>model</code></td><td>no</td><td>—</td><td>Override the default model for this channel</td></tr>
 <tr><td><code>model_provider</code></td><td>no</td><td>—</td><td>Provider for the overridden model</td></tr>
+<tr><td><code>agent_id</code></td><td>no</td><td>—</td><td>Default agent ID for this bot’s sessions</td></tr>
 <tr><td><code>reply_to_message</code></td><td>no</td><td><code>false</code></td><td>Send bot responses as Telegram replies to the user’s message</td></tr>
 <tr><td><code>otp_self_approval</code></td><td>no</td><td><code>true</code></td><td>Enable OTP self-approval for non-allowlisted DM users</td></tr>
 <tr><td><code>otp_cooldown_secs</code></td><td>no</td><td><code>300</code></td><td>Cooldown in seconds after 3 failed OTP attempts</td></tr>
@@ -289,12 +290,13 @@ group_allowlist = ["-1001234567890"]
 reply_to_message = true
 model = "claude-sonnet-4-20250514"
 model_provider = "anthropic"
+agent_id = "research"
 otp_self_approval = true
 stream_mode = "edit_in_place"
 edit_throttle_ms = 300
 </code></pre>
-<h3 id="per-user-and-per-channel-model-overrides"><a class="header" href="#per-user-and-per-channel-model-overrides">Per-User and Per-Channel Model Overrides</a></h3>
-<p>You can override the model for specific users or group chats:</p>
+<h3 id="per-user-and-per-channel-model-and-agent-overrides"><a class="header" href="#per-user-and-per-channel-model-and-agent-overrides">Per-User and Per-Channel Model and Agent Overrides</a></h3>
+<p>You can override the model or agent for specific users or group chats:</p>
 <pre><code class="language-toml">[channels.telegram.my-bot]
 token = "..."
 model = "claude-sonnet-4-20250514"
@@ -303,13 +305,15 @@ model_provider = "anthropic"
 [channels.telegram.my-bot.channel_overrides."-1001234567890"]
 model = "gpt-4o"
 model_provider = "openai"
+agent_id = "triage"
 
 [channels.telegram.my-bot.user_overrides."123456789"]
 model = "claude-opus-4-20250514"
 model_provider = "anthropic"
+agent_id = "research"
 </code></pre>
 <p>User overrides take priority over channel overrides, which take priority over
-the account default.</p>
+the account default, for both model selection and agent selection.</p>
 <h2 id="access-control"><a class="header" href="#access-control">Access Control</a></h2>
 <p>Telegram uses the same gating system as Discord and other channels.</p>
 <h3 id="dm-policy"><a class="header" href="#dm-policy">DM Policy</a></h3>
@@ -377,6 +381,21 @@ the web UI.</p>
 after <code>stream_min_initial_chars</code> characters (default: 30) and then edits it
 in place as tokens arrive, throttled to at most one edit every
 <code>edit_throttle_ms</code> milliseconds (default: 300).</p>
+<h2 id="session-commands"><a class="header" href="#session-commands">Session Commands</a></h2>
+<p>Telegram supports the standard channel session commands:</p>
+<div class="table-wrapper"><table><thead><tr><th>Command</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>/new</code></td><td>Start a fresh session for the current chat</td></tr>
+<tr><td><code>/sessions</code></td><td>List or switch among sessions already bound to the current chat</td></tr>
+<tr><td><code>/attach</code></td><td>List existing non-cron sessions and rebind one to the current chat</td></tr>
+<tr><td><code>/approvals</code></td><td>List pending exec approvals for the current session</td></tr>
+<tr><td><code>/approve N</code></td><td>Approve the numbered exec request from <code>/approvals</code></td></tr>
+<tr><td><code>/deny N</code></td><td>Deny the numbered exec request from <code>/approvals</code></td></tr>
+</tbody></table>
+</div>
+<p><code>/sessions</code> is intentionally scoped to the current chat. If you want to bring a
+different existing session into the chat, use <code>/attach</code> instead. Reattaching a
+session moves that session’s channel binding to the current chat, it is not a
+copy.</p>
 <p>Set <code>stream_mode = "off"</code> to disable streaming and send the full response as a
 single message.</p>
 <p>When <code>stream_notify_on_complete = true</code>, the bot sends a short non-silent

@@ -341,21 +341,37 @@ directory, reject path traversal and symlink escapes, and are recorded in
 replay queued messages one-by-one or merge them into a single follow-up message.</p>
 <pre><code class="language-toml">[chat]
 message_queue_mode = "followup"  # Default: one-by-one replay
+prompt_memory_mode = "live-reload"
 
 # Options:
 #   "followup" - Queue each message and run them sequentially
 #   "collect"  - Merge queued text and run once after the active run
+#   "live-reload" - Re-read MEMORY.md before each turn
+#   "frozen-at-session-start" - Keep the first MEMORY.md snapshot for the session
 </code></pre>
 <h2 id="memory-system"><a class="header" href="#memory-system">Memory System</a></h2>
 <p>Long-term memory uses embeddings for semantic search:</p>
 <pre><code class="language-toml">[memory]
+style = "hybrid"              # Or "prompt-only", "search-only", "off"
+agent_write_mode = "hybrid"   # Or "prompt-only", "search-only", "off"
+user_profile_write_mode = "explicit-and-auto" # Or "explicit-only", "off"
 backend = "builtin"             # Or "qmd"
 provider = "openai"             # Or "local", "ollama", "custom"
 model = "text-embedding-3-small"
 citations = "auto"              # "on", "off", or "auto"
 llm_reranking = false
-session_export = false
+search_merge_strategy = "rrf"   # Or "linear"
+session_export = "on-new-or-reset" # Or "off"
 </code></pre>
+<p>See <a href="memory-surfaces.html">Memory Surfaces</a> for the boundary between
+<code>session_state</code>, prompt memory, searchable memory, and sandbox persistence.
+<code>memory.style</code> chooses the high-level behavior, while
+<code>chat.prompt_memory_mode</code> only affects prompt-visible <code>MEMORY.md</code>.
+<code>memory.agent_write_mode</code> controls where agent-authored writes are allowed to
+land. <code>memory.user_profile_write_mode</code> controls whether Moltis writes the
+managed <code>USER.md</code> surface, and whether browser/channel timezone or location
+signals may update it silently. <code>memory.session_export</code> controls whether
+session rollover exports are written at all.</p>
 <h2 id="authentication"><a class="header" href="#authentication">Authentication</a></h2>
 <p>Authentication is <strong>only required when accessing Moltis from a non-localhost address</strong>. When running on <code>localhost</code> or <code>127.0.0.1</code>, no authentication is needed by default.</p>
 <p>When you access Moltis from a network address (e.g., <code>http://192.168.1.100:13131</code>), a one-time setup code is printed to the terminal. Use it to set up a password or passkey.</p>

@@ -185,6 +185,9 @@
                     <main>
                         <h1 id="memory-system"><a class="header" href="#memory-system">Memory System</a></h1>
 <p>Moltis provides a powerful memory system that enables the agent to recall past conversations, notes, and context across sessions. This document explains the available backends, features, and configuration options.</p>
+<p>If you are trying to understand the difference between short-term session
+state, long-term memory files, and sandbox persistence, start with
+<a href="memory-surfaces.html">Memory Surfaces</a>.</p>
 <h2 id="backends"><a class="header" href="#backends">Backends</a></h2>
 <p>Moltis supports two memory backends:</p>
 <div class="table-wrapper"><table><thead><tr><th>Feature</th><th>Built-in</th><th>QMD</th></tr></thead><tbody>
@@ -217,7 +220,7 @@
 </ul>
 <p>To use QMD:</p>
 <ol>
-<li>Install the QMD CLI from <a href="https://github.com/tobi/qmd">github.com/tobi/qmd</a>: <code>npm install -g --ignore-scripts @tobilu/qmd</code> or <code>bun add -g @tobilu/qmd</code></li>
+<li>Install the QMD CLI from <a href="https://github.com/tobi/qmd">github.com/tobi/qmd</a>: <code>npm install -g @tobilu/qmd</code> or <code>bun install -g @tobilu/qmd</code></li>
 <li>Verify the binary is on your <code>PATH</code>: <code>qmd --version</code></li>
 <li>Enable it in Settings &gt; Memory &gt; Backend</li>
 </ol>
@@ -237,7 +240,9 @@ Source: memory/notes.md#42
 <li><code>off</code>: Never include citations</li>
 </ul>
 <h3 id="session-export"><a class="header" href="#session-export">Session Export</a></h3>
-<p>When enabled, session transcripts are automatically exported to the memory system for cross-run recall. This allows the agent to remember past conversations even after restarts.</p>
+<p>Session transcripts can be exported into searchable memory on <code>/new</code> and
+<code>/reset</code>. This allows the agent to remember past conversations even after
+restarts.</p>
 <p>Exported sessions are:</p>
 <ul>
 <li>Stored in <code>memory/sessions/</code> as markdown files</li>
@@ -255,11 +260,22 @@ Source: memory/notes.md#42
 <h2 id="configuration"><a class="header" href="#configuration">Configuration</a></h2>
 <p>Memory settings can be configured in <code>moltis.toml</code>:</p>
 <pre><code class="language-toml">[memory]
+# Orchestration style: "hybrid", "prompt-only", "search-only", or "off"
+style = "hybrid"
+
+# Agent-authored write target policy: "hybrid", "prompt-only", "search-only", or "off"
+agent_write_mode = "hybrid"
+
+# Managed USER.md write policy: "explicit-and-auto", "explicit-only", or "off"
+user_profile_write_mode = "explicit-and-auto"
+
 # Backend: "builtin" (default) or "qmd"
 backend = "builtin"
 
-# Embedding provider: "local", "ollama", "openai", "custom", or auto-detect
-provider = "local"
+# Embedding provider for the built-in backend: "local", "ollama", "openai", "custom", or auto-detect
+# Ignored while backend = "qmd", but preserved for switching back later
+# Omit this field for the real default, which is auto-detect
+provider = "auto"
 
 # Disable RAG embeddings and force keyword-only search
 disable_rag = false
@@ -273,8 +289,11 @@ citations = "auto"
 # Enable LLM reranking for hybrid search
 llm_reranking = false
 
-# Export sessions to memory for cross-run recall
-session_export = true
+# Merge vector and keyword results with "rrf" or "linear"
+search_merge_strategy = "rrf"
+
+# Export sessions to memory for cross-run recall: "on-new-or-reset" or "off"
+session_export = "on-new-or-reset"
 
 # QMD-specific settings (only used when backend = "qmd")
 [memory.qmd]
@@ -282,7 +301,75 @@ command = "qmd"
 max_results = 10
 timeout_ms = 30000
 </code></pre>
+<p>Real defaults, if you leave the fields unset:</p>
+<ul>
+<li><code>style = "hybrid"</code></li>
+<li><code>agent_write_mode = "hybrid"</code></li>
+<li><code>user_profile_write_mode = "explicit-and-auto"</code></li>
+<li><code>backend = "builtin"</code></li>
+<li><code>provider = auto-detect</code> (unset, not hardcoded <code>local</code>)</li>
+<li><code>disable_rag = false</code></li>
+<li><code>citations = "auto"</code></li>
+<li><code>llm_reranking = false</code></li>
+<li><code>search_merge_strategy = "rrf"</code></li>
+<li><code>session_export = "on-new-or-reset"</code></li>
+<li><code>[chat].prompt_memory_mode = "live-reload"</code></li>
+</ul>
+<p><code>style</code> is separate from <code>[chat].prompt_memory_mode</code>. Style controls whether
+<code>MEMORY.md</code> is injected and whether memory tools are exposed. Prompt memory
+mode controls whether prompt-visible <code>MEMORY.md</code> is live-reloaded or frozen
+per session.</p>
+<p>The web settings page exposes both knobs in the Memory section so you can
+experiment without hand-editing <code>moltis.toml</code>.</p>
+<p><code>agent_write_mode</code> is a separate axis again. It controls where agent-authored
+memory writes may land:</p>
+<ul>
+<li><code>hybrid</code> allows both <code>MEMORY.md</code> and <code>memory/*.md</code></li>
+<li><code>prompt-only</code> allows only <code>MEMORY.md</code></li>
+<li><code>search-only</code> allows only <code>memory/*.md</code></li>
+<li><code>off</code> disables agent-authored memory writes, including <code>memory_save</code> and the
+silent pre-compaction memory flush</li>
+</ul>
+<p><code>user_profile_write_mode</code> is about the managed <code>USER.md</code> surface, not agent
+memory files:</p>
+<ul>
+<li><code>explicit-and-auto</code> mirrors explicit settings saves to <code>USER.md</code> and also
+allows silent browser/channel timezone or location capture</li>
+<li><code>explicit-only</code> mirrors explicit settings saves to <code>USER.md</code>, but disables
+silent browser/channel capture</li>
+<li><code>off</code> stops Moltis from writing <code>USER.md</code>; the canonical user profile remains
+in <code>moltis.toml [user]</code></li>
+</ul>
+<p><code>citations</code> and <code>search_merge_strategy</code> are typed config enums too:</p>
+<ul>
+<li><code>citations = "auto" | "on" | "off"</code></li>
+<li><code>search_merge_strategy = "rrf" | "linear"</code></li>
+</ul>
+<p>Interaction rules that matter in practice:</p>
+<ul>
+<li><code>provider</code>, <code>base_url</code>, <code>model</code>, and <code>api_key</code> only apply to
+<code>backend = "builtin"</code>. QMD ignores them.</li>
+<li><code>[chat].prompt_memory_mode</code> only matters when <code>style</code> still allows prompt
+memory, <code>hybrid</code> or <code>prompt-only</code>.</li>
+<li><code>llm_reranking</code> is only meaningful when RAG is enabled. If
+<code>disable_rag = true</code>, memory falls back to keyword search.</li>
+<li><code>session_export</code> exports transcripts into searchable memory files. It does
+not inject those transcripts into the prompt directly.</li>
+</ul>
 <p>Or via the web UI: <strong>Settings &gt; Memory</strong></p>
+<h2 id="recipes"><a class="header" href="#recipes">Recipes</a></h2>
+<p>Common combinations:</p>
+<div class="table-wrapper"><table><thead><tr><th>Goal</th><th>Settings</th></tr></thead><tbody>
+<tr><td>Default everyday setup</td><td><code>style = "hybrid"</code>, <code>backend = "builtin"</code>, <code>prompt_memory_mode = "live-reload"</code></td></tr>
+<tr><td>Deterministic prompt memory</td><td><code>style = "hybrid"</code>, <code>prompt_memory_mode = "frozen-at-session-start"</code></td></tr>
+<tr><td>Search-only long-term memory</td><td><code>style = "search-only"</code></td></tr>
+<tr><td>Prompt-only memory, no recall tools</td><td><code>style = "prompt-only"</code></td></tr>
+<tr><td>Disable agent memory writes</td><td><code>agent_write_mode = "off"</code></td></tr>
+<tr><td>Keep <code>USER.md</code> from silent enrichment</td><td><code>user_profile_write_mode = "explicit-only"</code></td></tr>
+<tr><td>Keep user profile only in config</td><td><code>user_profile_write_mode = "off"</code></td></tr>
+<tr><td>QMD backend experiment</td><td><code>backend = "qmd"</code></td></tr>
+</tbody></table>
+</div>
 <h2 id="embedding-providers"><a class="header" href="#embedding-providers">Embedding Providers</a></h2>
 <p>The built-in backend supports multiple embedding providers:</p>
 <div class="table-wrapper"><table><thead><tr><th>Provider</th><th>Model</th><th>Dimensions</th><th>Notes</th></tr></thead><tbody>
@@ -305,6 +392,14 @@ timeout_ms = 30000
 <li><code>~/.moltis/memory/*.md</code> - Additional memory files</li>
 <li><code>~/.moltis/memory/sessions/*.md</code> - Exported session transcripts</li>
 </ul>
+<p>Prompt injection from <code>MEMORY.md</code> is controlled separately via
+<code>[chat].prompt_memory_mode</code>. Use <code>live-reload</code> to reread <code>MEMORY.md</code> before
+each turn, or <code>frozen-at-session-start</code> to keep a stable prompt-memory
+snapshot for the lifetime of a session.</p>
+<p>If sandboxing is enabled with the default <code>workspace_mount = "ro"</code>, sandboxed
+commands may still read mounted memory files, but they cannot modify them
+directly. Durable memory writes should use <code>memory_save</code> rather than shell
+redirection or direct file editing inside the sandbox.</p>
 <h2 id="tools"><a class="header" href="#tools">Tools</a></h2>
 <p>The memory system exposes three agent tools:</p>
 <h3 id="memory_search"><a class="header" href="#memory_search">memory_search</a></h3>
@@ -325,7 +420,9 @@ result found via <code>memory_search</code>.</p>
 <h3 id="memory_save"><a class="header" href="#memory_save">memory_save</a></h3>
 <p>Save content to long-term memory files. The agent uses this tool when you ask
 it to remember something (“remember that I prefer dark mode”) or when it
-decides certain information is worth persisting.</p>
+decides certain information is worth persisting. This is the preferred
+long-term write path even when memory files are visible through a read-only
+sandbox mount.</p>
 <pre><code class="language-json">{
   "content": "User prefers dark mode and Vim keybindings.",
   "file": "MEMORY.md",
@@ -341,6 +438,9 @@ back with <code>checkpoint_restore</code>.</p>
 <tr><td><code>append</code></td><td>boolean</td><td><code>true</code></td><td>Append to existing file (<code>true</code>) or overwrite (<code>false</code>)</td></tr>
 </tbody></table>
 </div>
+<p>If <code>memory.agent_write_mode = "search-only"</code> and <code>file</code> is omitted,
+<code>memory_save</code> defaults to <code>memory/notes.md</code>. The write mode can also reject
+targets that are otherwise valid paths.</p>
 <p><strong>Path validation:</strong> The tool enforces a strict allowlist of write targets
 to prevent path traversal attacks. Only these patterns are accepted:</p>
 <ul>
@@ -368,8 +468,10 @@ asking the agent to save noteworthy information</li>
 internal <code>write_file</code> tool backed by the same <code>MemoryWriter</code> as
 <code>memory_save</code></li>
 <li>The LLM’s response text is discarded (the user sees nothing)</li>
-<li>Written files are automatically re-indexed for future search</li>
 </ol>
+<p>This pre-compaction flush obeys <code>memory.agent_write_mode</code>. In <code>off</code> mode, the
+flush is skipped entirely.
+5. Written files are automatically re-indexed for future search</p>
 <p><strong>What gets saved:</strong></p>
 <ul>
 <li>User preferences and working style</li>
@@ -433,10 +535,10 @@ systems.</p>
 </ol>
 <h3 id="qmd-not-available"><a class="header" href="#qmd-not-available">QMD not available</a></h3>
 <ol>
-<li>Install QMD if needed: <code>npm install -g --ignore-scripts @tobilu/qmd</code> or <code>bun add -g @tobilu/qmd</code></li>
+<li>Install QMD if needed: <code>npm install -g @tobilu/qmd</code> or <code>bun install -g @tobilu/qmd</code></li>
 <li>Verify QMD is installed: <code>qmd --version</code></li>
 <li>Check that the path is correct in settings</li>
-<li>Ensure QMD has indexed your collections: <code>qmd stats</code></li>
+<li>Ensure QMD can see its index and collections: <code>qmd status</code></li>
 </ol>
 
                     </main>
@@ -447,7 +549,7 @@ systems.</p>
                                 <i class="fa fa-angle-left"></i>
                             </a>
 
-                            <a rel="next prefetch" href="memory-comparison.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="memory-surfaces.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <i class="fa fa-angle-right"></i>
                             </a>
 
@@ -461,7 +563,7 @@ systems.</p>
                         <i class="fa fa-angle-left"></i>
                     </a>
 
-                    <a rel="next prefetch" href="memory-comparison.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="memory-surfaces.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <i class="fa fa-angle-right"></i>
                     </a>
             </nav>

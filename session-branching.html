@@ -253,6 +253,18 @@ their visual nesting in the sidebar.</p>
 <p>When you delete a forked session, the UI navigates back to its parent session.
 If the deleted session had no parent (or the parent no longer exists), it falls
 back to the next sibling or <code>main</code>.</p>
+<h2 id="archive-in-the-ui"><a class="header" href="#archive-in-the-ui">Archive in the UI</a></h2>
+<p>The web UI also lets you archive sessions when you want to keep them without
+leaving them in the main sidebar list.</p>
+<ul>
+<li>Open <strong>More controls</strong> for a session and click <strong>Archive</strong>.</li>
+<li>Archived sessions are hidden from the default sidebar list.</li>
+<li>Enable <strong>Show archived sessions</strong> in the sidebar to reveal and restore them.</li>
+</ul>
+<p>Archive is available for any non-<code>main</code> session, including cron and
+channel-bound chats, except when the session is the current active session for
+its bound channel chat. That prevents hiding the live Telegram, Discord, or
+similar chat out from under the channel router.</p>
 <div id="admonition-independence" class="admonition admonish-info" role="note" aria-labelledby="admonition-independence-title">
 <div class="admonition-title">
 <div id="admonition-independence-title">

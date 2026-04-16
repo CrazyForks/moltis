@@ -1,0 +1,427 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Tool Policy - Moltis Documentation</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="Documentation for Moltis - Your AI coding assistant">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon.svg">
+        <link rel="shortcut icon" href="favicon.png">
+        <link rel="stylesheet" href="css/variables.css">
+        <link rel="stylesheet" href="css/general.css">
+        <link rel="stylesheet" href="css/chrome.css">
+        <link rel="stylesheet" href="css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="highlight-css" href="highlight.css">
+        <link rel="stylesheet" id="tomorrow-night-css" href="tomorrow-night.css">
+        <link rel="stylesheet" id="ayu-highlight-css" href="ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+        <link rel="stylesheet" href="theme/admonish.css">
+        <link rel="stylesheet" href="theme/custom.css">
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "searchindex.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Moltis Documentation</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/moltis-org/moltis" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+                        <a href="https://github.com/moltis-org/moltis/edit/main/docs/src/src/tool-policy.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                            <i id="git-edit-button" class="fa fa-edit"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <i class="fa fa-spinner fa-spin"></i>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="tool-policy"><a class="header" href="#tool-policy">Tool Policy</a></h1>
+<p>Tool policies control which tools are available during a session. Policies
+use a layered system where each layer can restrict or widen access, and
+<strong>deny always wins</strong> — once a tool is denied at any layer, no later layer
+can re-allow it.</p>
+<h2 id="layers"><a class="header" href="#layers">Layers</a></h2>
+<p>Six layers are evaluated in order. Later layers can replace the allow list,
+but deny entries accumulate across all of them.</p>
+<div class="table-wrapper"><table><thead><tr><th>#</th><th>Layer</th><th>Config path</th><th>Applies to</th></tr></thead><tbody>
+<tr><td>1</td><td>Global</td><td><code>[tools.policy]</code></td><td>All sessions</td></tr>
+<tr><td>2</td><td>Per-provider</td><td><code>[providers.&lt;name&gt;.policy]</code></td><td>Requests routed through that provider</td></tr>
+<tr><td>3</td><td>Per-agent preset</td><td><code>[agents.presets.&lt;id&gt;.tools]</code></td><td>Sub-agents spawned with that preset</td></tr>
+<tr><td>4</td><td>Per-channel group</td><td><code>[channels.&lt;type&gt;.&lt;account&gt;.tools.groups.&lt;chat_type&gt;]</code></td><td>Channel sessions matching that chat type</td></tr>
+<tr><td>5</td><td>Per-sender</td><td><code>...groups.&lt;chat_type&gt;.by_sender.&lt;sender_id&gt;</code></td><td>Messages from that sender in that group</td></tr>
+<tr><td>6</td><td>Sandbox</td><td><code>[tools.exec.sandbox.tools_policy]</code></td><td>Commands running inside a sandbox container</td></tr>
+</tbody></table>
+</div>
+<p><strong>Web UI sessions</strong> see layers 1-3 (no channel context), plus layer 6 if sandboxed.
+<strong>Channel sessions</strong> can see all 6 layers.</p>
+<h2 id="merge-semantics"><a class="header" href="#merge-semantics">Merge Semantics</a></h2>
+<p>Each layer produces an <code>allow</code> list and a <code>deny</code> list. When merging a
+higher-priority layer on top of a lower one:</p>
+<ul>
+<li><strong>Deny accumulates.</strong> Every deny entry from every layer is collected. If
+any layer denies a tool, it stays denied.</li>
+<li><strong>Allow replaces.</strong> A non-empty allow list from a later layer replaces the
+previous allow list entirely. An empty allow list is a no-op (keeps the
+previous allow list).</li>
+<li><strong>Empty allow = permit all.</strong> When the effective allow list is empty,
+everything not denied is allowed.</li>
+</ul>
+<h2 id="glob-patterns"><a class="header" href="#glob-patterns">Glob Patterns</a></h2>
+<p>Both <code>allow</code> and <code>deny</code> entries support glob-style patterns:</p>
+<ul>
+<li><code>"*"</code> — matches every tool name</li>
+<li><code>"browser*"</code> — matches any tool whose name starts with <code>browser</code></li>
+<li><code>"exec"</code> — matches only the exact tool name <code>exec</code></li>
+</ul>
+<h2 id="profiles"><a class="header" href="#profiles">Profiles</a></h2>
+<p>The global layer and per-sender overrides support a <code>profile</code> field that
+expands to a predefined allow list before the explicit allow/deny entries
+are applied.</p>
+<div class="table-wrapper"><table><thead><tr><th>Profile</th><th>Allow list</th></tr></thead><tbody>
+<tr><td><code>"minimal"</code></td><td><code>exec</code></td></tr>
+<tr><td><code>"coding"</code></td><td><code>exec</code>, <code>browser</code>, <code>memory</code></td></tr>
+<tr><td><code>"full"</code></td><td><code>*</code> (everything)</td></tr>
+</tbody></table>
+</div>
+<p>When a profile is set, its allow list is applied first, then the explicit
+<code>allow</code>/<code>deny</code> from the same layer are merged on top (deny accumulates,
+non-empty allow replaces).</p>
+<h2 id="layer-1--global"><a class="header" href="#layer-1--global">Layer 1 — Global</a></h2>
+<p>The base policy for all sessions. Set in <code>moltis.toml</code> under <code>[tools.policy]</code>:</p>
+<pre><code class="language-toml">[tools.policy]
+allow = []           # empty = permit all tools not denied
+deny = ["browser"]   # deny browser in every session
+# profile = "full"   # optional named profile
+</code></pre>
+<h2 id="layer-2--per-provider"><a class="header" href="#layer-2--per-provider">Layer 2 — Per-Provider</a></h2>
+<p>Each provider entry can carry its own policy. When a request is routed
+through that provider, the policy is merged on top of the global layer.</p>
+<pre><code class="language-toml">[providers.openai]
+# ... api_key, models, etc.
+policy.deny = ["exec"]
+</code></pre>
+<p>This denies <code>exec</code> whenever OpenAI is the active provider, regardless of
+what the global layer allows. Other providers are unaffected.</p>
+<h2 id="layer-3--per-agent-preset"><a class="header" href="#layer-3--per-agent-preset">Layer 3 — Per-Agent Preset</a></h2>
+<p>Agent presets (used by <code>spawn_agent</code>) can restrict their sub-agent’s tools.</p>
+<pre><code class="language-toml">[agents.presets.researcher]
+model = "anthropic/claude-haiku-3-5-20241022"
+tools.allow = ["read_file", "glob", "grep", "web_search", "web_fetch"]
+tools.deny  = ["exec", "write_file"]
+</code></pre>
+<p>When the <code>researcher</code> preset is active, only the five listed tools are
+allowed, and <code>exec</code>/<code>write_file</code> are explicitly denied. See
+<a href="agent-presets.html">Agent Presets</a> for the full preset reference.</p>
+<blockquote>
+<p><strong>Note:</strong> Preset tool policies apply only to sub-agents spawned via
+<code>spawn_agent</code>. They do not affect the main agent session. Use the global
+<code>[tools.policy]</code> for the main session.</p>
+</blockquote>
+<h2 id="layer-4--per-channel-group"><a class="header" href="#layer-4--per-channel-group">Layer 4 — Per-Channel Group</a></h2>
+<p>Channel accounts can restrict tools by chat type (<code>private</code>, <code>group</code>,
+<code>channel</code>, etc.). This is useful for hardening group chats where the bot
+is exposed to untrusted users.</p>
+<pre><code class="language-toml">[channels.telegram.my-bot.tools.groups.group]
+deny = ["exec", "browser"]
+</code></pre>
+<p>In this example, <code>exec</code> and <code>browser</code> are denied in Telegram group chats
+handled by the <code>my-bot</code> account. Private chats and web UI sessions are
+unaffected.</p>
+<h2 id="layer-5--per-sender"><a class="header" href="#layer-5--per-sender">Layer 5 — Per-Sender</a></h2>
+<p>Within a channel group, individual senders can receive overrides. This lets
+you trust specific users in an otherwise restricted group.</p>
+<pre><code class="language-toml">[channels.telegram.my-bot.tools.groups.group]
+deny = ["exec", "browser"]
+
+[channels.telegram.my-bot.tools.groups.group.by_sender."123456"]
+allow = ["*"]
+</code></pre>
+<p>Sender <code>123456</code> gets <code>allow = ["*"]</code>, which replaces the previous allow
+list. However, because <strong>deny always accumulates</strong>, the <code>exec</code> and
+<code>browser</code> denials from the group layer still apply. The sender override
+is useful for widening the allow list (e.g., granting access to tools that
+were not in the previous allow set) or for applying a different profile.</p>
+<p>If you need a trusted sender to have <code>exec</code> access in a group, avoid
+denying <code>exec</code> at the group layer. Instead, use a restrictive allow list
+at the group level and widen it per-sender:</p>
+<pre><code class="language-toml">[channels.telegram.my-bot.tools.groups.group]
+allow = ["web_search", "web_fetch", "memory_search"]
+
+[channels.telegram.my-bot.tools.groups.group.by_sender."123456"]
+allow = ["*"]
+</code></pre>
+<p>Here, untrusted group members can only use the three listed tools. Sender
+<code>123456</code> gets full access because the group layer did not deny anything —
+it only narrowed the allow list.</p>
+<h2 id="layer-6--sandbox"><a class="header" href="#layer-6--sandbox">Layer 6 — Sandbox</a></h2>
+<p>When a session runs inside a sandbox container, this layer applies on top of
+all other layers. It lets you restrict tools for sandboxed execution without
+affecting non-sandboxed sessions.</p>
+<pre><code class="language-toml">[tools.exec.sandbox.tools_policy]
+allow = ["exec"]         # only exec inside sandbox
+deny = ["browser"]       # never allow browser in sandbox
+</code></pre>
+<p>This layer is skipped entirely when the session is not sandboxed.</p>
+<h2 id="examples"><a class="header" href="#examples">Examples</a></h2>
+<h3 id="deny-exec-for-a-specific-provider"><a class="header" href="#deny-exec-for-a-specific-provider">Deny exec for a specific provider</a></h3>
+<pre><code class="language-toml">[providers.openai]
+policy.deny = ["exec"]
+</code></pre>
+<p>When using OpenAI, the agent cannot run shell commands. All other
+providers retain their normal tool access.</p>
+<h3 id="restrict-group-chats-on-telegram"><a class="header" href="#restrict-group-chats-on-telegram">Restrict group chats on Telegram</a></h3>
+<pre><code class="language-toml">[channels.telegram.my-bot.tools.groups.group]
+deny = ["exec", "browser*"]
+</code></pre>
+<p>Group chats cannot use <code>exec</code> or any tool starting with <code>browser</code>.
+Private chats are unaffected.</p>
+<h3 id="trust-a-sender-in-a-restricted-group"><a class="header" href="#trust-a-sender-in-a-restricted-group">Trust a sender in a restricted group</a></h3>
+<pre><code class="language-toml">[channels.telegram.my-bot.tools.groups.group]
+allow = ["web_search", "web_fetch"]
+
+[channels.telegram.my-bot.tools.groups.group.by_sender."123456"]
+allow = ["*"]
+</code></pre>
+<p>Normal group members can only search and fetch. Sender <code>123456</code> can use
+every tool (nothing was denied at the group layer, so nothing accumulates).</p>
+<h3 id="agent-preset-with-limited-tools"><a class="header" href="#agent-preset-with-limited-tools">Agent preset with limited tools</a></h3>
+<pre><code class="language-toml">[agents.presets.researcher]
+tools.allow = ["read_file", "glob", "grep"]
+tools.deny  = ["exec"]
+</code></pre>
+<p>The <code>researcher</code> sub-agent can only read files and search. Even if a
+higher layer allows <code>exec</code>, it is denied here and the denial carries
+through.</p>
+<h3 id="use-a-profile-for-the-global-policy"><a class="header" href="#use-a-profile-for-the-global-policy">Use a profile for the global policy</a></h3>
+<pre><code class="language-toml">[tools.policy]
+profile = "coding"
+deny = ["web_fetch"]
+</code></pre>
+<p>The <code>coding</code> profile expands to <code>allow = ["exec", "browser", "memory"]</code>.
+Then <code>web_fetch</code> is denied. The effective policy allows <code>exec</code>, <code>browser</code>,
+and <code>memory</code>, and denies <code>web_fetch</code>. All other tools are not in the allow
+list and are therefore blocked.</p>
+<h3 id="widen-a-sender-via-profile"><a class="header" href="#widen-a-sender-via-profile">Widen a sender via profile</a></h3>
+<pre><code class="language-toml">[channels.telegram.my-bot.tools.groups.group]
+allow = ["web_search"]
+
+[channels.telegram.my-bot.tools.groups.group.by_sender."123456"]
+profile = "full"
+</code></pre>
+<p>Sender <code>123456</code> gets <code>allow = ["*"]</code> from the <code>full</code> profile, replacing
+the group’s narrow allow list. Since the group layer only set <code>allow</code> (no
+<code>deny</code>), nothing is denied and the sender has full tool access.</p>
+<h2 id="debugging"><a class="header" href="#debugging">Debugging</a></h2>
+<p>Enable <code>debug</code> logging to see which layers are applied at runtime:</p>
+<pre><code>policy: applied global profile 'coding'
+policy: applied global layer
+policy: applied provider layer    provider=openai
+policy: applied agent preset layer agent_id=researcher
+policy: applied group layer       channel=telegram account_id=my-bot group_id=group
+policy: applied sender layer      channel=telegram group_id=group sender_id=123456
+policy: applied sandbox layer
+</code></pre>
+<p>Each line indicates a layer was non-empty and merged into the effective
+policy. Missing lines mean that layer had no configuration or the runtime
+context did not match (e.g., no channel context for a web UI session).</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="tool-registry.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="agent-presets.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="tool-registry.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="agent-presets.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr.min.js"></script>
+        <script src="mark.min.js"></script>
+        <script src="searcher.js"></script>
+
+        <script src="clipboard.min.js"></script>
+        <script src="highlight.js"></script>
+        <script src="book.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+
+    </div>
+    </body>
+</html>

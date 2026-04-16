@@ -230,7 +230,7 @@ general-purpose).</p>
 <tr><td><strong>Daily logs</strong></td><td><code>memory/YYYY-MM-DD.md</code></td><td><code>memory/YYYY-MM-DD.md</code></td></tr>
 <tr><td><strong>Session transcripts</strong></td><td><code>memory/sessions/*.md</code></td><td>Session JSONL files (separate)</td></tr>
 <tr><td><strong>Extra paths</strong></td><td>Via <code>memory_dirs</code> config</td><td>Via <code>memorySearch.extraPaths</code></td></tr>
-<tr><td><strong>MEMORY.md loading</strong></td><td>Always available in system prompt</td><td>Only in private sessions (not group chats)</td></tr>
+<tr><td><strong>MEMORY.md loading</strong></td><td>Available in system prompt, with configurable live reload or frozen-per-session mode</td><td>Only in private sessions (not group chats)</td></tr>
 </tbody></table>
 </div>
 <h3 id="agent-tools"><a class="header" href="#agent-tools">Agent Tools</a></h3>
@@ -279,7 +279,7 @@ memory paths and the file watcher to re-index.</p>
 <div class="table-wrapper"><table><thead><tr><th>Feature</th><th>Moltis</th><th>OpenClaw</th></tr></thead><tbody>
 <tr><td><strong>Session storage</strong></td><td>SQLite database</td><td>JSONL files (append-only, tree structure)</td></tr>
 <tr><td><strong>Auto-compaction</strong></td><td>Yes, near context window limit</td><td>Yes, near context window limit</td></tr>
-<tr><td><strong>Manual compaction</strong></td><td>Not yet</td><td><code>/compact</code> command with optional instructions</td></tr>
+<tr><td><strong>Manual compaction</strong></td><td><code>/compact</code> (uses <a href="compaction.html#the-four-modes">configured compaction strategy</a>)</td><td><code>/compact</code> command with optional instructions</td></tr>
 <tr><td><strong>Pre-compaction memory flush</strong></td><td>Silent turn via <code>MemoryWriter</code> trait</td><td>Silent turn via <code>write_file</code> tool</td></tr>
 <tr><td><strong>Flush visibility</strong></td><td>Completely hidden from user</td><td>Hidden via <code>NO_REPLY</code> convention</td></tr>
 <tr><td><strong>Session export to memory</strong></td><td>Markdown files in <code>memory/sessions/</code></td><td>Optional (<code>sessionMemory</code> experimental flag)</td></tr>
@@ -369,7 +369,6 @@ re-indexing, reducing reliance on the system prompt for write guidance</li>
 </ul>
 <h2 id="what-openclaw-has-that-moltis-does-not-yet"><a class="header" href="#what-openclaw-has-that-moltis-does-not-yet">What OpenClaw Has That Moltis Does Not (Yet)</a></h2>
 <ul>
-<li><strong>Manual <code>/compact</code> command</strong> with user-specified instructions</li>
 <li><strong>CLI memory commands</strong> (<code>status</code>, <code>index</code>, <code>search</code>) for debugging</li>
 <li><strong>Session pruning</strong> (cache-TTL based trimming of old tool results)</li>
 <li><strong>Gemini and Voyage embedding providers</strong></li>
@@ -411,7 +410,7 @@ with a web UI.</p>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="memory.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="memory-surfaces.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <i class="fa fa-angle-left"></i>
                             </a>
 
@@ -425,7 +424,7 @@ with a web UI.</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="memory.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="memory-surfaces.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <i class="fa fa-angle-left"></i>
                     </a>
 
