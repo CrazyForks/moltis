@@ -878,19 +878,19 @@ test.describe("Settings navigation", () => {
 		await expect(addButton).toBeVisible();
 		await addButton.click();
 
-		await expect(page.getByRole("heading", { name: "Connect Matrix", exact: true })).toBeVisible();
-		await expect(page.locator('input[data-field="accountId"]')).toHaveCount(0);
-		await expect(page.locator('input[data-field="homeserver"]')).toHaveValue("https://matrix.org");
-		await expect(page.locator('input[data-field="homeserver"]')).toHaveAttribute("placeholder", "https://matrix.org");
-		await expect(page.getByText("Encrypted Matrix chats require Password auth.", { exact: false })).toBeVisible();
+		const modal = page.locator(".modal-box");
+		await expect(modal.getByRole("heading", { name: "Connect Matrix", exact: true })).toBeVisible();
+		await expect(modal.locator('input[data-field="accountId"]')).toHaveCount(0);
+		await expect(modal.locator('input[data-field="homeserver"]')).toHaveValue("https://matrix.org");
+		await expect(modal.locator('input[data-field="homeserver"]')).toHaveAttribute("placeholder", "https://matrix.org");
+		await expect(modal.locator('select[data-field="authMode"]')).toHaveValue("oidc");
+		await expect(modal.getByText("Encrypted Matrix chats require OIDC or Password auth.", { exact: false })).toBeVisible();
 		await expect(
-			page.getByText("Password is the default because it supports encrypted Matrix chats.", { exact: false }),
+			modal.getByText("Use OIDC (recommended) or Password so Moltis creates and persists its own Matrix device keys", {
+				exact: false,
+			}),
 		).toBeVisible();
-		await expect(page.getByText("verify yes", { exact: false })).toBeVisible();
-		await expect(page.getByRole("link", { name: "Matrix setup docs", exact: true })).toHaveAttribute(
-			"href",
-			"https://docs.moltis.org/matrix.html",
-		);
+		await expect(modal.getByText("verify yes", { exact: false })).toBeVisible();
 
 		await page.evaluate(async () => {
 			const appScript = document.querySelector('script[type="module"][src*="js/app.js"]');
@@ -923,15 +923,19 @@ test.describe("Settings navigation", () => {
 			});
 		});
 
-		await page.locator('input[data-field="homeserver"]').fill("https://matrix.example.com");
-		await page.locator('select[data-field="authMode"]').selectOption("access_token");
-		await expect(page.getByText("Settings -> Help & About -> Advanced -> Access Token")).toBeVisible();
-		await expect(page.getByText("Access token auth always stays user-managed", { exact: false })).toBeVisible();
+		await modal.locator('input[data-field="homeserver"]').fill("https://matrix.example.com");
+		await modal.locator('select[data-field="authMode"]').selectOption("access_token");
+		await expect(modal.getByText("Settings -> Help & About -> Advanced -> Access Token", { exact: false })).toBeVisible();
+		await expect(modal.getByText("Access token auth always stays user-managed", { exact: false })).toBeVisible();
 		await expect(
-			page.getByText("do not transfer that device's private encryption keys into Moltis", { exact: false }),
+			modal.getByText("do not transfer that device's private encryption keys into Moltis", { exact: false }),
 		).toBeVisible();
-		await page.locator('input[data-field="credential"]').fill("syt_test_token");
-		await page.getByText("Advanced Config JSON", { exact: true }).click();
+		await expect(modal.getByRole("link", { name: "Matrix setup docs", exact: true })).toHaveAttribute(
+			"href",
+			"https://docs.moltis.org/matrix.html",
+		);
+		await modal.locator('input[data-field="credential"]').fill("syt_test_token");
+		await modal.getByText("Advanced Config JSON", { exact: true }).click();
 		await page
 			.locator('textarea[data-field="advancedConfigPatch"]')
 			.fill('{"reply_to_message":true,"stream_mode":"off"}');
@@ -973,8 +977,9 @@ test.describe("Settings navigation", () => {
 		await expect(addButton).toBeVisible();
 		await addButton.click();
 
-		await expect(page.getByRole("heading", { name: "Connect Matrix", exact: true })).toBeVisible();
-		await expect(page.locator('select[data-field="authMode"]')).toHaveValue("password");
+		const modal = page.locator(".modal-box");
+		await expect(modal.getByRole("heading", { name: "Connect Matrix", exact: true })).toBeVisible();
+		await expect(modal.locator('select[data-field="authMode"]')).toHaveValue("oidc");
 
 		await page.evaluate(async () => {
 			const appScript = document.querySelector('script[type="module"][src*="js/app.js"]');
@@ -1007,17 +1012,17 @@ test.describe("Settings navigation", () => {
 			});
 		});
 
-		await page.locator('input[data-field="homeserver"]').fill("https://matrix.example.com");
-		await page.locator('select[data-field="authMode"]').selectOption("password");
-		await expect(page.getByText("Required for encrypted Matrix chats.", { exact: false })).toBeVisible();
-		await expect(page.getByLabel("Let Moltis own this Matrix account", { exact: true })).toBeChecked();
-		await page.locator('input[data-field="userId"]').fill("@bot:example.com");
-		await page.locator('input[data-field="credential"]').fill("correct horse battery staple");
-		await page.locator('select[data-field="autoJoin"]').selectOption("allowlist");
-		const matrixDmAllowlistInput = page
+		await modal.locator('input[data-field="homeserver"]').fill("https://matrix.example.com");
+		await modal.locator('select[data-field="authMode"]').selectOption("password");
+		await expect(modal.getByText("Required for encrypted Matrix chats.", { exact: false })).toBeVisible();
+		await expect(modal.getByLabel("Let Moltis own this Matrix account", { exact: true })).toBeChecked();
+		await modal.locator('input[data-field="userId"]').fill("@bot:example.com");
+		await modal.locator('input[data-field="credential"]').fill("correct horse battery staple");
+		await modal.locator('select[data-field="autoJoin"]').selectOption("allowlist");
+		const matrixDmAllowlistInput = modal
 			.getByText("DM Allowlist (Matrix user IDs)", { exact: true })
 			.locator("xpath=following-sibling::div[1]//input");
-		const matrixRoomAllowlistInput = page
+		const matrixRoomAllowlistInput = modal
 			.getByText("Room Allowlist (room IDs or aliases)", { exact: true })
 			.locator("xpath=following-sibling::div[1]//input");
 		await matrixDmAllowlistInput.fill("@alice:example.com");
