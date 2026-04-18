@@ -769,3 +769,83 @@ base_url = "http://127.0.0.1:8001/v1"
         Some("http://127.0.0.1:8001/v1")
     );
 }
+
+#[test]
+fn external_url_defaults_to_none() {
+    let cfg: MoltisConfig = toml::from_str("").unwrap();
+    assert!(cfg.server.external_url.is_none());
+}
+
+#[test]
+fn external_url_parses_from_toml() {
+    let cfg: MoltisConfig =
+        toml::from_str("[server]\nexternal_url = \"https://moltis.example.com\"\n").unwrap();
+    assert_eq!(
+        cfg.server.external_url.as_deref(),
+        Some("https://moltis.example.com")
+    );
+}
+
+#[test]
+fn effective_external_url_returns_config_value() {
+    let cfg: MoltisConfig =
+        toml::from_str("[server]\nexternal_url = \"https://from-config.example.com\"\n").unwrap();
+    // When MOLTIS_EXTERNAL_URL is not set, the config value is returned.
+    // (We cannot test the env-var override here because set_var is unsafe.)
+    let effective = cfg.server.effective_external_url();
+    assert!(effective.is_some());
+    assert_eq!(effective.unwrap(), "https://from-config.example.com");
+}
+
+#[test]
+fn effective_external_url_strips_trailing_slash() {
+    let cfg: MoltisConfig =
+        toml::from_str("[server]\nexternal_url = \"https://example.com/\"\n").unwrap();
+    assert_eq!(
+        cfg.server.effective_external_url().as_deref(),
+        Some("https://example.com")
+    );
+}
+
+#[test]
+fn effective_external_url_returns_none_when_unset() {
+    let cfg: MoltisConfig = toml::from_str("").unwrap();
+    assert!(cfg.server.effective_external_url().is_none());
+}
+
+// ── resolve_external_url (pure helper, testable without env mutation) ──
+
+#[test]
+fn resolve_external_url_env_takes_precedence_over_config() {
+    let result = ServerConfig::resolve_external_url(
+        Some("https://from-env.example.com"),
+        Some("https://from-config.example.com"),
+    );
+    assert_eq!(result.as_deref(), Some("https://from-env.example.com"));
+}
+
+#[test]
+fn resolve_external_url_empty_env_falls_back_to_config() {
+    // effective_external_url filters empty env values before calling
+    // resolve_external_url, so an empty env var becomes None here.
+    let result = ServerConfig::resolve_external_url(None, Some("https://from-config.example.com"));
+    assert_eq!(result.as_deref(), Some("https://from-config.example.com"));
+}
+
+#[test]
+fn resolve_external_url_strips_trailing_slash_from_env() {
+    let result = ServerConfig::resolve_external_url(Some("https://env.example.com/"), None);
+    assert_eq!(result.as_deref(), Some("https://env.example.com"));
+}
+
+#[test]
+fn resolve_external_url_strips_trailing_slash_from_config() {
+    let result = ServerConfig::resolve_external_url(None, Some("https://config.example.com/"));
+    assert_eq!(result.as_deref(), Some("https://config.example.com"));
+}
+
+#[test]
+fn resolve_external_url_returns_none_when_both_unset() {
+    let result = ServerConfig::resolve_external_url(None, None);
+    assert!(result.is_none());
+}
