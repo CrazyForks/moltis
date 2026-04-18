@@ -210,6 +210,7 @@ statuses to GitHub:</p>
 <li><code>local/test</code></li>
 <li><code>local/macos-app</code> — validates the native Swift macOS app build (<code>Darwin</code> only)</li>
 <li><code>local/e2e</code> — runs gateway UI Playwright coverage</li>
+<li><code>local/e2e-ollama</code> — opt-in live Ollama/Qwen Playwright regression check</li>
 </ul>
 <p>In PR mode, the PR workflow verifies these contexts and surfaces them as
 checks in the PR.</p>
@@ -235,6 +236,11 @@ not already available.</li>
 <li><code>local/e2e</code> auto-runs <code>npm ci</code> only when <code>crates/web/ui/node_modules</code>
 is missing, then runs <code>npm run e2e:install</code> and <code>npm run e2e</code>. Override with
 <code>LOCAL_VALIDATE_E2E_CMD</code>.</li>
+<li>Enable the live Ollama/Qwen regression check with
+<code>LOCAL_VALIDATE_OLLAMA_QWEN_E2E=1</code>. It starts a local Ollama server on
+<code>MOLTIS_E2E_OLLAMA_QWEN_API_PORT</code> (default <code>11435</code>), pulls the configured
+Qwen model if missing, and runs the dedicated Playwright project. Override
+the command with <code>LOCAL_VALIDATE_OLLAMA_QWEN_E2E_CMD</code>.</li>
 </ul>
 <h2 id="merge-and-release-safety"><a class="header" href="#merge-and-release-safety">Merge and release safety</a></h2>
 <p>This local-first flow is for pull requests. Full CI still runs on GitHub
@@ -245,7 +251,7 @@ release paths).</p>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="upstream-proxy.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="configuration-reference.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <i class="fa fa-angle-left"></i>
                             </a>
 
@@ -259,7 +265,7 @@ release paths).</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="upstream-proxy.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="configuration-reference.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <i class="fa fa-angle-left"></i>
                     </a>
 

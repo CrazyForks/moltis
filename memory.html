@@ -327,8 +327,8 @@ memory writes may land:</p>
 <li><code>hybrid</code> allows both <code>MEMORY.md</code> and <code>memory/*.md</code></li>
 <li><code>prompt-only</code> allows only <code>MEMORY.md</code></li>
 <li><code>search-only</code> allows only <code>memory/*.md</code></li>
-<li><code>off</code> disables agent-authored memory writes, including <code>memory_save</code> and the
-silent pre-compaction memory flush</li>
+<li><code>off</code> disables agent-authored memory mutations, including <code>memory_save</code>,
+<code>memory_forget</code>, <code>memory_delete</code>, and the silent pre-compaction memory flush</li>
 </ul>
 <p><code>user_profile_write_mode</code> is about the managed <code>USER.md</code> surface, not agent
 memory files:</p>
@@ -398,10 +398,11 @@ each turn, or <code>frozen-at-session-start</code> to keep a stable prompt-memor
 snapshot for the lifetime of a session.</p>
 <p>If sandboxing is enabled with the default <code>workspace_mount = "ro"</code>, sandboxed
 commands may still read mounted memory files, but they cannot modify them
-directly. Durable memory writes should use <code>memory_save</code> rather than shell
-redirection or direct file editing inside the sandbox.</p>
+directly. Durable memory mutations should use <code>memory_save</code>,
+<code>memory_forget</code>, or <code>memory_delete</code> rather than shell redirection or direct
+file editing inside the sandbox.</p>
 <h2 id="tools"><a class="header" href="#tools">Tools</a></h2>
-<p>The memory system exposes three agent tools:</p>
+<p>The memory system exposes five agent tools:</p>
 <h3 id="memory_search"><a class="header" href="#memory_search">memory_search</a></h3>
 <p>Search memory with a natural language query. Returns relevant chunks ranked
 by hybrid (vector + keyword) similarity.</p>
@@ -453,6 +454,59 @@ limited to 50 KB per write.</p>
 <p><strong>Auto-reindex:</strong> After writing, the memory system automatically re-indexes
 the affected file so the new content is immediately searchable via
 <code>memory_search</code>.</p>
+<h3 id="memory_forget"><a class="header" href="#memory_forget">memory_forget</a></h3>
+<p>Forget saved memory using natural language. This tool searches memory, asks the
+configured LLM to choose which chunk or chunks match the forget request, then
+deletes the exact stored text through the same deterministic file mutation path
+used by <code>memory_delete</code>.</p>
+<pre><code class="language-json">{
+  "request": "Forget that I prefer dark mode",
+  "dry_run": true
+}
+</code></pre>
+<p>If the request is ambiguous, stale, or the exact text is not uniquely
+removable, <code>memory_forget</code> returns a preview with <code>needs_confirmation = true</code>
+instead of mutating files.</p>
+<p>Successful mutations return <code>checkpointIds</code>, because forgetting multiple chunks
+may touch more than one file.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper"><table><thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>request</code></td><td>string</td><td><em>(required)</em></td><td>Natural-language description of what saved memory to forget</td></tr>
+<tr><td><code>dry_run</code></td><td>boolean</td><td><code>false</code></td><td>Preview planned deletions without mutating files</td></tr>
+<tr><td><code>limit</code></td><td>integer</td><td><code>6</code></td><td>Maximum number of candidate chunks inspected before planning</td></tr>
+</tbody></table>
+</div>
+<p>Use <code>memory_forget</code> for normal “forget X” requests. Use <code>memory_delete</code> only
+when you already know the exact file and exact snippet to remove.</p>
+<h3 id="memory_delete"><a class="header" href="#memory_delete">memory_delete</a></h3>
+<p>Forget saved memory by removing an exact snippet from a memory file or deleting
+the whole file. This mutates the backing Markdown file, not just the index.</p>
+<pre><code class="language-json">{
+  "file": "MEMORY.md",
+  "text": "User prefers dark mode and Vim keybindings.\n"
+}
+</code></pre>
+<p>To delete an entire memory note instead:</p>
+<pre><code class="language-json">{
+  "file": "memory/obsolete-note.md",
+  "delete_file": true
+}
+</code></pre>
+<p>Successful deletes also return a <code>checkpointId</code>, so the previous file state can
+be restored with <code>checkpoint_restore</code>.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper"><table><thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>file</code></td><td>string</td><td><em>(required)</em></td><td>Target file: <code>MEMORY.md</code>, <code>memory.md</code>, or <code>memory/&lt;name&gt;.md</code></td></tr>
+<tr><td><code>text</code></td><td>string</td><td><em>(none)</em></td><td>Exact text snippet to remove. Required unless <code>delete_file = true</code></td></tr>
+<tr><td><code>delete_file</code></td><td>boolean</td><td><code>false</code></td><td>Delete the whole file instead of removing exact text</td></tr>
+<tr><td><code>all_matches</code></td><td>boolean</td><td><code>false</code></td><td>Remove every exact match of <code>text</code> instead of only the first</td></tr>
+<tr><td><code>delete_if_empty</code></td><td>boolean</td><td><code>true</code></td><td>Delete the file if removing <code>text</code> leaves only whitespace</td></tr>
+</tbody></table>
+</div>
+<p><code>memory_delete</code> uses the same path validation rules as <code>memory_save</code>, updates
+the search index immediately, and can clean up stale index entries when a file
+is removed. It is the low-level exact-delete primitive that powers
+<code>memory_forget</code>.</p>
 <h2 id="silent-memory-turn-pre-compaction-flush"><a class="header" href="#silent-memory-turn-pre-compaction-flush">Silent Memory Turn (Pre-Compaction Flush)</a></h2>
 <p>Before compacting a session (summarizing old messages to free context window
 space), Moltis runs a <strong>silent agentic turn</strong> that reviews the conversation
@@ -496,8 +550,9 @@ systems.</p>
 ├──────────────────────────────────────────────────────────────────┤
 │                        Write Path                                │
 │  ┌─────────────────┐  ┌──────────────────┐  ┌────────────────┐  │
-│  │  memory_save    │  │  Silent Turn     │  │  Path          │  │
-│  │  (agent tool)   │  │  (pre-compact)   │  │  Validation    │  │
+│  │ memory_save /   │  │  Silent Turn     │  │  Path          │  │
+│  │ memory_delete   │  │  (pre-compact)   │  │  Validation    │  │
+│  │  (agent tools)  │  │                  │  │                │  │
 │  └─────────────────┘  └──────────────────┘  └────────────────┘  │
 ├──────────────────────────────────────────────────────────────────┤
 │                      Storage Backend                             │

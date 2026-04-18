@@ -235,7 +235,7 @@ prompt_memory_mode = "live-reload"
 </code></pre>
 <ul>
 <li><code>hybrid</code> injects <code>MEMORY.md</code> into the prompt and keeps <code>memory_search</code>,
-<code>memory_get</code>, and <code>memory_save</code> available</li>
+<code>memory_get</code>, <code>memory_save</code>, <code>memory_forget</code>, and <code>memory_delete</code> available</li>
 <li><code>prompt-only</code> injects <code>MEMORY.md</code> into the prompt, but hides memory tools</li>
 <li><code>search-only</code> skips prompt injection and relies on memory tools for recall</li>
 <li><code>off</code> disables both prompt memory injection and memory tools</li>
@@ -261,8 +261,8 @@ so they are session-scoped rather than a process-global cache.</p>
 <li><code>hybrid</code> allows agent-authored writes to both <code>MEMORY.md</code> and <code>memory/*.md</code></li>
 <li><code>prompt-only</code> restricts agent-authored writes to <code>MEMORY.md</code></li>
 <li><code>search-only</code> restricts agent-authored writes to <code>memory/*.md</code></li>
-<li><code>off</code> disables agent-authored writes, including <code>memory_save</code> and the silent
-pre-compaction memory flush</li>
+<li><code>off</code> disables agent-authored memory mutations, including <code>memory_save</code>,
+<code>memory_forget</code>, <code>memory_delete</code>, and the silent pre-compaction memory flush</li>
 </ul>
 <p><code>memory.session_export</code> is separate again:</p>
 <ul>
@@ -309,8 +309,9 @@ normal memory surface, regardless of whether the command that wrote it ran in a
 sandbox or not.</p>
 <p>With the default <code>workspace_mount = "ro"</code>, sandboxed commands may still read
 mounted files such as <code>MEMORY.md</code>, but they cannot modify them directly.
-Durable long-term writes should still happen through Moltis memory tools such
-as <code>memory_save</code>, not via shell redirection inside the sandbox.</p>
+Durable long-term memory mutations should still happen through Moltis memory
+tools such as <code>memory_save</code>, <code>memory_forget</code>, and <code>memory_delete</code>, not via
+shell redirection inside the sandbox.</p>
 <h2 id="between-sandboxes"><a class="header" href="#between-sandboxes">Between Sandboxes</a></h2>
 <p>Sandbox-to-sandbox sharing depends on <code>home_persistence</code>:</p>
 <ul>

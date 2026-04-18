@@ -197,6 +197,8 @@
 <ul>
 <li><code>playwright.config.js</code> configures Playwright and web server startup.</li>
 <li><code>e2e/start-gateway.sh</code> boots the gateway in deterministic test mode.</li>
+<li><code>e2e/start-gateway-ollama-qwen-live.sh</code> is the opt-in live-provider harness
+for the custom OpenAI-compatible Qwen regression path.</li>
 <li><code>e2e/specs/smoke.spec.js</code> contains smoke coverage for critical routes.</li>
 </ul>
 <h2 id="how-startup-works"><a class="header" href="#how-startup-works">How Startup Works</a></h2>
@@ -245,6 +247,11 @@ npx playwright show-trace test-results/&lt;test-dir&gt;/trace.zip
 <p>Pull requests use the local-validation flow: the E2E workflow waits for a
 <code>local/e2e</code> commit status, published by <code>./scripts/local-validate.sh</code>.</p>
 <p>Pushes to <code>main</code>, tags, and manual dispatch still run the hosted E2E job.</p>
+<p>For the Qwen multiple-system-message regression path, there is also an opt-in
+Playwright project:</p>
+<pre><code class="language-bash">cd crates/web/ui
+MOLTIS_E2E_OLLAMA_QWEN_LIVE=1 npx playwright test --project=ollama-qwen-live e2e/specs/ollama-qwen-live.spec.js
+</code></pre>
 
                     </main>
 

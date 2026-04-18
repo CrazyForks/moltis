@@ -239,6 +239,8 @@ general-purpose).</p>
 <tr><td><strong>memory_search</strong></td><td>Dedicated tool, hybrid search</td><td>Dedicated tool, hybrid search</td></tr>
 <tr><td><strong>memory_get</strong></td><td>Dedicated tool, by chunk ID</td><td>Dedicated tool, by path + optional line range</td></tr>
 <tr><td><strong>memory_save</strong></td><td>Dedicated tool with path validation</td><td>No dedicated tool</td></tr>
+<tr><td><strong>memory_forget</strong></td><td>LLM-guided forget flow on top of exact deletes</td><td>No dedicated tool</td></tr>
+<tr><td><strong>memory_delete</strong></td><td>Dedicated tool for safe forget/delete flows</td><td>No dedicated tool</td></tr>
 <tr><td><strong>General file writing</strong></td><td><code>exec</code> tool (shell commands)</td><td>Generic <code>write_file</code> tool</td></tr>
 <tr><td><strong>Silent memory turn</strong></td><td>Pre-compaction flush via <code>MemoryWriter</code></td><td>Pre-compaction flush via <code>write_file</code></td></tr>
 </tbody></table>
@@ -270,11 +272,12 @@ code, configs, and any other file):</p>
 itself has no special memory awareness – it is a general-purpose file writer.
 The memory indexer’s file watcher detects the change and re-indexes
 asynchronously (1.5s debounce).</p>
-<p><strong>Key difference:</strong> Moltis uses a purpose-built <code>memory_save</code> tool with
-built-in path validation (only <code>MEMORY.md</code> and <code>memory/*.md</code> are writable)
-and immediate re-indexing. OpenClaw uses a general-purpose <code>write_file</code> tool
-that can write anywhere, relying on the system prompt to guide the agent to
-memory paths and the file watcher to re-index.</p>
+<p><strong>Key difference:</strong> Moltis uses purpose-built <code>memory_save</code>,
+<code>memory_forget</code>, and <code>memory_delete</code> tools with built-in path validation
+(only <code>MEMORY.md</code> and <code>memory/*.md</code> are mutable) and immediate re-indexing.
+OpenClaw uses a general-purpose <code>write_file</code> tool that can write anywhere,
+relying on the system prompt to guide the agent to memory paths and the file
+watcher to re-index.</p>
 <h3 id="session-memory-and-compaction"><a class="header" href="#session-memory-and-compaction">Session Memory and Compaction</a></h3>
 <div class="table-wrapper"><table><thead><tr><th>Feature</th><th>Moltis</th><th>OpenClaw</th></tr></thead><tbody>
 <tr><td><strong>Session storage</strong></td><td>SQLite database</td><td>JSONL files (append-only, tree structure)</td></tr>
@@ -359,8 +362,9 @@ normal conversation</li>
 </div>
 <h2 id="what-moltis-has-that-openclaw-does-not"><a class="header" href="#what-moltis-has-that-openclaw-does-not">What Moltis Has That OpenClaw Does Not</a></h2>
 <ul>
-<li><strong>Dedicated <code>memory_save</code> tool</strong> with path validation and immediate
-re-indexing, reducing reliance on the system prompt for write guidance</li>
+<li><strong>Dedicated <code>memory_save</code>, <code>memory_forget</code>, and <code>memory_delete</code> tools</strong> with
+path validation and immediate re-indexing, reducing reliance on the system
+prompt for memory mutations</li>
 <li><strong>Ollama embedding support</strong> as a provider option</li>
 <li><strong>Custom OpenAI-compatible embedding endpoints</strong></li>
 <li><strong>Circuit breaker</strong> with automatic fallback chain for embedding providers</li>
@@ -384,9 +388,10 @@ detection)</li>
 hybrid search, and pre-compaction memory flushes. The main differences are:</p>
 <ol>
 <li>
-<p><strong>Tool approach</strong>: Moltis provides a purpose-built <code>memory_save</code> tool with
-security validation; OpenClaw uses a general-purpose <code>write_file</code> tool
-guided by the system prompt.</p>
+<p><strong>Tool approach</strong>: Moltis provides purpose-built <code>memory_save</code>,
+<code>memory_forget</code>, and <code>memory_delete</code> tools with security validation;
+OpenClaw uses a general-purpose <code>write_file</code> tool guided by the system
+prompt.</p>
 </li>
 <li>
 <p><strong>Write safety</strong>: Moltis validates write paths at the tool level (allowlist</p>
