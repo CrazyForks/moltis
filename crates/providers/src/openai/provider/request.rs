@@ -109,6 +109,9 @@ impl OpenAiProvider {
     }
 
     fn requires_reasoning_content_on_tool_messages(&self) -> bool {
+        if let Some(explicit) = self.reasoning_content_override {
+            return explicit;
+        }
         self.provider_name.eq_ignore_ascii_case("moonshot")
             || self.base_url.contains("moonshot.ai")
             || self.base_url.contains("moonshot.cn")
@@ -564,5 +567,69 @@ mod tests {
         assert_eq!(messages[0]["role"], "system");
         assert_eq!(messages[0]["content"], "sys1\n\nsys2");
         assert_eq!(messages[1]["role"], "user");
+    }
+
+    // ── strict_tools and reasoning_content overrides (issue #810) ───
+
+    #[test]
+    fn strict_tools_override_false_disables_strict() {
+        let p = OpenAiProvider::new_with_name(
+            generated_api_key(),
+            "accounts/fireworks/routers/kimi-k2p5-turbo".into(),
+            "https://api.fireworks.ai/inference/v1".into(),
+            "fireworks".into(),
+        )
+        .with_strict_tools(false);
+        assert!(
+            !p.needs_strict_tools(),
+            "strict_tools_override=false must disable strict tools (issue #810)"
+        );
+    }
+
+    #[test]
+    fn reasoning_content_override_true_enables_reasoning() {
+        let p = OpenAiProvider::new_with_name(
+            generated_api_key(),
+            "accounts/fireworks/routers/kimi-k2p5-turbo".into(),
+            "https://api.fireworks.ai/inference/v1".into(),
+            "fireworks".into(),
+        )
+        .with_reasoning_content(true);
+        assert!(
+            p.requires_reasoning_content_on_tool_messages(),
+            "reasoning_content_override=true must enable reasoning_content (issue #810)"
+        );
+    }
+
+    #[test]
+    fn fireworks_native_model_defaults_to_strict_tools() {
+        let p = provider(
+            "accounts/fireworks/models/deepseek-v3p2",
+            "fireworks",
+            "https://api.fireworks.ai/inference/v1",
+        );
+        assert!(
+            p.needs_strict_tools(),
+            "Native Fireworks models should use strict tools by default"
+        );
+    }
+
+    #[test]
+    fn fireworks_native_model_no_reasoning_content() {
+        let p = provider(
+            "accounts/fireworks/models/deepseek-v3p2",
+            "fireworks",
+            "https://api.fireworks.ai/inference/v1",
+        );
+        assert!(
+            !p.requires_reasoning_content_on_tool_messages(),
+            "Native Fireworks models should not add reasoning_content"
+        );
+    }
+
+    #[test]
+    fn moonshot_direct_auto_detects_reasoning_content() {
+        let p = provider("kimi-k2.5", "moonshot", "https://api.moonshot.ai/v1");
+        assert!(p.requires_reasoning_content_on_tool_messages());
     }
 }
