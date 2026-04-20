@@ -117,10 +117,8 @@ pub(crate) const DEEPSEEK_MODELS: &[(&str, &str)] = &[
 ];
 
 /// Known Moonshot models.
-pub(crate) const MOONSHOT_MODELS: &[(&str, &str)] = &[
-    ("kimi-k2.5", "Kimi K2.5"),
-    ("kimi-k2.6", "Kimi K2.6"),
-];
+pub(crate) const MOONSHOT_MODELS: &[(&str, &str)] =
+    &[("kimi-k2.5", "Kimi K2.5"), ("kimi-k2.6", "Kimi K2.6")];
 
 /// Known Google Gemini models.
 /// See: <https://ai.google.dev/gemini-api/docs/models>
