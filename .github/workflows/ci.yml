@@ -148,7 +148,7 @@ jobs:
       # for test binaries running inside the container.
       GIT_CONFIG_COUNT: 1
       GIT_CONFIG_KEY_0: safe.directory
-      GIT_CONFIG_VALUE_0: /__w/moltis/moltis
+      GIT_CONFIG_VALUE_0: "*"
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
@@ -169,7 +169,7 @@ jobs:
           package-manager-cache: false
       - name: Install QMD CLI
         run: |
-          npm install -g @tobilu/qmd
+          npm install -g --ignore-scripts @tobilu/qmd
           qmd --version
       - name: Initialize git repo in llama-cpp source to satisfy cmake
         run: |
@@ -269,7 +269,7 @@ jobs:
           package-manager-cache: false
       - name: Install QMD CLI
         run: |
-          npm install -g @tobilu/qmd
+          npm install -g --ignore-scripts @tobilu/qmd
           qmd --version
       - uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2
         with:
@@ -485,7 +485,7 @@ jobs:
           package-manager-cache: false
       - name: Install QMD CLI
         run: |
-          npm install -g @tobilu/qmd
+          npm install -g --ignore-scripts @tobilu/qmd
           qmd --version
       - name: Initialize git repo in llama-cpp source to satisfy cmake
         run: |
