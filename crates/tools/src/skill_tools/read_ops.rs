@@ -112,7 +112,12 @@ impl AgentTool for ReadSkillTool {
             .get("name")
             .and_then(|v| v.as_str())
             .ok_or_else(|| Error::message("missing 'name'"))?;
-        let file_path = params.get("file_path").and_then(|v| v.as_str());
+        // Treat empty string the same as absent — models often send ""
+        // instead of omitting the field.
+        let file_path = params
+            .get("file_path")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty());
 
         let skills = self.discoverer.discover().await?;
         let meta = skills.iter().find(|s| s.name == name).ok_or_else(|| {
