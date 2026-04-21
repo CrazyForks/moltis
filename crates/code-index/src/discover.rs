@@ -125,16 +125,24 @@ mod tests {
         assert!(result.is_err(), "should fail for nonexistent directory");
     }
 
-    #[test]
-    fn test_discover_on_moltis_repo() {
-        // Smoke test: discover tracked files in the moltis repo itself.
-        // CARGO_MANIFEST_DIR = .../moltis/crates/code-index
-        // Repo root = .../moltis (2 parents up)
-        let repo_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+    /// Return the workspace repo root if `.git` exists (i.e. a real clone,
+    /// not an archive checkout). Returns `None` in CI containers that use
+    /// tarball downloads where there is no `.git` directory.
+    fn repo_root_if_git() -> Option<&'static Path> {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()
             .unwrap()
             .parent()
             .unwrap();
+        root.join(".git").exists().then_some(root)
+    }
+
+    #[test]
+    fn test_discover_on_moltis_repo() {
+        let Some(repo_dir) = repo_root_if_git() else {
+            eprintln!("skipping: no .git directory (archive checkout)");
+            return;
+        };
         let files = discover_tracked_files(repo_dir).unwrap();
         assert!(!files.is_empty(), "moltis repo should have tracked files");
 
