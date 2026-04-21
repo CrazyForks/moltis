@@ -1,5 +1,5 @@
 // ── Helpers ──────────────────────────────────────────────────
-import { Marked, Renderer } from "marked";
+import { Marked, Renderer, type Token } from "marked";
 import { hasTranslation, t } from "./i18n";
 import * as S from "./state";
 import type { RpcResponse } from "./types";
@@ -248,9 +248,15 @@ mdRenderer.code = ({ text, lang }) => {
 	const badge = lang ? `<div class="code-lang-badge">${esc(lang)}</div>` : "";
 	return `<pre class="code-block">${badge}<code${langAttr}>${esc(text)}</code></pre>\n`;
 };
-mdRenderer.table = (token) => {
-	const header = token.header.map((cell) => `<th>${esc(cell.text)}</th>`).join("");
-	const body = token.rows.map((row) => `<tr>${row.map((cell) => `<td>${esc(cell.text)}</td>`).join("")}</tr>`).join("");
+mdRenderer.table = function (token) {
+	const renderCell = (cell: { tokens: Token[] }) => this.parser.parseInline(cell.tokens);
+	const header = token.header.map((cell: { tokens: Token[] }) => `<th>${renderCell(cell)}</th>`).join("");
+	const body = token.rows
+		.map(
+			(row: { tokens: Token[] }[]) =>
+				`<tr>${row.map((cell: { tokens: Token[] }) => `<td>${renderCell(cell)}</td>`).join("")}</tr>`,
+		)
+		.join("");
 	return `<div class="msg-table-wrap"><table class="msg-table"><thead><tr>${header}</tr></thead><tbody>${body}</tbody></table></div>\n`;
 };
 mdRenderer.link = ({ href, text }) => {
