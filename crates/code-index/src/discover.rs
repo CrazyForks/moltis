@@ -19,7 +19,12 @@ use crate::error::{Error, Result};
 /// excluded. The returned paths are relative to the repository work
 /// tree root.
 pub fn discover_tracked_files(repo_dir: &Path) -> Result<Vec<PathBuf>> {
-    let repo = gix::discover(repo_dir).map_err(|e| Error::GitRepoNotFound {
+    // Use open_opts with permissive settings so gix skips ownership
+    // checks.  In CI containers the workspace owner differs from the
+    // runner uid, causing gix::discover to reject the repo.
+    let mut opts = gix::open::Options::isolated();
+    opts.permissions = gix::open::Permissions::all();
+    let repo = gix::open_opts(repo_dir, opts).map_err(|e| Error::GitRepoNotFound {
         path: repo_dir.to_path_buf(),
         message: e.to_string(),
     })?;
