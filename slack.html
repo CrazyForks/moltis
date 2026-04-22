@@ -287,6 +287,8 @@ offered = ["slack"]
 <tr><td><code>stream_mode</code></td><td>no</td><td><code>"edit_in_place"</code></td><td>Streaming mode: <code>"edit_in_place"</code>, <code>"native"</code>, or <code>"off"</code></td></tr>
 <tr><td><code>edit_throttle_ms</code></td><td>no</td><td><code>500</code></td><td>Minimum milliseconds between streaming edit updates</td></tr>
 <tr><td><code>thread_replies</code></td><td>no</td><td><code>true</code></td><td>Reply in threads</td></tr>
+<tr><td><code>channel_overrides</code></td><td>no</td><td><code>{}</code></td><td>Per-channel model/provider overrides (see below)</td></tr>
+<tr><td><code>user_overrides</code></td><td>no</td><td><code>{}</code></td><td>Per-user model/provider overrides (see below)</td></tr>
 </tbody></table>
 </div><div id="admonition-allowlist-values-are-strings" class="admonition admonish-tip" role="note" aria-labelledby="admonition-allowlist-values-are-strings-title">
 <div class="admonition-title">
@@ -318,6 +320,15 @@ model_provider = "anthropic"
 stream_mode = "edit_in_place"
 edit_throttle_ms = 500
 thread_replies = true
+
+# Per-channel override: use a different model in a specific Slack channel
+[channels.slack.my-bot.channel_overrides.C0123456789]
+model = "gpt-4o"
+
+# Per-user override: use a specific model/provider for a Slack user
+[channels.slack.my-bot.user_overrides.U0123456789]
+model = "claude-sonnet-4-20250514"
+model_provider = "anthropic"
 </code></pre>
 <h3 id="events-api-mode"><a class="header" href="#events-api-mode">Events API Mode</a></h3>
 <p>If you prefer webhook-based delivery instead of Socket Mode:</p>

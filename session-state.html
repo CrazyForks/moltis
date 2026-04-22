@@ -189,32 +189,50 @@ and the agent itself to persist context across messages within a session.</p>
 <h2 id="overview"><a class="header" href="#overview">Overview</a></h2>
 <p>Session state is scoped to a <code>(session_key, namespace, key)</code> triple, backed by
 SQLite. Each entry stores a string value and is automatically timestamped.</p>
-<p>The agent accesses state through the <code>session_state</code> tool, which supports three
-operations: <code>get</code>, <code>set</code>, and <code>list</code>.</p>
+<p>The agent accesses state through the <code>session_state</code> tool, which supports five
+operations: <code>get</code>, <code>set</code>, <code>delete</code>, <code>list</code>, and <code>clear</code>.</p>
 <h2 id="agent-tool"><a class="header" href="#agent-tool">Agent Tool</a></h2>
 <p>The <code>session_state</code> tool is registered as a built-in tool and available in every
 session.</p>
 <h3 id="get-a-value"><a class="header" href="#get-a-value">Get a value</a></h3>
 <pre><code class="language-json">{
-  "op": "get",
+  "operation": "get",
   "namespace": "my-skill",
   "key": "last_query"
 }
 </code></pre>
+<p>Returns <code>{ "value": "&lt;value or null&gt;" }</code>.</p>
 <h3 id="set-a-value"><a class="header" href="#set-a-value">Set a value</a></h3>
 <pre><code class="language-json">{
-  "op": "set",
+  "operation": "set",
   "namespace": "my-skill",
   "key": "last_query",
   "value": "SELECT * FROM users"
 }
 </code></pre>
+<p>Returns <code>{ "ok": true }</code>. Insert-or-update semantics.</p>
 <h3 id="list-all-keys-in-a-namespace"><a class="header" href="#list-all-keys-in-a-namespace">List all keys in a namespace</a></h3>
 <pre><code class="language-json">{
-  "op": "list",
+  "operation": "list",
   "namespace": "my-skill"
 }
 </code></pre>
+<p>Returns <code>{ "entries": [{ "key": "...", "value": "..." }] }</code>.</p>
+<h3 id="delete-a-single-key"><a class="header" href="#delete-a-single-key">Delete a single key</a></h3>
+<pre><code class="language-json">{
+  "operation": "delete",
+  "namespace": "my-skill",
+  "key": "last_query"
+}
+</code></pre>
+<p>Returns <code>{ "deleted": true }</code> if the key existed, <code>{ "deleted": false }</code> otherwise.</p>
+<h3 id="clear-all-keys-in-a-namespace"><a class="header" href="#clear-all-keys-in-a-namespace">Clear all keys in a namespace</a></h3>
+<pre><code class="language-json">{
+  "operation": "clear",
+  "namespace": "my-skill"
+}
+</code></pre>
+<p>Returns <code>{ "deleted": &lt;count&gt; }</code> with the number of entries removed.</p>
 <h2 id="namespacing"><a class="header" href="#namespacing">Namespacing</a></h2>
 <p>Every state entry belongs to a namespace. This prevents collisions between
 different skills or extensions using state in the same session. Use your skill

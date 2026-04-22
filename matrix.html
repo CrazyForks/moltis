@@ -184,10 +184,10 @@
                 <div id="content" class="content">
                     <main>
                         <h1 id="matrix"><a class="header" href="#matrix">Matrix</a></h1>
-<p>Moltis can connect to Matrix as a bot account using a homeserver URL plus
-either an access token or a username/password login. The integration runs as an
-outbound sync loop, so it does not require a public webhook URL, port
-forwarding, or TLS termination on your side.</p>
+<p>Moltis can connect to Matrix as a bot account using a homeserver URL plus one
+of three authentication methods: OIDC, password, or access token. The
+integration runs as an outbound sync loop, so it does not require a public
+webhook URL, port forwarding, or TLS termination on your side.</p>
 <div id="admonition-warning" class="admonition admonish-warning" role="note" aria-labelledby="admonition-warning-title">
 <div class="admonition-title">
 <div id="admonition-warning-title">
@@ -265,13 +265,40 @@ password auth.</p>
 │         (chat dispatch, tools, memory)                │
 └──────────────────────────────────────────────────────┘
 </code></pre>
+<h2 id="authentication-modes"><a class="header" href="#authentication-modes">Authentication Modes</a></h2>
+<p>Moltis supports three ways to authenticate with a Matrix homeserver:</p>
+<div class="table-wrapper"><table><thead><tr><th>Mode</th><th>When to use</th><th>Encrypted chats?</th></tr></thead><tbody>
+<tr><td><strong>OIDC</strong> (recommended)</td><td>Modern homeservers using Matrix Authentication Service (e.g. matrix.org since April 2025)</td><td>Yes</td></tr>
+<tr><td><strong>Password</strong></td><td>Older homeservers without OIDC support</td><td>Yes</td></tr>
+<tr><td><strong>Access token</strong></td><td>Quick testing or plain-traffic-only bots</td><td>No</td></tr>
+</tbody></table>
+</div>
+<h3 id="oidc-authentication"><a class="header" href="#oidc-authentication">OIDC Authentication</a></h3>
+<p>OIDC is the recommended authentication mode for homeservers that support it.
+Moltis uses the matrix-sdk built-in OAuth 2.0 flow (MSC3861):</p>
+<ol>
+<li>In the web UI, select <strong>OIDC (recommended)</strong> as the authentication mode</li>
+<li>Enter the homeserver URL and click <strong>Authenticate with OIDC</strong></li>
+<li>A browser window opens for you to log in at the homeserver’s identity provider</li>
+<li>After successful authentication, the browser redirects back to Moltis</li>
+<li>Moltis automatically registers a device, exchanges tokens, and starts syncing</li>
+</ol>
+<p>OIDC sessions are refreshed automatically. Moltis persists the session tokens
+to disk so the bot reconnects after restarts without re-authentication.</p>
+<p>To configure OIDC via <code>moltis.toml</code>:</p>
+<pre><code class="language-toml">[channels.matrix.my-bot]
+homeserver = "https://matrix.example.com"
+auth_mode = "oidc"
+</code></pre>
+<p>Note: OIDC initial setup requires the web UI (browser-based flow). After the
+first login, the saved session is reused for restarts.</p>
 <h2 id="prerequisites"><a class="header" href="#prerequisites">Prerequisites</a></h2>
 <p>Before configuring Moltis, you need a Matrix bot account:</p>
 <ol>
 <li>Create or choose a Matrix account for the bot on your homeserver</li>
-<li>Keep the account password available if you want encrypted Matrix chats</li>
-<li>Optionally obtain an access token if you only need plain, unencrypted Matrix traffic</li>
-<li>Note the full user ID, for example <code>@bot:example.com</code></li>
+<li>For OIDC: just the homeserver URL (credentials are entered in the browser)</li>
+<li>For password: keep the account password available</li>
+<li>For access token: obtain a token from Element (plain traffic only)</li>
 <li>Optionally pick a stable <code>device_id</code> for session restore</li>
 </ol>
 <div id="admonition-warning-1" class="admonition admonish-warning" role="note" aria-labelledby="admonition-warning-1-title">

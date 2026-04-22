@@ -271,10 +271,10 @@ hardening flags by default:</p>
 <tr><td><code>--tmpfs /run:rw,nosuid,size=64m</code></td><td>Writable tmpfs for runtime files</td></tr>
 <tr><td><code>--read-only</code></td><td>Read-only root filesystem (prebuilt images only)</td></tr>
 <tr><td><code>--hostname sandbox</code></td><td>Prevents host hostname leakage</td></tr>
-<tr><td><code>--tmpfs /sys/firmware:ro,nosuid</code></td><td>Masks BIOS/UEFI firmware data</td></tr>
-<tr><td><code>--tmpfs /sys/class/dmi:ro,nosuid</code></td><td>Masks system serial numbers and identifiers</td></tr>
-<tr><td><code>--tmpfs /sys/devices/virtual/dmi:ro,nosuid</code></td><td>Masks DMI attributes</td></tr>
-<tr><td><code>--tmpfs /sys/class/block:ro,nosuid</code></td><td>Masks block device info (disk models, LUKS UUIDs)</td></tr>
+<tr><td><code>--tmpfs /sys/firmware:ro,nosuid</code></td><td>Masks BIOS/UEFI firmware data (Docker only)</td></tr>
+<tr><td><code>--tmpfs /sys/class/dmi:ro,nosuid</code></td><td>Masks system serial numbers and identifiers (Docker only)</td></tr>
+<tr><td><code>--tmpfs /sys/devices/virtual/dmi:ro,nosuid</code></td><td>Masks DMI attributes (Docker only)</td></tr>
+<tr><td><code>--tmpfs /sys/class/block:ro,nosuid</code></td><td>Masks block device info (Docker only)</td></tr>
 </tbody></table>
 </div>
 <p>The <code>--read-only</code> flag is applied only to prebuilt sandbox images (where
@@ -284,6 +284,14 @@ filesystem for <code>apt-get</code> provisioning on first start.</p>
 models, LUKS UUIDs) from being visible inside the container. Note that
 <code>tools.fs.deny_paths</code> only restricts Moltis file-access tools — these kernel
 filesystem masks prevent leakage via shell commands as well.</p>
+<blockquote>
+<p><strong>Podman note:</strong> The sysfs tmpfs overlays are applied on Docker only. Podman’s
+OCI runtime performs “tmpcopyup” when mounting tmpfs over sysfs paths, which
+fails under <code>--cap-drop ALL</code> because some sysfs files are permission-denied
+even for root. Podman masks <code>/sys/firmware</code> via its built-in OCI
+<code>MaskedPaths</code>; <code>/sys/class/dmi</code>, <code>/sys/devices/virtual/dmi</code>, and
+<code>/sys/class/block</code> remain readable inside the container on Podman.</p>
+</blockquote>
 <h2 id="wasm-sandbox-wasmtime--wasi"><a class="header" href="#wasm-sandbox-wasmtime--wasi">WASM Sandbox (Wasmtime + WASI)</a></h2>
 <p>The WASM sandbox provides real sandboxed execution using
 <a href="https://wasmtime.dev/">Wasmtime</a> with WASI. Commands execute in an isolated

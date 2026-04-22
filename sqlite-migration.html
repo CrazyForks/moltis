@@ -198,7 +198,7 @@ startup in the correct dependency order.</p>
 │   └── src/lib.rs                     # run_migrations()
 ├── sessions/
 │   ├── migrations/
-│   │   └── 20240205100001_init.sql   # sessions, channel_sessions
+│   │   └── 20240205100001_init.sql   # sessions, channel_sessions, session_state
 │   └── src/lib.rs                     # run_migrations()
 ├── cron/
 │   ├── migrations/
@@ -206,8 +206,17 @@ startup in the correct dependency order.</p>
 │   └── src/lib.rs                     # run_migrations()
 ├── gateway/
 │   ├── migrations/
-│   │   └── 20240205100003_init.sql   # auth, message_log, channels
-│   └── src/server.rs                  # orchestrates moltis.db migrations
+│   │   └── 20240205100003_init.sql   # auth, message_log, channels, agents, ...
+│   └── src/server/
+│       └── prepare_core.rs            # orchestrates moltis.db migrations
+├── webhooks/
+│   ├── migrations/
+│   │   └── 20260407000000_initial.sql # webhooks, webhook_deliveries, ...
+│   └── src/lib.rs                     # run_migrations()
+├── vault/
+│   ├── migrations/
+│   │   └── 20260214000001_vault_metadata.sql  # vault_metadata
+│   └── src/lib.rs                     # run_migrations() (feature-gated)
 └── memory/
     ├── migrations/
     │   └── 20240205100004_init.sql   # files, chunks, embedding_cache, FTS
@@ -218,24 +227,30 @@ startup in the correct dependency order.</p>
 <p>Each crate is autonomous and owns its schema:</p>
 <div class="table-wrapper"><table><thead><tr><th>Crate</th><th>Database</th><th>Tables</th><th>Migration File</th></tr></thead><tbody>
 <tr><td><code>moltis-projects</code></td><td><code>moltis.db</code></td><td><code>projects</code></td><td><code>20240205100000_init.sql</code></td></tr>
-<tr><td><code>moltis-sessions</code></td><td><code>moltis.db</code></td><td><code>sessions</code>, <code>channel_sessions</code></td><td><code>20240205100001_init.sql</code></td></tr>
-<tr><td><code>moltis-cron</code></td><td><code>moltis.db</code></td><td><code>cron_jobs</code>, <code>cron_runs</code></td><td><code>20240205100002_init.sql</code></td></tr>
-<tr><td><code>moltis-gateway</code></td><td><code>moltis.db</code></td><td><code>auth_*</code>, <code>passkeys</code>, <code>api_keys</code>, <code>env_variables</code>, <code>message_log</code>, <code>channels</code></td><td><code>20240205100003_init.sql</code></td></tr>
+<tr><td><code>moltis-sessions</code></td><td><code>moltis.db</code></td><td><code>sessions</code>, <code>channel_sessions</code>, <code>session_state</code></td><td><code>20240205100001_init.sql</code> + 9 migrations</td></tr>
+<tr><td><code>moltis-cron</code></td><td><code>moltis.db</code></td><td><code>cron_jobs</code>, <code>cron_runs</code></td><td><code>20240205100002_init.sql</code> + 1 migration</td></tr>
+<tr><td><code>moltis-gateway</code></td><td><code>moltis.db</code></td><td><code>auth_*</code>, <code>passkeys</code>, <code>api_keys</code>, <code>env_variables</code>, <code>message_log</code>, <code>channels</code>, <code>agents</code>, <code>session_shares</code>, <code>device_pairing</code>, <code>ssh_keys</code>, <code>ssh_targets</code>, <code>auth_audit_log</code></td><td><code>20240205100003_init.sql</code> + 12 migrations</td></tr>
+<tr><td><code>moltis-webhooks</code></td><td><code>moltis.db</code></td><td><code>webhooks</code>, <code>webhook_deliveries</code>, <code>webhook_response_actions</code></td><td><code>20260407000000_initial.sql</code> + 1 migration</td></tr>
+<tr><td><code>moltis-vault</code></td><td><code>moltis.db</code></td><td><code>vault_metadata</code></td><td><code>20260214000001_vault_metadata.sql</code> (feature-gated)</td></tr>
 <tr><td><code>moltis-memory</code></td><td><code>memory.db</code></td><td><code>files</code>, <code>chunks</code>, <code>embedding_cache</code>, <code>chunks_fts</code></td><td><code>20240205100004_init.sql</code></td></tr>
 </tbody></table>
 </div>
 <h3 id="startup-sequence"><a class="header" href="#startup-sequence">Startup Sequence</a></h3>
-<p>The gateway runs migrations in dependency order:</p>
+<p>The gateway runs migrations in dependency order via
+<code>crates/gateway/src/server/prepare_core.rs</code>:</p>
 <pre><pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
-</span>// server.rs
-moltis_projects::run_migrations(&amp;db_pool).await?;   // 1. projects first
-moltis_sessions::run_migrations(&amp;db_pool).await?;   // 2. sessions (FK → projects)
-moltis_cron::run_migrations(&amp;db_pool).await?;       // 3. cron (independent)
-sqlx::migrate!("./migrations").run(&amp;db_pool).await?; // 4. gateway tables
+</span>moltis_projects::run_migrations(&amp;db_pool).await?;    // 1. projects first
+moltis_sessions::run_migrations(&amp;db_pool).await?;    // 2. sessions (FK → projects)
+moltis_cron::run_migrations(&amp;db_pool).await?;        // 3. cron (independent)
+moltis_webhooks::run_migrations(&amp;db_pool).await?;    // 4. webhooks (independent)
+crate::run_migrations(&amp;db_pool).await?;              // 5. gateway tables
+#[cfg(feature = "vault")]
+moltis_vault::run_migrations(&amp;db_pool).await?;      // 6. vault (feature-gated)
 <span class="boring">}</span></code></pre></pre>
 <p>Sessions depends on projects due to a foreign key (<code>sessions.project_id</code> references
-<code>projects.id</code>), so projects must migrate first.</p>
+<code>projects.id</code>), so projects must migrate first. Memory runs separately against
+its own <code>memory.db</code> pool.</p>
 <h3 id="version-tracking"><a class="header" href="#version-tracking">Version Tracking</a></h3>
 <p>sqlx tracks applied migrations in the <code>_sqlx_migrations</code> table:</p>
 <pre><code class="language-sql">SELECT version, description, installed_on, success FROM _sqlx_migrations;
@@ -244,7 +259,7 @@ sqlx::migrate!("./migrations").run(&amp;db_pool).await?; // 4. gateway tables
 must be globally unique across all crates.</p>
 <h2 id="database-files"><a class="header" href="#database-files">Database Files</a></h2>
 <div class="table-wrapper"><table><thead><tr><th>Database</th><th>Location</th><th>Crates</th></tr></thead><tbody>
-<tr><td><code>moltis.db</code></td><td><code>~/.moltis/moltis.db</code></td><td>projects, sessions, cron, gateway</td></tr>
+<tr><td><code>moltis.db</code></td><td><code>~/.moltis/moltis.db</code></td><td>projects, sessions, cron, gateway, webhooks, vault</td></tr>
 <tr><td><code>memory.db</code></td><td><code>~/.moltis/memory.db</code></td><td>memory (separate, managed internally)</td></tr>
 </tbody></table>
 </div>
@@ -308,7 +323,7 @@ CREATE TABLE IF NOT EXISTS session_bookmarks (
 }
 <span class="boring">}</span></code></pre></pre>
 <ol start="4">
-<li>Call it from <code>server.rs</code> in the appropriate order:</li>
+<li>Call it from <code>prepare_core.rs</code> in the appropriate order:</li>
 </ol>
 <pre><pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -379,7 +394,7 @@ In production, migrations handle schema creation.</p>
 <li>Check for syntax errors in migration SQL files</li>
 </ol>
 <h3 id="migration-order-issues"><a class="header" href="#migration-order-issues">Migration Order Issues</a></h3>
-<p>If you see foreign key errors, verify the migration order in <code>server.rs</code>. Parent
+<p>If you see foreign key errors, verify the migration order in <code>prepare_core.rs</code>. Parent
 tables must be created before child tables with FK references.</p>
 <h3 id="checking-migration-status"><a class="header" href="#checking-migration-status">Checking Migration Status</a></h3>
 <pre><code class="language-bash">sqlite3 ~/.moltis/moltis.db "SELECT version, description, success FROM _sqlx_migrations ORDER BY version"
@@ -403,7 +418,7 @@ cargo run  # Creates fresh database with all migrations
 <li>Modify existing migration files after deployment</li>
 <li>Reuse timestamps across crates</li>
 <li>Put multiple crates’ tables in one migration file</li>
-<li>Skip the dependency order in <code>server.rs</code></li>
+<li>Skip the dependency order in <code>prepare_core.rs</code></li>
 </ul>
 
                     </main>

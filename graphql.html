@@ -301,7 +301,7 @@ config values, context payloads, or pass-through node payloads).</p>
 <h3 id="mutation"><a class="header" href="#mutation">Mutation</a></h3>
 <pre><code class="language-graphql">mutation {
   chat {
-    send(message: "Hello from GraphQL") {
+    send(message: "Hello from GraphQL", sessionKey: "main") {
       ok
       sessionKey
     }

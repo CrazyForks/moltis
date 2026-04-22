@@ -198,10 +198,16 @@ LLM response:</p>
 <pre><pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>pub enum StreamEvent {
-    /// Text content delta - a chunk of text from the LLM.
+    /// Text content delta.
     Delta(String),
 
-    /// A tool call has started (for providers with native tool support).
+    /// Raw provider event payload (for debugging API responses).
+    ProviderRaw(serde_json::Value),
+
+    /// Reasoning/planning text delta (not user-visible final answer text).
+    ReasoningDelta(String),
+
+    /// A tool call has started (content_block_start with tool_use).
     ToolCallStart { id: String, name: String, index: usize },
 
     /// Streaming delta for tool call arguments (JSON fragment).
@@ -210,7 +216,7 @@ LLM response:</p>
     /// A tool call's arguments are complete.
     ToolCallComplete { index: usize },
 
-    /// Stream completed successfully with token usage.
+    /// Stream completed successfully.
     Done(Usage),
 
     /// An error occurred.
@@ -220,12 +226,14 @@ LLM response:</p>
 <h3 id="2-llmprovider-trait-cratesagentssrcmodelrs"><a class="header" href="#2-llmprovider-trait-cratesagentssrcmodelrs">2. LlmProvider Trait (<code>crates/agents/src/model.rs</code>)</a></h3>
 <p>The <code>LlmProvider</code> trait defines two streaming methods:</p>
 <ul>
-<li><code>stream()</code> - Basic streaming without tool support</li>
-<li><code>stream_with_tools()</code> - Streaming with tool schemas passed to the API</li>
+<li><code>stream()</code> — Basic streaming without tool support</li>
+<li><code>stream_with_tools()</code> — Streaming with tool schemas passed to the API</li>
 </ul>
-<p>Providers that support streaming with tools (like Anthropic) override
-<code>stream_with_tools()</code>. Others fall back to <code>stream()</code> which ignores the tools
-parameter.</p>
+<p>Both accept <code>Vec&lt;ChatMessage&gt;</code> (not raw JSON). Providers that support
+streaming with tools override <code>stream_with_tools()</code>. Others fall back to
+<code>stream()</code> via the default implementation, which ignores the tools parameter.</p>
+<p>The trait also exposes <code>supports_tools()</code>, <code>reasoning_effort()</code>, and
+<code>with_reasoning_effort()</code> for provider capability discovery.</p>
 <h3 id="3-anthropic-provider-cratesagentssrcprovidersanthropicrs"><a class="header" href="#3-anthropic-provider-cratesagentssrcprovidersanthropicrs">3. Anthropic Provider (<code>crates/agents/src/providers/anthropic.rs</code>)</a></h3>
 <p>The Anthropic provider implements streaming by:</p>
 <ol>
@@ -244,7 +252,7 @@ parameter.</p>
 <tr><td><code>error</code></td><td><code>Error</code></td></tr>
 </tbody></table>
 </div>
-<h3 id="4-agent-runner-cratesagentssrcrunnerrs"><a class="header" href="#4-agent-runner-cratesagentssrcrunnerrs">4. Agent Runner (<code>crates/agents/src/runner.rs</code>)</a></h3>
+<h3 id="4-agent-runner-cratesagentssrcrunnerstreamingrs"><a class="header" href="#4-agent-runner-cratesagentssrcrunnerstreamingrs">4. Agent Runner (<code>crates/agents/src/runner/streaming.rs</code>)</a></h3>
 <p>The <code>run_agent_loop_streaming()</code> function orchestrates the streaming agent
 loop:</p>
 <pre><code>┌─────────────────────────────────────────────────────────┐
@@ -272,21 +280,28 @@ loop:</p>
 │  6. Loop back to step 1                                 │
 └─────────────────────────────────────────────────────────┘
 </code></pre>
-<h3 id="5-gateway-cratesgatewaysrcchatrs"><a class="header" href="#5-gateway-cratesgatewaysrcchatrs">5. Gateway (<code>crates/gateway/src/chat.rs</code>)</a></h3>
-<p>The gateway’s <code>run_with_tools()</code> function:</p>
+<h3 id="5-chat-service-crateschatsrcrun_with_toolsrs"><a class="header" href="#5-chat-service-crateschatsrcrun_with_toolsrs">5. Chat Service (<code>crates/chat/src/run_with_tools.rs</code>)</a></h3>
+<p>The chat service’s <code>run_with_tools()</code> function:</p>
 <ol>
 <li>Sets up an event callback that broadcasts <code>RunnerEvent</code>s via WebSocket</li>
-<li>Calls <code>run_agent_loop_streaming()</code></li>
+<li>Calls <code>run_agent_loop_streaming()</code> from <code>crates/agents/src/runner/streaming.rs</code></li>
 <li>Broadcasts events to connected clients as JSON frames</li>
 </ol>
 <p>Event types broadcast to the UI:</p>
 <div class="table-wrapper"><table><thead><tr><th>RunnerEvent</th><th>WebSocket State</th></tr></thead><tbody>
 <tr><td><code>Thinking</code></td><td><code>thinking</code></td></tr>
 <tr><td><code>ThinkingDone</code></td><td><code>thinking_done</code></td></tr>
+<tr><td><code>ThinkingText(text)</code></td><td><code>thinking_text</code></td></tr>
 <tr><td><code>TextDelta(text)</code></td><td><code>delta</code> with <code>text</code> field</td></tr>
 <tr><td><code>ToolCallStart</code></td><td><code>tool_call_start</code></td></tr>
 <tr><td><code>ToolCallEnd</code></td><td><code>tool_call_end</code></td></tr>
+<tr><td><code>ToolCallRejected</code></td><td><code>tool_call_end</code> with <code>rejected: true</code></td></tr>
 <tr><td><code>Iteration(n)</code></td><td><code>iteration</code></td></tr>
+<tr><td><code>SubAgentStart</code></td><td><code>sub_agent_start</code></td></tr>
+<tr><td><code>SubAgentEnd</code></td><td><code>sub_agent_end</code></td></tr>
+<tr><td><code>AutoContinue</code></td><td><code>notice</code> (“Auto-continue”)</td></tr>
+<tr><td><code>RetryingAfterError</code></td><td><code>retrying</code></td></tr>
+<tr><td><code>LoopInterventionFired</code></td><td><code>notice</code> (“Loop detected”)</td></tr>
 </tbody></table>
 </div>
 <h3 id="6-web-crate-cratesweb"><a class="header" href="#6-web-crate-cratesweb">6. Web Crate (<code>crates/web/</code>)</a></h3>
@@ -326,7 +341,7 @@ web UI concerns separate from API and agent logic in the gateway.</p>
                                                                       │
                                                                       ▼
 ┌──────────────┐   WebSocket  ┌──────────────┐   Routes/WS   ┌──────────────┐    Callback     ┌──────────────┐
-│   Browser    │◀─────────────│  Web Crate   │◀──────────────│   Gateway    │◀────────────────│   Callback   │
+│   Browser    │◀─────────────│  Web Crate   │◀──────────────│ Chat Service │◀────────────────│   Callback   │
 │              │              │  (moltis-web)│               │              │                 │   (on_event) │
 └──────────────┘              └──────────────┘               └──────────────┘                 └──────────────┘
 </code></pre>
@@ -346,8 +361,8 @@ variants</li>
 </span><span class="boring">fn main() {
 </span>fn stream_with_tools(
     &amp;self,
-    messages: Vec&lt;serde_json::Value&gt;,
-    tools: Vec&lt;serde_json::Value&gt;,
+    messages: Vec&lt;ChatMessage&gt;,
+    _tools: Vec&lt;serde_json::Value&gt;,
 ) -&gt; Pin&lt;Box&lt;dyn Stream&lt;Item = StreamEvent&gt; + Send + '_&gt;&gt; {
     Box::pin(async_stream::stream! {
         // Make streaming request to provider API

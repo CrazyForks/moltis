@@ -199,7 +199,7 @@ Registry on every release.</p>
   ghcr.io/moltis-org/moltis:latest
 </code></pre>
 <p>Open https://localhost:13131 in your browser and configure your LLM provider to start chatting.</p>
-<p>For unattended bootstraps, add <code>MOLTIS_PASSWORD</code>, <code>MOLTIS_PROVIDER</code>, and
+<p>For unattended bootstraps, add <code>MOLTIS_TOKEN</code>, <code>MOLTIS_PROVIDER</code>, and
 <code>MOLTIS_API_KEY</code> before first start. That pre-configures auth plus one LLM
 provider so you can skip the browser setup wizard entirely.</p>
 <h3 id="ports"><a class="header" href="#ports">Ports</a></h3>
@@ -244,6 +244,7 @@ sudo update-ca-certificates
 <div class="table-wrapper"><table><thead><tr><th>Path</th><th>Contents</th></tr></thead><tbody>
 <tr><td><code>/home/moltis/.config/moltis</code></td><td>Configuration files: <code>moltis.toml</code>, <code>credentials.json</code>, <code>mcp-servers.json</code></td></tr>
 <tr><td><code>/home/moltis/.moltis</code></td><td>Runtime data: databases, sessions, memory files, logs</td></tr>
+<tr><td><code>/home/moltis/.npm</code></td><td>npm cache (used by stdio-based MCP servers)</td></tr>
 </tbody></table>
 </div>
 <p>You can use named volumes (as shown above) or bind mounts to local directories
@@ -313,7 +314,7 @@ It is preconfigured for reverse-proxy deployments (<code>--no-tls</code>) and in
 the Docker socket mount for sandboxed command execution.</p>
 <p>Key points:</p>
 <ul>
-<li>Set <code>MOLTIS_PASSWORD</code> in the Coolify UI before first deploy.</li>
+<li>Set <code>MOLTIS_TOKEN</code> in the Coolify UI before first deploy.</li>
 <li>Set <code>SERVICE_FQDN_MOLTIS_13131</code> to your app domain.</li>
 <li>Keep Moltis in <code>--no-tls</code> mode behind Coolify’s reverse proxy. If requests
 are redirected to <code>:13131</code>, check that TLS is disabled in Moltis.</li>
@@ -384,6 +385,7 @@ sudo systemctl enable --now podman.socket
 <div class="table-wrapper"><table><thead><tr><th>Variable</th><th>Description</th></tr></thead><tbody>
 <tr><td><code>MOLTIS_CONFIG_DIR</code></td><td>Override config directory (default: <code>~/.config/moltis</code>)</td></tr>
 <tr><td><code>MOLTIS_DATA_DIR</code></td><td>Override data directory (default: <code>~/.moltis</code>)</td></tr>
+<tr><td><code>MOLTIS_NO_TLS</code></td><td>Disable TLS (serve plain HTTP) — equivalent to <code>--no-tls</code></td></tr>
 </tbody></table>
 </div>
 <p>Example:</p>
@@ -410,7 +412,7 @@ and no manual setup:</p>
   moltis:
     image: ghcr.io/moltis-org/moltis:latest
     environment:
-      MOLTIS_PASSWORD: "change-me"
+      MOLTIS_TOKEN: "change-me"
       MOLTIS_PROVIDER: "openai"
       MOLTIS_API_KEY: "sk-..."
 </code></pre>
