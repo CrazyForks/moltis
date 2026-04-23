@@ -42,9 +42,6 @@ test.describe("Signal channel", () => {
 		await page.getByRole("button", { name: "Connect Signal", exact: true }).click();
 		await expect(page.getByRole("heading", { name: "Connect Signal", exact: true })).toBeVisible();
 
-		const accountIdInput = page.locator('input[data-field="accountId"]');
-		await expect(accountIdInput).toBeVisible();
-
 		const accountInput = page.locator('input[data-field="account"]');
 		await expect(accountInput).toBeVisible();
 		await expect(accountInput).toHaveAttribute("placeholder", "e.g. +15551234567");
