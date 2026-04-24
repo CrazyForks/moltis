@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [20260424.08] - 2026-04-24
+
 ## [20260424.07] - 2026-04-24
 ### Fixed
 - Replace unwrap() with expect() in splitter tests
