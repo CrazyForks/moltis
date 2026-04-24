@@ -565,8 +565,7 @@ impl HaWebSocket {
         match msg_type {
             Some("event") => {
                 #[cfg(feature = "metrics")]
-                counter!(ha_metrics::WS_EVENTS_RECEIVED_TOTAL)
-                    .increment(1);
+                counter!(ha_metrics::WS_EVENTS_RECEIVED_TOTAL).increment(1);
 
                 let event = val.get("event");
                 let event_type = event

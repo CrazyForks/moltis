@@ -581,6 +581,17 @@ pub(super) fn build_schema_map() -> KnownKeys {
             )])),
         ),
         (
+            "code_index",
+            Struct(HashMap::from([
+                ("enabled", Leaf),
+                ("extensions", Array(Box::new(Leaf))),
+                ("max_file_size", Leaf),
+                ("skip_binary", Leaf),
+                ("skip_paths", Array(Box::new(Leaf))),
+                ("data_dir", Leaf),
+            ])),
+        ),
+        (
             "voice",
             Struct(HashMap::from([
                 (

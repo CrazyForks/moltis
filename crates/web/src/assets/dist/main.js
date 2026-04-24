@@ -14453,11 +14453,12 @@ function ProjectEditForm(props) {
   const prefixRef = A(null);
   const wtRef = A(null);
   const imageRef = A(null);
+  const indexRef = A(null);
   y$1(() => {
     fetchCachedImages();
   }, []);
   function onSave() {
-    var _a2, _b2, _c, _d, _e, _f, _g, _h;
+    var _a2, _b2, _c, _d, _e, _f, _g, _h, _i;
     const updated = JSON.parse(JSON.stringify(p));
     updated.label = ((_a2 = labelRef.current) == null ? void 0 : _a2.value.trim()) || p.label;
     updated.directory = ((_b2 = dirRef.current) == null ? void 0 : _b2.value.trim()) || p.directory;
@@ -14466,7 +14467,8 @@ function ProjectEditForm(props) {
     updated.teardown_command = ((_e = teardownRef.current) == null ? void 0 : _e.value.trim()) || null;
     updated.branch_prefix = ((_f = prefixRef.current) == null ? void 0 : _f.value.trim()) || null;
     updated.auto_worktree = (_g = wtRef.current) == null ? void 0 : _g.checked;
-    updated.sandbox_image = ((_h = imageRef.current) == null ? void 0 : _h.value.trim()) || null;
+    updated.code_index_enabled = (_h = indexRef.current) == null ? void 0 : _h.checked;
+    updated.sandbox_image = ((_i = imageRef.current) == null ? void 0 : _i.value.trim()) || null;
     updated.updated_at = Date.now();
     sendRpc("projects.upsert", updated).then(() => {
       editingProject.value = null;
@@ -14546,6 +14548,10 @@ function ProjectEditForm(props) {
       /* @__PURE__ */ u("input", { ref: wtRef, type: "checkbox", defaultChecked: p.auto_worktree }),
       /* @__PURE__ */ u("span", { className: "text-xs text-[var(--text)]", children: t("projects:editForm.autoWorktree") })
     ] }),
+    /* @__PURE__ */ u("label", { style: { marginBottom: "10px", display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }, children: [
+      /* @__PURE__ */ u("input", { ref: indexRef, type: "checkbox", defaultChecked: p.code_index_enabled !== false }),
+      /* @__PURE__ */ u("span", { className: "text-xs text-[var(--text)]", children: t("projects:editForm.codeIndex") })
+    ] }),
     /* @__PURE__ */ u("div", { style: { display: "flex", gap: "8px" }, children: [
       /* @__PURE__ */ u("button", { className: "provider-btn", onClick: onSave, children: t("common:actions.save") }),
       /* @__PURE__ */ u(
@@ -14578,7 +14584,8 @@ function ProjectCard(props) {
           p.branch_prefix,
           "/*"
         ] }),
-        p.sandbox_image && /* @__PURE__ */ u("span", { className: "provider-item-badge api-key", title: p.sandbox_image, children: t("projects:badges.image") })
+        p.sandbox_image && /* @__PURE__ */ u("span", { className: "provider-item-badge api-key", title: p.sandbox_image, children: t("projects:badges.image") }),
+        p.code_index_enabled !== false && /* @__PURE__ */ u("span", { className: "provider-item-badge oauth", children: t("projects:badges.indexed") })
       ] }),
       /* @__PURE__ */ u(
         "div",

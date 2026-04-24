@@ -176,17 +176,21 @@ fn normalize_daily_log_date(path: &str) -> String {
     }
 
     // Structural check: NNNN-NN-NN (digits and hyphens at expected positions).
-    let is_dateish = stem
-        .chars()
-        .enumerate()
-        .all(|(i, c)| matches!((i, c), (0..=3, '0'..='9') | (4 | 7, '-') | (5..=6, '0'..='9') | (8..=9, '0'..='9')));
+    let is_dateish = stem.chars().enumerate().all(|(i, c)| {
+        matches!(
+            (i, c),
+            (0..=3, '0'..='9') | (4 | 7, '-') | (5..=6, '0'..='9') | (8..=9, '0'..='9')
+        )
+    });
     if !is_dateish {
         return path.to_owned();
     }
 
     // Already today? Fast path — no allocation needed beyond the original.
     let fmt = format_description!("[year]-[month]-[day]");
-    let today = time::OffsetDateTime::now_utc().format(fmt).unwrap_or_else(|_| stem.to_owned());
+    let today = time::OffsetDateTime::now_utc()
+        .format(fmt)
+        .unwrap_or_else(|_| stem.to_owned());
     if stem == today {
         return path.to_owned();
     }
@@ -288,7 +292,9 @@ pub async fn run_silent_memory_turn_with_prompt(
     // Inject today's date as an advisory hint. The tool layer enforces the correct
     // date regardless, but giving the LLM the right date reduces unnecessary rewrites.
     let fmt = format_description!("[year]-[month]-[day]");
-    let today = time::OffsetDateTime::now_utc().format(fmt).unwrap_or_else(|_| "YYYY-MM-DD".to_owned());
+    let today = time::OffsetDateTime::now_utc()
+        .format(fmt)
+        .unwrap_or_else(|_| "YYYY-MM-DD".to_owned());
     let system_prompt = system_prompt.replace("YYYY-MM-DD", &today);
 
     info!(
@@ -629,27 +635,51 @@ mod tests {
         let today = time::OffsetDateTime::now_utc().format(fmt).unwrap();
 
         // Past dates get rewritten
-        assert_eq!(normalize_daily_log_date("memory/2024-05-23.md"), format!("memory/{today}.md"));
-        assert_eq!(normalize_daily_log_date("memory/2025-04-09.md"), format!("memory/{today}.md"));
+        assert_eq!(
+            normalize_daily_log_date("memory/2024-05-23.md"),
+            format!("memory/{today}.md")
+        );
+        assert_eq!(
+            normalize_daily_log_date("memory/2025-04-09.md"),
+            format!("memory/{today}.md")
+        );
 
         // Today's date passes through
-        assert_eq!(normalize_daily_log_date(&format!("memory/{today}.md")), format!("memory/{today}.md"));
+        assert_eq!(
+            normalize_daily_log_date(&format!("memory/{today}.md")),
+            format!("memory/{today}.md")
+        );
     }
 
     #[test]
     fn normalize_daily_log_date_preserves_non_date_paths() {
         // Non-date filenames pass through unchanged
         assert_eq!(normalize_daily_log_date("MEMORY.md"), "MEMORY.md");
-        assert_eq!(normalize_daily_log_date("memory/notes.md"), "memory/notes.md");
-        assert_eq!(normalize_daily_log_date("memory/project-x.md"), "memory/project-x.md");
-        assert_eq!(normalize_daily_log_date("memory/config.md"), "memory/config.md");
+        assert_eq!(
+            normalize_daily_log_date("memory/notes.md"),
+            "memory/notes.md"
+        );
+        assert_eq!(
+            normalize_daily_log_date("memory/project-x.md"),
+            "memory/project-x.md"
+        );
+        assert_eq!(
+            normalize_daily_log_date("memory/config.md"),
+            "memory/config.md"
+        );
     }
 
     #[test]
     fn normalize_daily_log_date_preserves_malformed_dates() {
         // Things that look vaguely date-like but aren't YYYY-MM-DD
-        assert_eq!(normalize_daily_log_date("memory/24-01-15.md"), "memory/24-01-15.md");
-        assert_eq!(normalize_daily_log_date("memory/2024-1-15.md"), "memory/2024-1-15.md");
+        assert_eq!(
+            normalize_daily_log_date("memory/24-01-15.md"),
+            "memory/24-01-15.md"
+        );
+        assert_eq!(
+            normalize_daily_log_date("memory/2024-1-15.md"),
+            "memory/2024-1-15.md"
+        );
     }
 
     #[test]

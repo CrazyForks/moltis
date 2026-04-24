@@ -10,9 +10,7 @@ use {
 };
 
 #[cfg(feature = "metrics")]
-use {
-    super::client::{record_rest_error, record_rest_request},
-};
+use super::client::{record_rest_error, record_rest_request};
 
 impl HomeAssistantClient {
     // ── Discovery / introspection ────────────────────────────────────

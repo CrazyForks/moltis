@@ -110,7 +110,10 @@ impl HomeAssistantClient {
     }
 
     pub(crate) fn auth_header(&self) -> (&str, String) {
-        ("Authorization", format!("Bearer {}", self.token.expose_secret()))
+        (
+            "Authorization",
+            format!("Bearer {}", self.token.expose_secret()),
+        )
     }
 
     /// Check if the HA instance is reachable and the token is valid.

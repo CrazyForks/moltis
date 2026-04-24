@@ -11,6 +11,8 @@ use {
 mod agents;
 #[path = "schema/chat.rs"]
 mod chat;
+#[path = "schema/code_index.rs"]
+mod code_index;
 #[path = "schema/hooks.rs"]
 mod hooks;
 #[path = "schema/memory.rs"]
@@ -27,8 +29,8 @@ mod tools;
 mod voice;
 
 pub use {
-    agents::*, chat::*, hooks::*, memory::*, providers::*, runtime::*, system::*, tools::*,
-    voice::*,
+    agents::*, chat::*, code_index::*, hooks::*, memory::*, providers::*, runtime::*, system::*,
+    tools::*, voice::*,
 };
 
 // ── Reasoning effort ──────────────────────────────────────────────────────
@@ -250,6 +252,8 @@ pub struct MoltisConfig {
     pub caldav: CalDavConfig,
     pub home_assistant: HomeAssistantConfig,
     pub webhooks: WebhooksConfig,
+    /// Code-index configuration for codebase search tools.
+    pub code_index: CodeIndexTomlConfig,
     /// Per-model overrides that apply across all providers.
     ///
     /// Keys are normalized model IDs. Provider-scoped overrides

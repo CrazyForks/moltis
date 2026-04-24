@@ -45,4 +45,22 @@ test.describe("Projects page", () => {
 		await navigateAndWait(page, "/projects");
 		expect(pageErrors).toEqual([]);
 	});
+
+	test("edit form includes code index checkbox", async ({ page }) => {
+		const pageErrors = watchPageErrors(page);
+		await navigateAndWait(page, "/projects");
+
+		// Open the edit form for the first project card
+		const editButton = page.locator("button").filter({ hasText: /edit/i }).first();
+		await editButton.click();
+
+		// Verify the code index checkbox label is visible
+		await expect(page.getByText(/enable code indexing/i)).toBeVisible();
+
+		// Verify the checkbox is present and checked by default
+		const checkbox = page.getByRole("checkbox", { name: /enable code indexing/i });
+		await expect(checkbox).toBeChecked();
+
+		expect(pageErrors).toEqual([]);
+	});
 });
