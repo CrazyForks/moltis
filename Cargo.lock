@@ -7584,18 +7584,22 @@ dependencies = [
  "anyhow",
  "async-trait",
  "bytes",
+ "dotenvy",
  "futures-util",
  "moltis-agents",
  "moltis-config",
+ "moltis-metrics",
  "reqwest 0.13.2",
  "secrecy 0.8.0",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
+ "time",
  "tokio",
  "tokio-tungstenite 0.26.2",
  "tracing",
  "urlencoding",
+ "wiremock",
 ]
 
 [[package]]
