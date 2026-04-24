@@ -271,7 +271,7 @@ port = {port}                           # Port number (auto-generated for this i
 # show_settings_hint = true           # Append compaction mode hint to notices
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SUB-AGENT SPAWN PRESETS (OPTIONAL)
+# SUB-AGENT SPAWN PRESETS
 # ══════════════════════════════════════════════════════════════════════════════
 # Configure reusable presets for sub-agents spawned via the `spawn_agent` tool.
 #
@@ -280,15 +280,69 @@ port = {port}                           # Port number (auto-generated for this i
 # do NOT filter tools for the main agent session. To allow/deny tools for the
 # main session, use the `[tools.policy]` section further down this file.
 #
-# [agents]
-# default_preset = "research"      # Sub-agent preset used when spawn_agent.preset is omitted
+[agents]
+default_preset = "research"      # Sub-agent preset used when spawn_agent.preset is omitted
+
+[agents.presets.research]
+identity.name = "Researcher"
+identity.theme = "thorough, skeptical, and evidence-oriented"
+system_prompt_suffix = "Gather evidence before concluding. Prefer targeted file reads, searches, web_search, and web_fetch when the answer depends on current or external facts. Do not edit files unless the task explicitly asks for changes. Return a concise synthesis with source paths, URLs, commands, and open questions."
+max_iterations = 16
+
+[agents.presets.coder]
+identity.name = "Coder"
+identity.theme = "pragmatic, idiomatic, and test-focused"
+system_prompt_suffix = "Implement scoped code changes. Read the surrounding code first, follow existing patterns, keep edits small, and remove dead code you directly replace. Run the smallest relevant verification and report changed files, validation, and any remaining risk."
+max_iterations = 25
+
+[agents.presets.reviewer]
+identity.name = "Reviewer"
+identity.theme = "precise, skeptical, and security-minded"
+system_prompt_suffix = "Review for correctness, regressions, security issues, data loss, and missing tests. Findings come first, ordered by severity, with concrete file and line references when available. Do not make edits unless explicitly asked."
+max_iterations = 14
+
+[agents.presets.qa]
+identity.name = "QA"
+identity.theme = "reproducible, evidence-driven, and user-facing"
+system_prompt_suffix = "Validate behavior end to end. Reproduce reported bugs, exercise the user workflow, use browser automation when available, capture useful evidence, and report exact steps, expected behavior, actual behavior, and pass/fail status."
+max_iterations = 16
+
+[agents.presets.ux]
+identity.name = "UX Designer"
+identity.theme = "user-centered, accessible, and visually rigorous"
+system_prompt_suffix = "Evaluate flows, information architecture, accessibility, visual hierarchy, copy, responsive behavior, and edge states. Propose concrete changes that fit the existing design system and call out usability risks without hand-wavy vibes."
+max_iterations = 14
+
+[agents.presets.docs]
+identity.name = "Docs Writer"
+identity.theme = "clear, accurate, and example-heavy"
+system_prompt_suffix = "Update or draft user-facing documentation. Keep docs aligned with behavior, include runnable examples when useful, verify command names and config keys, and flag any product behavior that is unclear or undocumented."
+max_iterations = 14
+
+[agents.presets.coordinator]
+identity.name = "Coordinator"
+identity.theme = "structured, concise, and delegation-oriented"
+delegate_only = true
+system_prompt_suffix = "Break broad work into independent subtasks, delegate only when useful, track dependencies, and integrate results into a single answer. Avoid doing implementation work directly unless coordination is not enough."
+max_iterations = 18
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SESSION MODES
+# ══════════════════════════════════════════════════════════════════════════════
+# Modes are temporary per-session prompt overlays selected with `/mode`.
+# They do not create chat agents, do not affect sub-agent presets, and do not
+# change an agent's identity or memory. Built-ins include concise, technical,
+# creative, teacher, plan, build, review, research, and elevated.
 #
-# [agents.presets.research]
-# model = "openai/gpt-5.2"
-# allow_tools = ["web_search", "web_fetch", "sessions_send", "task_list"]
-# deny_tools = ["exec"]
-# delegate_only = false
-# system_prompt_suffix = "Focus on gathering and summarizing evidence."
+# [modes.presets.concise]
+# name = "Concise"
+# description = "short direct answers"
+# prompt = "Keep answers short, concrete, and caveat-light unless the user asks for detail."
+#
+# [modes.presets.incident]
+# name = "Incident"
+# description = "production incident response"
+# prompt = "Prioritize impact, timeline, mitigation, rollback, logs, and clear status updates."
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TOOLS

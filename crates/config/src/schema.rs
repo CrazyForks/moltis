@@ -17,6 +17,8 @@ mod code_index;
 mod hooks;
 #[path = "schema/memory.rs"]
 mod memory;
+#[path = "schema/modes.rs"]
+mod modes;
 #[path = "schema/providers.rs"]
 mod providers;
 #[path = "schema/runtime.rs"]
@@ -29,8 +31,8 @@ mod tools;
 mod voice;
 
 pub use {
-    agents::*, chat::*, code_index::*, hooks::*, memory::*, providers::*, runtime::*, system::*,
-    tools::*, voice::*,
+    agents::*, chat::*, code_index::*, hooks::*, memory::*, modes::*, providers::*, runtime::*,
+    system::*, tools::*, voice::*,
 };
 
 // ── Reasoning effort ──────────────────────────────────────────────────────
@@ -50,7 +52,7 @@ pub enum ReasoningEffort {
 }
 
 /// Agent identity (name, emoji, theme).
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AgentIdentity {
     pub name: Option<String>,
@@ -233,6 +235,7 @@ pub struct MoltisConfig {
     pub chat: ChatConfig,
     pub tools: ToolsConfig,
     pub agents: AgentsConfig,
+    pub modes: ModesConfig,
     pub skills: SkillsConfig,
     pub mcp: McpConfig,
     pub channels: ChannelsConfig,

@@ -721,6 +721,7 @@ pub(super) fn register(reg: &mut MethodRegistry) {
                                 "emoji": preset.identity.emoji,
                                 "theme": preset.identity.theme,
                                 "model": preset.model,
+                                "system_prompt_suffix": preset.system_prompt_suffix,
                                 "toml": toml_str,
                                 "provenance": provenance,
                             })

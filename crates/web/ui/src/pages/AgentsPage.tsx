@@ -6,7 +6,7 @@
 import type { VNode } from "preact";
 import { render } from "preact";
 import { useEffect, useState } from "preact/hooks";
-import { Loading } from "../components/forms";
+import { Loading, TabBar } from "../components/forms";
 import { EmojiPicker } from "../emoji-picker";
 import { refresh as refreshGon } from "../gon";
 import { parseAgentsListPayload, sendRpc } from "../helpers";
@@ -14,6 +14,7 @@ import { navigate } from "../router";
 import { settingsPath } from "../routes";
 import { fetchSessions } from "../sessions";
 import { targetValue } from "../typed-events";
+import type { RpcResponse } from "../types";
 import { confirmDialog } from "../ui";
 
 // ── Types ───────────────────────────────────────────────────
@@ -42,8 +43,16 @@ interface ConfigPreset {
 	emoji?: string;
 	theme?: string;
 	model?: string;
+	system_prompt_suffix?: string;
 	toml?: string;
 	provenance?: "built_in" | "user_override" | "custom";
+}
+
+interface ModePreset {
+	id: string;
+	name: string;
+	description: string;
+	prompt: string;
 }
 
 interface AgentFormProps {
@@ -62,13 +71,44 @@ interface AgentCardProps {
 
 interface PresetCardProps {
 	preset: ConfigPreset;
+	creating: boolean;
+	onCreate: (preset: ConfigPreset) => void;
 	onRevert?: (id: string) => void;
+}
+
+interface ModeCardProps {
+	mode: ModePreset;
+}
+
+interface UnknownRecord {
+	[key: string]: unknown;
 }
 
 const WS_RETRY_LIMIT = 75;
 const WS_RETRY_DELAY_MS = 200;
 
 let containerRef: HTMLElement | null = null;
+
+function isRecord(value: unknown): value is UnknownRecord {
+	return typeof value === "object" && value !== null;
+}
+
+function parseModePayload(value: unknown): ModePreset | null {
+	if (!isRecord(value)) return null;
+	const id = typeof value.id === "string" ? value.id : "";
+	if (!id) return null;
+	return {
+		id,
+		name: typeof value.name === "string" && value.name.trim() ? value.name : id,
+		description: typeof value.description === "string" ? value.description : "",
+		prompt: typeof value.prompt === "string" ? value.prompt : "",
+	};
+}
+
+function parseModesPayload(value: unknown): ModePreset[] {
+	if (!(isRecord(value) && Array.isArray(value.modes))) return [];
+	return value.modes.map(parseModePayload).filter((mode): mode is ModePreset => mode !== null);
+}
 
 export function initAgents(container: HTMLElement, subPath?: string | null): void {
 	containerRef = container;
@@ -341,6 +381,7 @@ function AgentCard({ agent, defaultId, onEdit, onDelete, onSetDefault }: AgentCa
 				<div className="flex gap-2">
 					{isMain ? (
 						<button
+							type="button"
 							className="provider-btn provider-btn-secondary"
 							style={{ fontSize: "0.7rem", padding: "3px 8px" }}
 							onClick={() => navigate(settingsPath("identity"))}
@@ -350,6 +391,7 @@ function AgentCard({ agent, defaultId, onEdit, onDelete, onSetDefault }: AgentCa
 					) : (
 						<>
 							<button
+								type="button"
 								className="provider-btn provider-btn-secondary"
 								style={{ fontSize: "0.7rem", padding: "3px 8px" }}
 								onClick={() => onEdit(agent)}
@@ -357,6 +399,7 @@ function AgentCard({ agent, defaultId, onEdit, onDelete, onSetDefault }: AgentCa
 								Edit
 							</button>
 							<button
+								type="button"
 								className="provider-btn provider-btn-danger"
 								style={{ fontSize: "0.7rem", padding: "3px 8px" }}
 								onClick={() => onDelete(agent)}
@@ -367,6 +410,7 @@ function AgentCard({ agent, defaultId, onEdit, onDelete, onSetDefault }: AgentCa
 					)}
 					{!isDefault && (
 						<button
+							type="button"
 							className="provider-btn provider-btn-secondary"
 							style={{ fontSize: "0.7rem", padding: "3px 8px" }}
 							onClick={() => onSetDefault(agent)}
@@ -394,7 +438,7 @@ function AgentCard({ agent, defaultId, onEdit, onDelete, onSetDefault }: AgentCa
 	);
 }
 
-// ── Config-only preset card (read-only) ─────────────────────
+// ── Config-only preset card ─────────────────────────────────
 
 function provenanceBadge(provenance?: string): VNode | null {
 	if (provenance === "built_in") return <span className="recommended-badge">Built-in</span>;
@@ -403,7 +447,7 @@ function provenanceBadge(provenance?: string): VNode | null {
 	return null;
 }
 
-function PresetCard({ preset, onRevert }: PresetCardProps): VNode {
+function PresetCard({ preset, creating, onCreate, onRevert }: PresetCardProps): VNode {
 	const [expanded, setExpanded] = useState(false);
 	const isOverridden = preset.provenance === "user_override";
 	return (
@@ -417,6 +461,16 @@ function PresetCard({ preset, onRevert }: PresetCardProps): VNode {
 				</div>
 				<div className="flex gap-2">
 					<button
+						type="button"
+						className="provider-btn"
+						style={{ fontSize: "0.7rem", padding: "3px 8px" }}
+						disabled={creating}
+						onClick={() => onCreate(preset)}
+					>
+						{creating ? "Adding..." : "Add to Chat"}
+					</button>
+					<button
+						type="button"
 						className="provider-btn provider-btn-secondary"
 						style={{ fontSize: "0.7rem", padding: "3px 8px" }}
 						onClick={() => setExpanded(!expanded)}
@@ -425,6 +479,7 @@ function PresetCard({ preset, onRevert }: PresetCardProps): VNode {
 					</button>
 					{isOverridden && onRevert && (
 						<button
+							type="button"
 							className="provider-btn provider-btn-secondary"
 							style={{ fontSize: "0.7rem", padding: "3px 8px" }}
 							onClick={() => onRevert(preset.id)}
@@ -454,14 +509,50 @@ function PresetCard({ preset, onRevert }: PresetCardProps): VNode {
 	);
 }
 
+// ── Mode card ───────────────────────────────────────────────
+
+function ModeCard({ mode }: ModeCardProps): VNode {
+	const [expanded, setExpanded] = useState(false);
+	const title = mode.name || mode.id;
+	return (
+		<div className="backend-card">
+			<div className="flex items-center justify-between gap-3">
+				<div className="flex min-w-0 flex-col gap-1">
+					<div className="flex items-center gap-2">
+						<span className="text-sm font-medium text-[var(--text-strong)]">{title}</span>
+						<span className="tier-badge">{mode.id}</span>
+					</div>
+					{mode.description && <div className="text-xs text-[var(--muted)]">{mode.description}</div>}
+				</div>
+				<button
+					type="button"
+					className="provider-btn provider-btn-secondary"
+					style={{ fontSize: "0.7rem", padding: "3px 8px" }}
+					onClick={() => setExpanded(!expanded)}
+				>
+					{expanded ? "Hide" : "View"}
+				</button>
+			</div>
+			{expanded && (
+				<pre className="text-xs mt-2 p-2 rounded bg-[var(--bg-offset)] font-mono whitespace-pre-wrap overflow-x-auto max-h-[200px] overflow-y-auto">
+					{mode.prompt}
+				</pre>
+			)}
+		</div>
+	);
+}
+
 // ── Main page ───────────────────────────────────────────────
 
 function AgentsPageComponent({ subPath }: { subPath?: string }): VNode {
 	const [agents, setAgents] = useState<AgentPersona[]>([]);
 	const [configPresets, setConfigPresets] = useState<ConfigPreset[]>([]);
+	const [modes, setModes] = useState<ModePreset[]>([]);
 	const [defaultId, setDefaultId] = useState("main");
 	const [isLoading, setIsLoading] = useState(true);
 	const [editing, setEditing] = useState<null | "new" | AgentPersona>(null);
+	const [creatingPresetId, setCreatingPresetId] = useState<string | null>(null);
+	const [activeTab, setActiveTab] = useState("chat");
 	const [error, setError] = useState<string | null>(null);
 
 	function fetchAgents(): void {
@@ -491,16 +582,49 @@ function AgentsPageComponent({ subPath }: { subPath?: string }): VNode {
 	}
 
 	function fetchConfigPresets(): void {
-		sendRpc("agents.presets_list", {}).then((res) => {
-			if (res?.ok && (res.payload as { presets?: ConfigPreset[] })?.presets) {
-				setConfigPresets((res.payload as { presets: ConfigPreset[] }).presets);
-			}
-		});
+		let attempts = 0;
+		function load(): void {
+			sendRpc("agents.presets_list", {}).then((res) => {
+				if (
+					(res?.error?.code === "UNAVAILABLE" || res?.error?.message === "WebSocket not connected") &&
+					attempts < WS_RETRY_LIMIT
+				) {
+					attempts += 1;
+					window.setTimeout(load, WS_RETRY_DELAY_MS);
+					return;
+				}
+				if (res?.ok && (res.payload as { presets?: ConfigPreset[] })?.presets) {
+					setConfigPresets((res.payload as { presets: ConfigPreset[] }).presets);
+				}
+			});
+		}
+		load();
+	}
+
+	function fetchModes(): void {
+		let attempts = 0;
+		function load(): void {
+			sendRpc("modes.list", {}).then((res) => {
+				if (
+					(res?.error?.code === "UNAVAILABLE" || res?.error?.message === "WebSocket not connected") &&
+					attempts < WS_RETRY_LIMIT
+				) {
+					attempts += 1;
+					window.setTimeout(load, WS_RETRY_DELAY_MS);
+					return;
+				}
+				if (res?.ok) {
+					setModes(parseModesPayload(res.payload));
+				}
+			});
+		}
+		load();
 	}
 
 	useEffect(() => {
 		fetchAgents();
 		fetchConfigPresets();
+		fetchModes();
 		// Auto-open create form when navigating to /settings/agents/new
 		if (subPath === "new") {
 			setEditing("new");
@@ -550,6 +674,38 @@ function AgentsPageComponent({ subPath }: { subPath?: string }): VNode {
 		});
 	}
 
+	function onCreateFromPreset(preset: ConfigPreset): void {
+		setError(null);
+		setCreatingPresetId(preset.id);
+		sendRpc("agents.create", {
+			id: preset.id,
+			name: preset.name || preset.id,
+			emoji: preset.emoji || null,
+			theme: preset.theme || null,
+		}).then((createRes) => {
+			if (!createRes?.ok) {
+				setCreatingPresetId(null);
+				setError(createRes?.error?.message || "Failed to create agent from preset");
+				return;
+			}
+			const promptSuffix = preset.system_prompt_suffix?.trim();
+			const afterSoul: Promise<RpcResponse> = promptSuffix
+				? sendRpc("agents.identity.update_soul", { agent_id: preset.id, soul: promptSuffix })
+				: Promise.resolve({ ok: true, payload: undefined, error: undefined });
+			afterSoul.then((soulRes) => {
+				setCreatingPresetId(null);
+				if (!soulRes?.ok) {
+					setError(soulRes?.error?.message || "Created agent, but failed to copy preset prompt");
+					return;
+				}
+				refreshGon();
+				fetchSessions();
+				fetchAgents();
+				fetchConfigPresets();
+			});
+		});
+	}
+
 	if (isLoading) {
 		return (
 			<div className="flex-1 flex flex-col min-w-0 p-4 gap-4 overflow-y-auto">
@@ -576,20 +732,28 @@ function AgentsPageComponent({ subPath }: { subPath?: string }): VNode {
 
 	return (
 		<div className="flex-1 flex flex-col min-w-0 p-4 gap-4 overflow-y-auto">
-			<div className="flex items-center gap-3">
+			<div className="flex items-center gap-3 flex-wrap">
 				<h2 className="text-lg font-medium text-[var(--text-strong)]">Agents</h2>
-				<button
-					className="provider-btn"
-					style={{ fontSize: "0.75rem", padding: "4px 10px" }}
-					onClick={() => setEditing("new")}
-				>
-					New Agent
-				</button>
+				{activeTab === "chat" && (
+					<button
+						type="button"
+						className="provider-btn"
+						style={{ fontSize: "0.75rem", padding: "4px 10px" }}
+						onClick={() => setEditing("new")}
+					>
+						New Agent
+					</button>
+				)}
 			</div>
-			<p className="text-xs text-[var(--muted)] leading-relaxed" style={{ maxWidth: "600px", margin: 0 }}>
-				Create agent personas with different identities and personalities. Each agent has its own memory and system
-				prompt.
-			</p>
+			<TabBar
+				tabs={[
+					{ id: "chat", label: "Chat Agents", badge: agents.length || undefined },
+					{ id: "subagents", label: "Sub-Agents", badge: configPresets.length || undefined },
+					{ id: "modes", label: "Modes", badge: modes.length || undefined },
+				]}
+				active={activeTab}
+				onChange={setActiveTab}
+			/>
 
 			{error && (
 				<span className="text-xs" style={{ color: "var(--error)" }}>
@@ -597,26 +761,72 @@ function AgentsPageComponent({ subPath }: { subPath?: string }): VNode {
 				</span>
 			)}
 
-			<div className="flex flex-col gap-2" style={{ maxWidth: "600px" }}>
-				{agents.map((agent) => (
-					<AgentCard
-						key={agent.id}
-						agent={agent}
-						defaultId={defaultId}
-						onEdit={(a) => setEditing(a)}
-						onDelete={onDelete}
-						onSetDefault={onSetDefault}
-					/>
-				))}
-			</div>
+			{activeTab === "chat" && (
+				<section className="flex flex-col gap-3 max-w-[600px]" aria-label="Chat Agents panel">
+					<div className="flex flex-col gap-1">
+						<h3 className="text-xs font-medium text-[var(--muted)]">Chat Agents</h3>
+						<p className="text-xs text-[var(--muted)] leading-relaxed" style={{ margin: 0 }}>
+							Persistent identities you can select in chat. Each chat agent has its own memory, system prompt, sessions,
+							and fallback setting.
+						</p>
+					</div>
+					<div className="flex flex-col gap-2">
+						{agents.map((agent) => (
+							<AgentCard
+								key={agent.id}
+								agent={agent}
+								defaultId={defaultId}
+								onEdit={(a) => setEditing(a)}
+								onDelete={onDelete}
+								onSetDefault={onSetDefault}
+							/>
+						))}
+					</div>
+				</section>
+			)}
 
-			{configPresets.length > 0 && (
-				<div className="flex flex-col gap-2 mt-2" style={{ maxWidth: "600px" }}>
-					<h3 className="text-xs font-medium text-[var(--muted)]">Config-only Presets</h3>
-					{configPresets.map((preset) => (
-						<PresetCard key={preset.id} preset={preset} onRevert={onRevertPreset} />
-					))}
-				</div>
+			{activeTab === "subagents" && (
+				<section className="flex flex-col gap-2 max-w-[600px]" aria-label="Sub-Agents panel">
+					<div className="flex flex-col gap-1">
+						<h3 className="text-xs font-medium text-[var(--muted)]">Sub-Agent Presets</h3>
+						<p className="text-xs text-[var(--muted)] leading-relaxed" style={{ margin: 0 }}>
+							Config roles already usable by spawn_agent for delegated work. Add one to chat only when you want that
+							preset to become a persistent chat agent with memory and sessions.
+						</p>
+					</div>
+					{configPresets.length > 0 ? (
+						configPresets.map((preset) => (
+							<PresetCard
+								key={preset.id}
+								preset={preset}
+								creating={creatingPresetId === preset.id}
+								onCreate={onCreateFromPreset}
+								onRevert={onRevertPreset}
+							/>
+						))
+					) : (
+						<div className="backend-card text-xs text-[var(--muted)]">
+							All configured sub-agent presets are already available as chat agents.
+						</div>
+					)}
+				</section>
+			)}
+
+			{activeTab === "modes" && (
+				<section className="flex flex-col gap-2 max-w-[600px]" aria-label="Modes panel">
+					<div className="flex flex-col gap-1">
+						<h3 className="text-xs font-medium text-[var(--muted)]">Modes</h3>
+						<p className="text-xs text-[var(--muted)] leading-relaxed" style={{ margin: 0 }}>
+							Temporary per-session prompt overlays. Use /mode in chat or any connected channel to switch how the
+							current agent should work without changing its identity, memory, or sub-agent presets.
+						</p>
+					</div>
+					{modes.length > 0 ? (
+						modes.map((mode) => <ModeCard key={mode.id} mode={mode} />)
+					) : (
+						<div className="backend-card text-xs text-[var(--muted)]">No modes are configured.</div>
+					)}
+				</section>
 			)}
 		</div>
 	);
