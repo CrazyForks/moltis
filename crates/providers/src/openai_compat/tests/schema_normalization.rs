@@ -6,7 +6,8 @@ use {
         schema_normalization::{
             collapse_schema_unions_for_non_strict_tools, strip_null_from_typed_enums,
         },
-        strict_mode::patch_schema_for_strict_mode, to_openai_tools, to_responses_api_tools,
+        strict_mode::patch_schema_for_strict_mode,
+        to_openai_tools, to_responses_api_tools,
     },
     moltis_agents::model::StreamEvent,
 };

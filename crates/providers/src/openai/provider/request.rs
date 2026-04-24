@@ -145,12 +145,8 @@ impl OpenAiProvider {
     /// Centralises strict-mode patching, null-enum stripping, and any
     /// future provider quirks so callers (streaming, completion) don't
     /// duplicate the logic.
-    pub(super) fn prepare_chat_tools(
-        &self,
-        tools: &[serde_json::Value],
-    ) -> Vec<serde_json::Value> {
-        let mut converted =
-            crate::openai_compat::to_openai_tools(tools, self.needs_strict_tools());
+    pub(super) fn prepare_chat_tools(&self, tools: &[serde_json::Value]) -> Vec<serde_json::Value> {
+        let mut converted = crate::openai_compat::to_openai_tools(tools, self.needs_strict_tools());
 
         if self.rejects_null_in_enums() {
             for tool in &mut converted {
