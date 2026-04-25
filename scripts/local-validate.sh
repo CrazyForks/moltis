@@ -151,16 +151,16 @@ detect_nightly_toolchain() {
     return
   fi
 
-  if [[ -f justfile ]]; then
-    local justfile_toolchain
-    justfile_toolchain="$(sed -nE 's/^nightly_toolchain := "([^"]+)"/\1/p' justfile | head -n1)"
-    if [[ -n "$justfile_toolchain" ]]; then
-      printf '%s' "$justfile_toolchain"
+  if [[ -f rust-toolchain.toml ]]; then
+    local toml_toolchain
+    toml_toolchain="$(sed -nE 's/^channel[[:space:]]*=[[:space:]]*"([^"]+)"/\1/p' rust-toolchain.toml | head -n1)"
+    if [[ -n "$toml_toolchain" ]]; then
+      printf '%s' "$toml_toolchain"
       return
     fi
   fi
 
-  printf '%s' "nightly-2026-04-24"
+  printf '%s' "nightly"
 }
 
 nightly_toolchain="$(detect_nightly_toolchain)"

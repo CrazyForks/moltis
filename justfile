@@ -2,8 +2,8 @@
 default:
     @just --list
 
-# Keep local formatting/linting toolchain aligned with CI/release workflows.
-nightly_toolchain := "nightly-2026-04-24"
+# Read nightly toolchain from rust-toolchain.toml (single source of truth).
+nightly_toolchain := `grep '^channel' rust-toolchain.toml | sed 's/.*"\(.*\)"/\1/'`
 
 # Format Rust code
 format:

@@ -15,8 +15,10 @@ FROM rust:bookworm AS builder
 
 WORKDIR /build
 
-# Switch to nightly (pinned for reproducibility; wacore-binary needs portable_simd)
-RUN rustup install nightly-2026-04-24 && rustup default nightly-2026-04-24
+# Copy rust-toolchain.toml first so the nightly pin is defined in one place.
+COPY rust-toolchain.toml ./
+RUN NIGHTLY="$(sed -nE 's/^channel[[:space:]]*=[[:space:]]*"([^"]+)"/\1/p' rust-toolchain.toml)" \
+    && rustup install "$NIGHTLY" && rustup default "$NIGHTLY"
 
 # Copy manifests first for better caching
 COPY Cargo.toml Cargo.lock ./

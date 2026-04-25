@@ -24,6 +24,7 @@ concurrency:
 permissions: {}
 
 env:
+  # Must match rust-toolchain.toml (single source of truth for the nightly pin).
   NIGHTLY_TOOLCHAIN: nightly-2026-04-24
   RELEASE_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && 'true' || 'false' }}
   RELEASE_PRE_RELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.pre_release && 'true' || 'false' }}
