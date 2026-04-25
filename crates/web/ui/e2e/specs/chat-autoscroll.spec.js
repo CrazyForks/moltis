@@ -73,7 +73,7 @@ test.describe("Smart auto-scroll", () => {
 
 	test("new content indicator appears when scrolled up and new message arrives", async ({ page }) => {
 		const pageErrors = watchPageErrors(page);
-		await injectScrollableMessages(page, 20);
+		await injectScrollableMessages(page, 40);
 
 		// Verify the container is actually scrollable
 		const afterFill = await getScrollState(page);
@@ -109,7 +109,7 @@ test.describe("Smart auto-scroll", () => {
 
 	test("clicking indicator scrolls to bottom and hides itself", async ({ page }) => {
 		const pageErrors = watchPageErrors(page);
-		await injectScrollableMessages(page, 20);
+		await injectScrollableMessages(page, 40);
 
 		// Scroll up, then add a message to trigger the indicator
 		await page.evaluate(() => {
@@ -145,7 +145,7 @@ test.describe("Smart auto-scroll", () => {
 
 	test("manual scroll to bottom hides indicator", async ({ page }) => {
 		const pageErrors = watchPageErrors(page);
-		await injectScrollableMessages(page, 20);
+		await injectScrollableMessages(page, 40);
 
 		// Scroll up, add message to trigger indicator
 		await page.evaluate(() => {
@@ -177,7 +177,7 @@ test.describe("Smart auto-scroll", () => {
 
 	test("user messages always scroll to bottom regardless of scroll position", async ({ page }) => {
 		const pageErrors = watchPageErrors(page);
-		await injectScrollableMessages(page, 20);
+		await injectScrollableMessages(page, 40);
 
 		// Scroll up
 		await page.evaluate(() => {
@@ -217,7 +217,7 @@ test.describe("Smart auto-scroll", () => {
 			state.setAutoScrollMode("always");
 		});
 
-		await injectScrollableMessages(page, 20);
+		await injectScrollableMessages(page, 40);
 
 		// Scroll up
 		await page.evaluate(() => {

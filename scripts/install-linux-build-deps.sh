@@ -65,9 +65,14 @@ install_vulkan_sdk() {
   DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends vulkan-sdk
 }
 
+install_nccl() {
+  DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends libnccl-dev libnccl2
+}
+
 retry 5 15 apt_update
 retry 5 15 install_core_packages
 retry 5 15 install_lunarg_repo
 retry 5 15 apt_update
 retry 5 15 install_vulkan_sdk
+retry 5 15 install_nccl
 nvcc --version

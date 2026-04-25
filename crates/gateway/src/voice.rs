@@ -945,8 +945,9 @@ base_url = "http://127.0.0.1:8001/"
             .find(|(id, _)| *id == SttProviderId::Whisper);
 
         assert_eq!(whisper, Some((SttProviderId::Whisper, true)));
+        // With explicit provider selection, Whisper is chosen
         assert_eq!(
-            LiveSttService::resolve_provider(None),
+            LiveSttService::resolve_provider(Some(moltis_config::VoiceSttProvider::Whisper)),
             Some(SttProviderId::Whisper)
         );
     }
