@@ -845,9 +845,8 @@ pub(super) fn register(reg: &mut MethodRegistry) {
         "memory.config.get",
         Box::new(|_ctx| {
             Box::pin(async move {
-                // Read memory config — use read-only variant to avoid
-                // side-effects (writing defaults.toml / compacting).
-                let config = moltis_config::discover_and_load_readonly();
+                // Read memory config from the config file
+                let config = moltis_config::discover_and_load();
                 let memory = &config.memory;
                 let chat = &config.chat;
                 Ok(serde_json::json!({

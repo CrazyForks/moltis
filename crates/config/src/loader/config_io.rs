@@ -52,16 +52,17 @@ pub fn load_config_value(path: &Path) -> crate::Result<serde_json::Value> {
 /// 3. User override file `moltis.{toml,yaml,yml,json}`
 /// 4. `MOLTIS_*` environment variable overrides
 ///
-/// User config search order:
-/// 1. `./moltis.{toml,yaml,yml,json}` (project-local)
-/// 2. `~/.config/moltis/moltis.{toml,yaml,yml,json}` (user-global)
+/// One-time config initialization — call once at process startup.
 ///
-/// Returns `MoltisConfig::default()` if no config file is found.
+/// Performs all write side-effects that prepare the config directory:
+/// - Refreshes Moltis-managed `defaults.toml`
+/// - Auto-compacts user config (strips materialized defaults)
+/// - Writes a default config template on first run
+/// - Persists a randomly generated port so it stays stable
 ///
-/// If the config has port 0 (either from defaults or missing `[server]` section),
-/// a random available port is generated and saved to the user config file.
-pub fn discover_and_load() -> MoltisConfig {
-    // Refresh Moltis-managed defaults.toml on every startup.
+/// After this, use [`discover_and_load`] (read-only) to load config.
+pub fn initialize_config() {
+    // Refresh Moltis-managed defaults.toml.
     if let Some(dir) = config_dir()
         && let Err(e) = crate::defaults::write_defaults_toml(&dir)
     {
@@ -69,7 +70,7 @@ pub fn discover_and_load() -> MoltisConfig {
     }
 
     // Auto-compact: strip default values that were materialized by older
-    // versions. Runs on every startup (idempotent — no-op when already compact).
+    // versions. Idempotent — no-op when already compact.
     if find_config_file().is_some() {
         match compact_config() {
             Ok((before, after)) if before > after => {
@@ -129,15 +130,26 @@ pub fn discover_and_load() -> MoltisConfig {
             warn!(error = %e, "failed to save config with generated port");
         }
     }
+}
 
-    cfg
+/// Discover and load config from disk (read-only, no side-effects).
+///
+/// This is the primary config loading function. Call [`initialize_config`]
+/// once at process startup to prepare the config directory, then use this
+/// function everywhere else.
+///
+/// User config search order:
+/// 1. `./moltis.{toml,yaml,yml,json}` (project-local)
+/// 2. `~/.config/moltis/moltis.{toml,yaml,yml,json}` (user-global)
+///
+/// Returns `MoltisConfig::default()` if no config file is found.
+pub fn discover_and_load() -> MoltisConfig {
+    discover_and_load_readonly()
 }
 
 /// Load config using layered merge without writing any files.
 ///
-/// Same as [`discover_and_load`] but does not write `defaults.toml` or
-/// generate a default config for first-run.  Use this for read-only
-/// operations (e.g. API endpoints) that should not have side effects.
+/// Identical to [`discover_and_load`]. Retained for backward compatibility.
 pub fn discover_and_load_readonly() -> MoltisConfig {
     let mut cfg = if let Some(path) = find_config_file() {
         debug!(path = %path.display(), "loading config (read-only)");
