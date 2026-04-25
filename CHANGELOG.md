@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [20260425.01] - 2026-04-25
+### Fixed
+- [ci] Add NCCL to build deps and fix flaky tests
+
 ## [20260424.09] - 2026-04-24
 ### Fixed
 - Replace expect() with let-else in splitter tests
