@@ -19,6 +19,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [20260425.07] - 2026-04-25
+### Added
+- [cron] Add heartbeat wake cooldown to prevent exec re-fire loop (#871)
+
+
+### Changed
+- [config] Extract initialize_config() from discover_and_load()
+
+
+### Fixed
+- [tests] Stabilize flaky memory_config_get test
+- [ci] Pin NCCL version to match CUDA 12.4 container
+- [ci] Match NCCL dev headers to pre-installed runtime version
+
 ## [20260425.06] - 2026-04-25
 ### Added
 - [cron] Add heartbeat wake cooldown to prevent exec re-fire loop (#871)
