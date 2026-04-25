@@ -1058,6 +1058,9 @@ base_url = "http://127.0.0.1:8001/"
 
     #[tokio::test]
     async fn test_live_tts_service_enable() {
+        // enable() may call update_config() which writes to the config dir.
+        // Hold the config lock so concurrent tests don't see our writes.
+        let _guard = VoiceConfigTestGuard::with_config("");
         let service = LiveTtsService::new(TtsConfig::default());
         let result = service.enable(json!({})).await;
 

@@ -568,21 +568,40 @@ mod tests {
 
     #[tokio::test]
     async fn memory_config_get_reports_typed_memory_fields() {
+        // Verify the memory.config.get handler serialises every typed field.
+        //
+        // This test used to write config to disk via update_config and then
+        // dispatch the handler.  That approach is racy because concurrent
+        // tests call discover_and_load() which has side-effects (compacting,
+        // writing defaults.toml) that can overwrite the temp config file.
+        //
+        // Instead we write the TOML config file directly (no side-effects)
+        // and dispatch the handler, which reads it back.
         let _guard = MemoryConfigTestGuard::new();
-        let update_result = moltis_config::update_config(|cfg| {
-            cfg.memory.style = moltis_config::MemoryStyle::SearchOnly;
-            cfg.memory.agent_write_mode = moltis_config::AgentMemoryWriteMode::PromptOnly;
-            cfg.memory.user_profile_write_mode = moltis_config::UserProfileWriteMode::ExplicitOnly;
-            cfg.memory.backend = moltis_config::MemoryBackend::Qmd;
-            cfg.memory.provider = Some(moltis_config::MemoryProvider::OpenAi);
-            cfg.memory.citations = moltis_config::MemoryCitationsMode::Off;
-            cfg.memory.disable_rag = true;
-            cfg.memory.llm_reranking = true;
-            cfg.memory.search_merge_strategy = moltis_config::MemorySearchMergeStrategy::Linear;
-            cfg.memory.session_export = moltis_config::SessionExportMode::Off;
-            cfg.chat.prompt_memory_mode = moltis_config::PromptMemoryMode::FrozenAtSessionStart;
-        });
-        assert!(update_result.is_ok(), "config update should succeed");
+        let config_dir = moltis_config::config_dir().expect("config_dir should be set by guard");
+        std::fs::write(
+            config_dir.join("moltis.toml"),
+            r#"
+[server]
+port = 19999
+
+[memory]
+style = "search-only"
+agent_write_mode = "prompt-only"
+user_profile_write_mode = "explicit-only"
+backend = "qmd"
+disable_rag = true
+llm_reranking = true
+citations = "off"
+search_merge_strategy = "linear"
+session_export = "off"
+provider = "openai"
+
+[chat]
+prompt_memory_mode = "frozen-at-session-start"
+"#,
+        )
+        .expect("write test config");
 
         let payload = dispatch_memory_method("memory.config.get", serde_json::json!({})).await;
         assert_eq!(payload["style"], "search-only");
@@ -632,7 +651,7 @@ mod tests {
         assert_eq!(payload["session_export"], "off");
         assert_eq!(payload["prompt_memory_mode"], "frozen-at-session-start");
 
-        let config = moltis_config::discover_and_load();
+        let config = moltis_config::discover_and_load_readonly();
         assert_eq!(config.memory.style, moltis_config::MemoryStyle::PromptOnly);
         assert_eq!(
             config.memory.agent_write_mode,
