@@ -65,14 +65,16 @@ install_vulkan_sdk() {
   DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends vulkan-sdk
 }
 
-install_nccl() {
-  # Do NOT install libnccl-dev here.  llama-cpp-sys-2's CMake build
-  # auto-detects NCCL headers and compiles with GGML_USE_NCCL, but its
-  # Rust build.rs never emits `cargo:rustc-link-lib=nccl`, causing
-  # undefined-symbol linker errors.  Omitting the -dev package prevents
-  # CMake from finding NCCL, sidestepping the issue.  Multi-GPU NCCL
-  # is not needed for CI.
-  echo "Skipping libnccl-dev install (upstream llama-cpp-sys-2 linking bug)"
+remove_nccl_dev() {
+  # The CUDA container image ships libnccl-dev pre-installed.
+  # llama-cpp-sys-2's CMake build auto-detects the NCCL headers and
+  # compiles with GGML_USE_NCCL, but its Rust build.rs never emits
+  # cargo:rustc-link-lib=nccl, causing undefined-symbol linker errors.
+  # Remove the -dev package so CMake cannot find NCCL at all.
+  if dpkg -s libnccl-dev >/dev/null 2>&1; then
+    echo "Removing pre-installed libnccl-dev (upstream llama-cpp-sys-2 linking bug)"
+    DEBIAN_FRONTEND=noninteractive apt-get remove -y libnccl-dev || true
+  fi
 }
 
 retry 5 15 apt_update
@@ -80,5 +82,5 @@ retry 5 15 install_core_packages
 retry 5 15 install_lunarg_repo
 retry 5 15 apt_update
 retry 5 15 install_vulkan_sdk
-retry 5 15 install_nccl
+remove_nccl_dev
 nvcc --version
