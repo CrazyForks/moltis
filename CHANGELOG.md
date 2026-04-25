@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [20260425.03] - 2026-04-25
+### Fixed
+- [e2e] Stabilize flaky gemini, autoscroll, and settings-nav tests
+
 ## [20260425.02] - 2026-04-25
 ### Fixed
 - [ci] Allow held NCCL packages to be upgraded
