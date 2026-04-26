@@ -15403,19 +15403,7 @@ function DetailPanel({
       const res = await sendRpc("skills.clawhub.install", { slug });
       if (res == null ? void 0 : res.ok) {
         installed.value = true;
-        const payload = res.payload;
-        const skills = (payload == null ? void 0 : payload.installed) || [];
-        const source = `clawhub:${slug}`;
-        let trustFailed = 0;
-        for (const skill of skills) {
-          if (!skill.name) continue;
-          const trustRes = await sendRpc("skills.skill.trust", { source, skill: skill.name, trusted: true });
-          const enableRes = await sendRpc("skills.skill.enable", { source, skill: skill.name, enabled: true });
-          if (!((trustRes == null ? void 0 : trustRes.ok) && (enableRes == null ? void 0 : enableRes.ok))) trustFailed++;
-        }
-        if (trustFailed > 0) {
-          error2.value = `${trustFailed} skill(s) could not be auto-trusted. Enable manually in Skills tab.`;
-        }
+        showToast$4("Installed — review and enable the skill in the Skills tab.", "success");
         onInstalled();
       } else {
         error2.value = String((res == null ? void 0 : res.error) || "Install failed");
@@ -15819,7 +15807,7 @@ function fetchAll() {
     loading$7.value = false;
   });
 }
-function doInstall(source, autoTrust = false) {
+function doInstall(source) {
   if (!(source && connected)) {
     if (!connected) showToast$3("Not connected to gateway.", "error");
     return Promise.resolve();
@@ -15830,19 +15818,10 @@ function doInstall(source, autoTrust = false) {
     if (res == null ? void 0 : res.ok) {
       const p = res.payload || {};
       const installed = p.installed || [];
-      showToast$3(`Installed ${source} (${installed.length} skills)`, "success");
-      if (autoTrust && installed.length > 0) {
-        let trustFailed = 0;
-        for (const skill of installed) {
-          if (!skill.name) continue;
-          const trustRes = await sendRpc("skills.skill.trust", { source, skill: skill.name, trusted: true });
-          const enableRes = await sendRpc("skills.skill.enable", { source, skill: skill.name, enabled: true });
-          if (!((trustRes == null ? void 0 : trustRes.ok) && (enableRes == null ? void 0 : enableRes.ok))) trustFailed++;
-        }
-        if (trustFailed > 0) {
-          showToast$3(`${trustFailed} skill(s) could not be auto-trusted. Enable them manually in Skills.`, "error");
-        }
-      }
+      showToast$3(
+        `Installed ${source} (${installed.length} skills) — review and enable the skills you need.`,
+        "success"
+      );
       fetchAll();
       stopInstallProgress(pid);
     } else {
@@ -15950,14 +15929,13 @@ function InstallBox$1() {
   ] });
 }
 const featuredSkills = [
-  { repo: "anthropics/skills", desc: "Official Anthropic agent skills", autoTrust: true },
-  { repo: "vercel-labs/agent-skills", desc: "Vercel agent skills collection", autoTrust: true },
-  { repo: "vercel-labs/skills", desc: "Vercel skills toolkit", autoTrust: true },
+  { repo: "anthropics/skills", desc: "Official Anthropic agent skills" },
+  { repo: "vercel-labs/agent-skills", desc: "Vercel agent skills collection" },
+  { repo: "vercel-labs/skills", desc: "Vercel skills toolkit" },
   {
     repo: "garrytan/gbrain",
     desc: "Knowledge graph with hybrid search for agent memory",
-    hasRecipe: true,
-    autoTrust: true
+    hasRecipe: true
   }
 ];
 async function checkPostInstallRecipe(source) {
@@ -16030,7 +16008,7 @@ function FeaturedCard$1({ skill: f }) {
         onClick: () => {
           if (isInstalled) return;
           installing.value = true;
-          doInstall(f.repo, f.autoTrust).then(() => {
+          doInstall(f.repo).then(() => {
             if (f.hasRecipe) checkPostInstallRecipe(f.repo).catch(console.error);
           }).catch((err) => console.error("install failed", err)).finally(() => {
             installing.value = false;
