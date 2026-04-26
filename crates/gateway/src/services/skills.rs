@@ -1351,9 +1351,9 @@ fn toggle_bundled_skill(params: &Value, enabled: bool) -> ServiceResult {
             }),
         );
 
-        return Ok(
+        Ok(
             serde_json::json!({ "source": "bundled", "skill": skill_name, "category": category, "enabled": enabled }),
-        );
+        )
     }
     #[cfg(not(feature = "bundled-skills"))]
     {
