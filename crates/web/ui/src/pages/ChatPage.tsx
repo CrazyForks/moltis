@@ -644,8 +644,6 @@ function mountSessionHeaderControls(): void {
 				showSelectors={false}
 				showName={false}
 				showStop={false}
-				showDelete={false}
-				showArchive={false}
 				actionButtonClass={
 					"text-xs border border-[var(--border)] px-2 py-1 rounded-md transition-colors cursor-pointer bg-transparent font-[var(--font-body)] text-[var(--muted)]"
 				}

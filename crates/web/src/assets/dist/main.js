@@ -6726,8 +6726,6 @@ function mountSessionHeaderControls() {
           showSelectors: false,
           showName: false,
           showStop: false,
-          showDelete: false,
-          showArchive: false,
           actionButtonClass: "text-xs border border-[var(--border)] px-2 py-1 rounded-md transition-colors cursor-pointer bg-transparent font-[var(--font-body)] text-[var(--muted)]"
         }
       ),
@@ -15868,10 +15866,7 @@ function doInstall(source) {
     if (res == null ? void 0 : res.ok) {
       const p = res.payload || {};
       const installed = p.installed || [];
-      showToast$3(
-        `Installed ${source} (${installed.length} skills) — review and enable the skills you need.`,
-        "success"
-      );
+      showToast$3(`Installed ${source} (${installed.length} skills) — review and enable the skills you need.`, "success");
       fetchAll();
       stopInstallProgress(pid);
     } else {
