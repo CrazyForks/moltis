@@ -3,7 +3,8 @@ use {
     std::{collections::HashSet, path::Path},
 };
 
-use super::*;
+// Pull in ServiceResult, ServiceError, security_audit, etc. from services module
+use super::super::*;
 
 pub(super) fn local_repo_head_sha(repo_dir: &Path) -> Option<String> {
     let repo = gix::open(repo_dir).ok()?;
