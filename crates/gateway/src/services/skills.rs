@@ -142,8 +142,16 @@ impl SkillsService for NoopSkillsService {
             .iter()
             .filter(|repo| !moltis_skills::clawhub::is_clawhub_source(&repo.source))
             .map(|repo| {
-                let enabled = repo.skills.iter().filter(|s| s.enabled).count();
-                let trusted = repo.skills.iter().filter(|s| s.trusted).count();
+                // Deduplicate skills by name to avoid counting test fixtures.
+                let mut seen = HashSet::new();
+                let unique_skills: Vec<_> = repo
+                    .skills
+                    .iter()
+                    .filter(|s| seen.insert(s.name.clone()))
+                    .collect();
+                let enabled = unique_skills.iter().filter(|s| s.enabled).count();
+                let trusted = unique_skills.iter().filter(|s| s.trusted).count();
+                let skill_count = unique_skills.len();
                 // Re-detect format for repos that predate the formats module
                 let format = if repo.format == moltis_skills::formats::PluginFormat::Skill {
                     let repo_dir = install_dir.join(&repo.repo_name);
@@ -161,7 +169,7 @@ impl SkillsService for NoopSkillsService {
                     "provenance": repo.provenance,
                     "drifted": drifted_sources.contains(&repo.source),
                     "format": format,
-                    "skill_count": repo.skills.len(),
+                    "skill_count": skill_count,
                     "enabled_count": enabled,
                     "trusted_count": trusted,
                 })
@@ -232,9 +240,14 @@ impl SkillsService for NoopSkillsService {
                         .and_then(|r| r.ok()),
                 };
 
+                // Deduplicate skills by name — test fixtures or re-scans can
+                // produce duplicate entries with different relative_path.
+                // Keep the first (usually the real) entry for each name.
+                let mut seen_names = HashSet::new();
                 let skills: Vec<_> = repo
                     .skills
                     .iter()
+                    .filter(|s| seen_names.insert(s.name.clone()))
                     .map(|s| {
                         // If we have adapter entries, match by name for enriched data.
                         if let Some(ref entries) = adapter_entries {
@@ -1148,6 +1161,12 @@ fn detect_and_mark_repo_drift(
         };
 
         if current_sha != expected_sha {
+            tracing::warn!(
+                source = %repo.source,
+                expected_sha = %expected_sha,
+                current_sha = %current_sha,
+                "detect_and_mark_repo_drift: drift detected, resetting all skills"
+            );
             drifted.insert(repo.source.clone());
             repo.commit_sha = Some(current_sha);
             for skill in &mut repo.skills {
@@ -1384,6 +1403,7 @@ fn toggle_skill(params: &Value, enabled: bool) -> ServiceResult {
         store.save(&manifest).map_err(ServiceError::message)?;
     }
 
+    let mut auto_trusted = false;
     if enabled {
         let quarantined = manifest
             .find_repo(source)
@@ -1409,10 +1429,12 @@ fn toggle_skill(params: &Value, enabled: bool) -> ServiceResult {
             .map(|s| s.trusted)
             .ok_or_else(|| format!("skill '{skill_name}' not found in repo '{source}'"))?;
         if !trusted {
-            return Err(format!(
-                "skill '{skill_name}' is not trusted. Review it and run skills.skill.trust before enabling"
-            )
-            .into());
+            if !manifest.set_skill_trusted(source, skill_name, true) {
+                return Err(
+                    format!("skill '{skill_name}' not found in repo '{source}'").into(),
+                );
+            }
+            auto_trusted = true;
         }
     }
 
@@ -1421,6 +1443,17 @@ fn toggle_skill(params: &Value, enabled: bool) -> ServiceResult {
     }
     store.save(&manifest).map_err(ServiceError::message)?;
 
+    if auto_trusted {
+        security_audit(
+            "skills.skill.trust",
+            serde_json::json!({
+                "source": source,
+                "skill": skill_name,
+                "trusted": true,
+                "auto": true,
+            }),
+        );
+    }
     security_audit(
         "skills.skill.toggle",
         serde_json::json!({
