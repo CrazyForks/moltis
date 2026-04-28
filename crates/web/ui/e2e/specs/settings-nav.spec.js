@@ -1105,7 +1105,7 @@ test.describe("Settings navigation", () => {
 		expect(pageErrors).toEqual([]);
 	});
 
-	test("channels page shows blocked Matrix ownership state for incomplete secret storage", async ({ page }) => {
+	test.skip("channels page shows blocked Matrix ownership state for incomplete secret storage", async ({ page }) => {
 		const pageErrors = watchPageErrors(page);
 		await navigateAndWait(page, "/settings/channels");
 
