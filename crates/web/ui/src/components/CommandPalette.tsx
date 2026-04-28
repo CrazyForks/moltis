@@ -5,7 +5,7 @@
 // inside GlobalDialogs.
 
 import type { VNode } from "preact";
-import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { sendRpc } from "../helpers";
 import { t } from "../i18n";
 import { navigate, sessionPath } from "../router";
@@ -135,12 +135,12 @@ export function CommandPalette(): VNode | null {
 		return ordered;
 	}, [allItems]);
 
-	useEffect(() => {
+	useLayoutEffect(() => {
 		if (show) {
 			setQuery("");
 			setActiveIdx(0);
 			setSessionHits([]);
-			requestAnimationFrame(() => inputRef.current?.focus());
+			inputRef.current?.focus();
 		}
 	}, [show]);
 
@@ -226,16 +226,18 @@ export function CommandPalette(): VNode | null {
 				if (e.target === e.currentTarget) closePalette();
 			}}
 		>
-			<div role="dialog" aria-modal="true" aria-label="Command palette" class="cmd-palette" onKeyDown={onKeyDown}>
+			<div role="dialog" aria-modal="true" aria-label="Command palette" class="cmd-palette">
 				<div class="cmd-palette-input-row">
 					<span class="icon icon-md icon-search cmd-palette-search-icon" />
 					<input
 						ref={inputRef}
 						class="cmd-palette-input"
 						type="text"
+						autocomplete="off"
 						placeholder={t("common:actions.search") || "Search\u2026"}
 						value={query}
 						onInput={(e: Event) => setQuery((e.target as HTMLInputElement).value)}
+						onKeyDown={onKeyDown}
 					/>
 					<kbd class="cmd-palette-kbd">esc</kbd>
 				</div>
