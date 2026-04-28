@@ -755,7 +755,7 @@ test.describe("Session management", () => {
 		await page.keyboard.press("Enter");
 
 		// The display name should update in the toolbar.
-		await expect(nameMount.getByTitle("Click to rename")).toHaveText(newName, { timeout: 5_000 });
+		await expect(nameMount.locator(".chat-session-name")).toHaveText(newName, { timeout: 5_000 });
 
 		expect(pageErrors).toEqual([]);
 	});
