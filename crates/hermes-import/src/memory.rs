@@ -80,7 +80,7 @@ pub fn import_memory(detection: &HermesDetection, dest_dir: &Path) -> CategoryRe
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
-    use {super::*, std::path::PathBuf};
+    use {super::*};
 
     fn make_detection(home: &Path) -> HermesDetection {
         HermesDetection {
