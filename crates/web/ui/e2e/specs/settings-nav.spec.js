@@ -695,10 +695,7 @@ test.describe("Settings navigation", () => {
 		expect(pageErrors).toEqual([]);
 	});
 
-	// TODO: user_name save RPC persists to moltis.toml but /api/gon may read
-	// from USER.md, so the saved value doesn't survive a reload. Needs backend
-	// fix to unify the user profile data source after agents architecture refactor.
-	test.skip("identity name fields autosave on blur", async ({ page }) => {
+	test("identity name fields autosave on blur", async ({ page }) => {
 		const pageErrors = watchPageErrors(page);
 		await navigateAndWait(page, "/settings/profile");
 

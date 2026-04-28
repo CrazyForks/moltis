@@ -180,8 +180,12 @@ fn save_user_profile_fields(params: &serde_json::Value) -> Result<(), ErrorShape
         return Ok(());
     }
 
+    // Build the updated user profile, then save to both moltis.toml and USER.md.
+    // We must NOT re-read via resolve_user_profile_from_config after saving to toml,
+    // because that would let the stale USER.md override the new values.
+    let saved_user = std::sync::Mutex::new(None);
     moltis_config::update_config(|cfg| {
-        let mut user = moltis_config::resolve_user_profile_from_config(cfg);
+        let mut user = cfg.user.clone();
 
         if let Some(v) = params.get("user_name").and_then(|v| v.as_str()) {
             user.name = if v.is_empty() {
@@ -220,14 +224,16 @@ fn save_user_profile_fields(params: &serde_json::Value) -> Result<(), ErrorShape
             }
         }
 
+        *saved_user.lock().unwrap_or_else(|e| e.into_inner()) = Some(user.clone());
         cfg.user = user;
     })
     .map_err(|e| ErrorShape::new(error_codes::UNAVAILABLE, e.to_string()))?;
 
-    // Also persist to USER.md.
-    let config = moltis_config::discover_and_load();
-    let user = moltis_config::resolve_user_profile_from_config(&config);
-    let _ = moltis_config::save_user_with_mode(&user, config.memory.user_profile_write_mode);
+    // Persist to USER.md using the values we just built (not re-read from config).
+    if let Some(user) = saved_user.into_inner().unwrap_or(None) {
+        let config = moltis_config::discover_and_load_readonly();
+        let _ = moltis_config::save_user_with_mode(&user, config.memory.user_profile_write_mode);
+    }
 
     Ok(())
 }
