@@ -24,6 +24,7 @@ RUN NIGHTLY="$(sed -nE 's/^channel[[:space:]]*=[[:space:]]*"([^"]+)"/\1/p' rust-
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
 COPY apps/courier ./apps/courier
+COPY scripts ./scripts
 COPY wit ./wit
 
 ENV DEBIAN_FRONTEND=noninteractive
