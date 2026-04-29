@@ -19,6 +19,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [20260429.02] - 2026-04-29
+### Added
+- [voice] Add voice personas for deterministic TTS identity (#916)
+
+
+### Fixed
+- [sandbox] Prevent sandbox escape via RestrictedHostSandbox and FailoverSandbox (#924)
+
 ## [20260429.01] - 2026-04-29
 ### Added
 - [update] Add /update command and web UI update button (#911)
