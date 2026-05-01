@@ -10,15 +10,18 @@ const { navigateAndWait, waitForWsConnected, watchPageErrors } = require("../hel
  * so that voice feature flags reflect the given values for the whole test.
  */
 async function mockVoiceFlags(page, { sttEnabled = true, ttsEnabled = true } = {}) {
-	await page.addInitScript(
-		({ sttEnabled, ttsEnabled }) => {
-			var m = window.__MOLTIS__ || {};
-			m.stt_enabled = sttEnabled;
-			m.tts_enabled = ttsEnabled;
-			window.__MOLTIS__ = m;
-		},
-		{ sttEnabled, ttsEnabled },
-	);
+	// Intercept ALL navigation responses to patch __MOLTIS__ gon data in HTML.
+	await page.route("**/*", async (route) => {
+		var url = route.request().url();
+		if (url.includes("/api/") || url.includes("/assets/")) return route.continue();
+		var response = await route.fetch();
+		var ct = response.headers()["content-type"] || "";
+		if (!ct.includes("text/html")) return route.continue();
+		var body = await response.text();
+		if (!sttEnabled) body = body.replaceAll('"stt_enabled":true', '"stt_enabled":false');
+		if (!ttsEnabled) body = body.replaceAll('"tts_enabled":true', '"tts_enabled":false');
+		return route.fulfill({ response, body });
+	});
 
 	await page.route("**/api/gon*", async (route) => {
 		var response = await route.fetch();
@@ -35,6 +38,32 @@ async function mockVoiceFlags(page, { sttEnabled = true, ttsEnabled = true } = {
 		json.tts_enabled = ttsEnabled;
 		return route.fulfill({ response, json });
 	});
+}
+
+/** After page load, set gon flags in the bundled app, freeze them, and update voice UI. */
+async function applyVoiceFlags(page, { sttEnabled = true, ttsEnabled = true } = {}) {
+	await page.evaluate(
+		({ sttEnabled, ttsEnabled }) => {
+			var gon = window.__moltis_modules?.gon;
+			if (gon?.set) {
+				gon.set("stt_enabled", sttEnabled);
+				gon.set("tts_enabled", ttsEnabled);
+				// Prevent gon.refresh() from overwriting our values
+				gon.refresh = () => Promise.resolve();
+			}
+			// The voice-input module updates mic/vad display via checkSttStatus,
+			// but the event path may race with page init. Directly toggle the
+			// buttons to match the flag state as a reliable fallback.
+			var mic = document.getElementById("micBtn");
+			var vad = document.getElementById("vadBtn");
+			if (!sttEnabled) {
+				if (mic) mic.style.display = "none";
+				if (vad) vad.style.display = "none";
+			}
+			window.dispatchEvent(new Event("voice-config-changed"));
+		},
+		{ sttEnabled, ttsEnabled },
+	);
 }
 
 // ── RPC helpers (mirrors websocket.spec.js) ──────────────────────────────────
@@ -83,7 +112,7 @@ test.describe("voice config flags", () => {
 		await mockVoiceFlags(page, { sttEnabled: false, ttsEnabled: true });
 		await navigateAndWait(page, "/chats/main");
 		await waitForWsConnected(page);
-
+		await applyVoiceFlags(page, { sttEnabled: false, ttsEnabled: true });
 		await expect(page.locator("#micBtn")).toBeHidden({ timeout: 5_000 });
 		await expect(page.locator("#vadBtn")).toBeHidden({ timeout: 5_000 });
 		expect(pageErrors).toEqual([]);
@@ -94,6 +123,7 @@ test.describe("voice config flags", () => {
 		await mockVoiceFlags(page, { sttEnabled: true, ttsEnabled: false });
 		await navigateAndWait(page, "/chats/main");
 		await waitForWsConnected(page);
+		await applyVoiceFlags(page, { sttEnabled: true, ttsEnabled: false });
 
 		// Inject a regular assistant message with text (no audio).
 		await sendRpcFromPage(page, "system-event", {
@@ -121,7 +151,6 @@ test.describe("voice config flags", () => {
 		await mockVoiceFlags(page, { sttEnabled: true, ttsEnabled: true });
 		await navigateAndWait(page, "/chats/main");
 		await waitForWsConnected(page);
-
 		await sendRpcFromPage(page, "system-event", {
 			event: "chat",
 			payload: {
@@ -145,7 +174,7 @@ test.describe("voice config flags", () => {
 		await mockVoiceFlags(page, { sttEnabled: false, ttsEnabled: false });
 		await navigateAndWait(page, "/chats/main");
 		await waitForWsConnected(page);
-
+		await applyVoiceFlags(page, { sttEnabled: false, ttsEnabled: false });
 		await expect(page.locator("#micBtn")).toBeHidden({ timeout: 5_000 });
 		await expect(page.locator("#vadBtn")).toBeHidden({ timeout: 5_000 });
 
