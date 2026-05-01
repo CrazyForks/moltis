@@ -412,13 +412,13 @@ impl MsTeamsPlugin {
             // For bare commands with fixed choices, show an Adaptive Card with
             // buttons instead of plain text.  Each button uses `imBack` so
             // clicking it sends "/{cmd} {value}" back as a regular message.
-            if is_bare {
-                if let Some(def) = moltis_channels::commands::all_commands()
+            if is_bare
+                && let Some(def) = moltis_channels::commands::all_commands()
                     .iter()
                     .find(|c| c.name == cmd_name)
-                    && let Some(arg) = &def.arg
-                    && !arg.choices.is_empty()
-                {
+                && let Some(arg) = &def.arg
+                && !arg.choices.is_empty()
+            {
                     let rows: Vec<moltis_channels::ButtonRow> = arg
                         .choices
                         .iter()
@@ -451,7 +451,6 @@ impl MsTeamsPlugin {
                         );
                     }
                     return Ok(());
-                }
             }
 
             match sink
