@@ -103,7 +103,9 @@ test.describe("Agents settings page", () => {
 				const healthRes = await page.request.get(`${baseURL}/health`, { timeout: 5_000 }).catch(() => null);
 				const healthOk = healthRes ? healthRes.ok() : false;
 				const healthBody = healthRes ? await healthRes.text().catch(() => "") : "no response";
-				console.log(`[agents diag] test="${testInfo.title}" url="${failedUrl}" health=${healthOk} body="${healthBody}"`);
+				console.log(
+					`[agents diag] test="${testInfo.title}" url="${failedUrl}" health=${healthOk} body="${healthBody}"`,
+				);
 
 				// Navigate to a known-working page and screenshot it to prove
 				// whether the gateway is alive or completely unresponsive.
