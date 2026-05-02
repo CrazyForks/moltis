@@ -230,10 +230,13 @@ test.describe("Smart auto-scroll", () => {
 			await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 		});
 
-		// Should still be at the bottom
-		const after = await getScrollState(page);
-		const distAfter = after.scrollHeight - after.scrollTop - after.clientHeight;
-		expect(distAfter).toBeLessThan(60);
+		// Wait for smooth scroll to finish, then verify at bottom
+		await expect
+			.poll(async () => {
+				const s = await getScrollState(page);
+				return s.scrollHeight - s.scrollTop - s.clientHeight;
+			})
+			.toBeLessThan(60);
 
 		// No "new messages" indicator should appear
 		const indicator = page.locator(".new-content-indicator");
@@ -308,10 +311,13 @@ test.describe("Smart auto-scroll", () => {
 			await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 		});
 
-		// Should be scrolled to bottom — no indicator
-		const after = await getScrollState(page);
-		const distAfter = after.scrollHeight - after.scrollTop - after.clientHeight;
-		expect(distAfter).toBeLessThan(60);
+		// Wait for smooth scroll to finish, then verify at bottom
+		await expect
+			.poll(async () => {
+				const s = await getScrollState(page);
+				return s.scrollHeight - s.scrollTop - s.clientHeight;
+			})
+			.toBeLessThan(60);
 
 		const indicator = page.locator(".new-content-indicator");
 		await expect(indicator).toHaveCount(0);
@@ -429,9 +435,13 @@ test.describe("Smart auto-scroll", () => {
 			await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 		});
 
-		// Should be at the bottom
-		const after = await getScrollState(page);
-		expect(after.scrollHeight - after.scrollTop - after.clientHeight).toBeLessThan(60);
+		// Wait for smooth scroll to finish, then verify at bottom
+		await expect
+			.poll(async () => {
+				const s = await getScrollState(page);
+				return s.scrollHeight - s.scrollTop - s.clientHeight;
+			})
+			.toBeLessThan(60);
 
 		// No indicator
 		const indicator = page.locator(".new-content-indicator");
@@ -470,10 +480,13 @@ test.describe("Smart auto-scroll", () => {
 			await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 		});
 
-		// Should have scrolled to bottom automatically
-		const afterMsg = await getScrollState(page);
-		const distanceFromBottom = afterMsg.scrollHeight - afterMsg.scrollTop - afterMsg.clientHeight;
-		expect(distanceFromBottom).toBeLessThan(60);
+		// Wait for smooth scroll to finish, then verify at bottom
+		await expect
+			.poll(async () => {
+				const s = await getScrollState(page);
+				return s.scrollHeight - s.scrollTop - s.clientHeight;
+			})
+			.toBeLessThan(60);
 
 		// No indicator should appear in "always" mode
 		const indicator = page.locator(".new-content-indicator");
