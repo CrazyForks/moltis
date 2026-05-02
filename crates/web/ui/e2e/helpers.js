@@ -88,16 +88,20 @@ function isRetryableNavigationError(error) {
 async function navigateAndWait(page, path) {
 	const pageErrors = watchPageErrors(page);
 	let lastError = null;
-	for (let attempt = 0; attempt < 3; attempt++) {
+	for (let attempt = 0; attempt < 5; attempt++) {
 		try {
 			await page.goto(path, { waitUntil: "domcontentloaded", timeout: 15_000 });
 			await expectPageContentMounted(page);
 			return pageErrors;
 		} catch (error) {
 			lastError = error;
-			if (!isRetryableNavigationError(error) || attempt === 2) {
+			if (!isRetryableNavigationError(error) || attempt === 4) {
 				break;
 			}
+			// On CI the WebSocket may fail to connect after many tests,
+			// leaving the SPA unable to render content.  A reload often
+			// re-establishes the connection.
+			await page.reload({ waitUntil: "domcontentloaded", timeout: 10_000 }).catch(() => {});
 		}
 	}
 	if (lastError) throw lastError;

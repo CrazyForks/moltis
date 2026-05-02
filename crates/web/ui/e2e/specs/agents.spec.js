@@ -80,10 +80,6 @@ async function deleteAgentByName(page, agentName) {
 }
 
 test.describe("Agents settings page", () => {
-	// CI probe screenshots show "disconnected" — the gateway WS drops during
-	// the suite, causing page.goto to hang on a blank page.
-	test.skip(!!process.env.CI, "gateway WS disconnects on CI runners");
-
 	test.beforeEach(async ({ page, baseURL }, testInfo) => {
 		// Agents tests consistently timeout on CI runners due to resource
 		// pressure late in the suite. Increase timeout and warm up the
