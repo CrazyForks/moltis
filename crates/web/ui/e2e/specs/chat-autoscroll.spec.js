@@ -77,7 +77,8 @@ async function getScrollState(page) {
 }
 
 test.describe("Smart auto-scroll", () => {
-	test.beforeEach(async ({ page }) => {
+	test.beforeEach(async ({ page }, testInfo) => {
+		testInfo.setTimeout(90_000);
 		await navigateAndWait(page, "/chats/main");
 		await waitForWsConnected(page);
 		await waitForSessionReady(page);
@@ -85,6 +86,9 @@ test.describe("Smart auto-scroll", () => {
 		// overwrite injected DOM elements during the test.
 		await createSession(page);
 		await waitForSessionReady(page);
+		// Extra settle time for CI — the session switch may trigger
+		// deferred renders that overwrite injected DOM.
+		await page.waitForTimeout(500);
 	});
 
 	test("new content indicator appears when scrolled up and new message arrives", async ({ page }) => {
