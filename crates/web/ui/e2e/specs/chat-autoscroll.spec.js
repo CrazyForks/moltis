@@ -58,10 +58,17 @@ async function injectScrollableMessages(page, count) {
 		},
 		{ pfx: prefix, msgCount: count },
 	);
-	// Wait for all messages to render and scroll to settle at bottom
+	// Wait for all messages to render
 	await expect
 		.poll(() => page.locator("#messages .msg.assistant").count(), { timeout: 15_000 })
 		.toBeGreaterThanOrEqual(count);
+	// Ensure welcome/empty-state cards are gone (they overlap #messages)
+	await expect(page.locator("#welcomeCard"))
+		.toHaveCount(0, { timeout: 5_000 })
+		.catch(() => {});
+	await expect(page.locator("#messages .empty-state"))
+		.toHaveCount(0, { timeout: 2_000 })
+		.catch(() => {});
 	// Scroll to bottom
 	await page.evaluate(() => {
 		var box = document.getElementById("messages");
