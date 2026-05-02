@@ -19,15 +19,6 @@ async function waitForSessionReady(page) {
 	);
 }
 
-/** Clear chat via RPC and wait for messages container to be empty. */
-async function clearChat(page) {
-	const prefix = await getModulePrefix(page);
-	await page.evaluate(async (pfx) => {
-		var helpers = await import(`${pfx}js/helpers.js`);
-		await helpers.sendRpc("chat.clear", {});
-	}, prefix);
-	await expect.poll(() => page.locator("#messages .msg").count(), { timeout: 10_000 }).toBe(0);
-}
 
 /**
  * Resolve the Vite module prefix from the running page.
