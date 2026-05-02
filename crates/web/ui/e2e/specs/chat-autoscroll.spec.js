@@ -2,8 +2,8 @@ const { expect, test } = require("../base-test");
 const { navigateAndWait, waitForWsConnected, watchPageErrors } = require("../helpers");
 
 /**
- * Wait for the chat session to finish loading so injected DOM elements
- * aren't blown away by a late renderHistory() call.
+ * Wait for the chat session to finish loading AND WS subscribed so injected
+ * DOM elements aren't blown away by a late renderHistory() call or reconnect.
  */
 async function waitForSessionReady(page) {
 	await page.waitForFunction(
@@ -13,10 +13,20 @@ async function waitForSessionReady(page) {
 			var appUrl = new URL(appScript.src, window.location.origin);
 			var prefix = appUrl.href.slice(0, appUrl.href.length - "js/app.js".length);
 			var state = await import(`${prefix}js/state.js`);
-			return !(state.sessionSwitchInProgress || state.chatBatchLoading);
+			return state.subscribed && !(state.sessionSwitchInProgress || state.chatBatchLoading);
 		},
 		{ timeout: 10_000 },
 	);
+}
+
+/** Clear chat via RPC and wait for messages container to be empty. */
+async function clearChat(page) {
+	const prefix = await getModulePrefix(page);
+	await page.evaluate(async (pfx) => {
+		var helpers = await import(`${pfx}js/helpers.js`);
+		await helpers.sendRpc("chat.clear", {});
+	}, prefix);
+	await expect.poll(() => page.locator("#messages .msg").count(), { timeout: 10_000 }).toBe(0);
 }
 
 /**
@@ -78,6 +88,9 @@ test.describe("Smart auto-scroll", () => {
 		await navigateAndWait(page, "/chats/main");
 		await waitForWsConnected(page);
 		await waitForSessionReady(page);
+		// Clear any messages from previous tests to prevent renderHistory()
+		// from overwriting injected DOM elements during the test.
+		await clearChat(page);
 	});
 
 	test("new content indicator appears when scrolled up and new message arrives", async ({ page }) => {
