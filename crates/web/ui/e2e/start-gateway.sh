@@ -81,10 +81,12 @@ fi
 
 GATEWAY_LOG="${RUNTIME_ROOT}/gateway.log"
 
+# Use exec so Playwright can manage the process lifetime.
+# Redirect stderr to a log file while keeping it on stderr for Playwright.
+exec 2> >(tee -a "${GATEWAY_LOG}" >&2)
+
 if [ -n "${BINARY}" ]; then
-	"${BINARY}" --no-tls --bind 127.0.0.1 --port "${PORT}" 2>"${GATEWAY_LOG}" &
+	exec "${BINARY}" --no-tls --bind 127.0.0.1 --port "${PORT}"
 else
-	cargo run --bin moltis -- --no-tls --bind 127.0.0.1 --port "${PORT}" 2>"${GATEWAY_LOG}" &
+	exec cargo run --bin moltis -- --no-tls --bind 127.0.0.1 --port "${PORT}"
 fi
-# Forward the child PID so Playwright can stop it.
-wait $!
