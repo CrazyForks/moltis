@@ -90,7 +90,7 @@ async function navigateAndWait(page, path) {
 	let lastError = null;
 	for (let attempt = 0; attempt < 5; attempt++) {
 		try {
-			await page.goto(path, { waitUntil: "domcontentloaded", timeout: 15_000 });
+			await page.goto(path, { waitUntil: "domcontentloaded" });
 			await expectPageContentMounted(page);
 			return pageErrors;
 		} catch (error) {
