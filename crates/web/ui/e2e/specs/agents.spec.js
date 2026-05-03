@@ -80,60 +80,8 @@ async function deleteAgentByName(page, agentName) {
 }
 
 test.describe("Agents settings page", () => {
-	test.beforeEach(async ({ page }, testInfo) => {
+	test.beforeEach(async ({}, testInfo) => {
 		testInfo.setTimeout(90_000);
-	});
-
-	test.afterEach(async ({ page, baseURL }, testInfo) => {
-		if (testInfo.status !== testInfo.expectedStatus) {
-			try {
-				const failedUrl = page.url();
-				const healthRes = await page.request.get(`${baseURL}/health`, { timeout: 5_000 }).catch(() => null);
-				const healthBody = healthRes ? await healthRes.text().catch(() => "") : "no response";
-
-				// Test WS upgrade directly — does the server accept WebSocket connections?
-				const wsUrl = `${baseURL.replace(/^http/, "ws")}/ws`;
-				const wsResult = await page
-					.evaluate((url) => {
-						return new Promise((resolve) => {
-							try {
-								const ws = new WebSocket(url);
-								const timer = setTimeout(() => {
-									ws.close();
-									resolve("timeout");
-								}, 3000);
-								ws.onopen = () => {
-									clearTimeout(timer);
-									ws.close();
-									resolve("connected");
-								};
-								ws.onerror = () => {
-									clearTimeout(timer);
-									resolve("error");
-								};
-								ws.onclose = (e) => {
-									clearTimeout(timer);
-									resolve(`closed:${e.code}`);
-								};
-							} catch (e) {
-								resolve(`exception:${e.message}`);
-							}
-						});
-					}, wsUrl)
-					.catch((e) => `evaluate-failed:${e.message}`);
-
-				console.log(`[agents diag] test="${testInfo.title}" url="${failedUrl}" health="${healthBody}" ws=${wsResult}`);
-
-				// Navigate to a page and wait for JS to fully render
-				await page.goto(`${baseURL}/chats/main`, { timeout: 15_000, waitUntil: "networkidle" }).catch(() => null);
-				const probeScreenshot = await page.screenshot().catch(() => null);
-				if (probeScreenshot) {
-					await testInfo.attach("probe-chats-main", { body: probeScreenshot, contentType: "image/png" });
-				}
-			} catch {
-				console.log(`[agents diag] test="${testInfo.title}" diagnostic collection failed`);
-			}
-		}
 	});
 
 	test("settings/agents loads and shows heading", async ({ page }) => {

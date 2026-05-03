@@ -58,6 +58,7 @@ const projects = [
 	{
 		name: "default",
 		testIgnore: [
+			/agents\.spec/,
 			/auth\.spec/,
 			/onboarding\.spec/,
 			/onboarding-openai\.spec/,
@@ -67,6 +68,11 @@ const projects = [
 			/ollama-qwen-live\.spec/,
 			/oauth\.spec/,
 		],
+	},
+	{
+		name: "agents",
+		testMatch: /agents\.spec/,
+		dependencies: ["default"],
 	},
 	{
 		name: "auth",
@@ -210,7 +216,6 @@ if (ollamaQwenLiveEnabled) {
 }
 
 module.exports = defineConfig({
-	globalSetup: "./e2e/global-setup.js",
 	testDir: "./e2e/specs",
 	timeout: 60_000,
 	expect: {
