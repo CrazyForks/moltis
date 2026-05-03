@@ -5,7 +5,7 @@
 const http = require("node:http");
 
 function waitForWs(baseUrl, timeoutMs = 60_000) {
-	const wsUrl = baseUrl.replace(/^http/, "ws") + "/ws";
+	const wsUrl = `${baseUrl.replace(/^http/, "ws")}/ws`;
 	const deadline = Date.now() + timeoutMs;
 
 	return new Promise((resolve, reject) => {
@@ -15,7 +15,7 @@ function waitForWs(baseUrl, timeoutMs = 60_000) {
 				return;
 			}
 			// Use a raw HTTP upgrade request to test if the WS endpoint responds.
-			const url = new URL(baseUrl + "/ws");
+			const url = new URL(`${baseUrl}/ws`);
 			const req = http.request(
 				{
 					hostname: url.hostname,
