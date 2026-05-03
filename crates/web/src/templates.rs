@@ -996,13 +996,12 @@ fn is_onboarding_path(path: &str) -> bool {
     path == "/onboarding" || path == "/onboarding/"
 }
 
-pub(crate) async fn onboarding_completed(gw: &GatewayState) -> bool {
-    gw.services
-        .onboarding
-        .wizard_status()
+pub(crate) async fn onboarding_completed(_gw: &GatewayState) -> bool {
+    // Check the onboarded sentinel file directly instead of going through
+    // wizard_status() which acquires a std::sync::Mutex and does filesystem
+    // I/O — both block the async runtime on low-CPU runners.
+    tokio::task::spawn_blocking(|| moltis_config::data_dir().join(".onboarded").exists())
         .await
-        .ok()
-        .and_then(|v| v.get("onboarded").and_then(|v| v.as_bool()))
         .unwrap_or(false)
 }
 
