@@ -90,6 +90,11 @@ async function navigateAndWait(page, path) {
 	let lastError = null;
 	for (let attempt = 0; attempt < 3; attempt++) {
 		try {
+			// Navigate to about:blank first to release any pending connections
+			// from previous navigations (HTTP/1.1 has a 6-connection-per-host limit).
+			if (attempt > 0) {
+				await page.goto("about:blank").catch(() => {});
+			}
 			await page.goto(path, { waitUntil: "domcontentloaded" });
 			await expectPageContentMounted(page);
 			return pageErrors;
@@ -105,9 +110,19 @@ async function navigateAndWait(page, path) {
 					page.on("console", (m) => consoleMessages.push(`[${m.type()}] ${m.text()}`));
 					// Try one more goto with a short timeout to capture what happens
 					await page.goto(path, { waitUntil: "commit", timeout: 5_000 }).catch(() => {});
+					// Check server health to see if it's alive
+					var healthOk = "unknown";
+					try {
+						var baseURL = testInfo.project.use?.baseURL || "http://127.0.0.1";
+						var healthRes = await page.request.get(`${baseURL}/health`, { timeout: 3_000 });
+						healthOk = healthRes.ok() ? await healthRes.text() : `status=${healthRes.status()}`;
+					} catch (he) {
+						healthOk = `error: ${he.message?.slice(0, 100)}`;
+					}
 					var diag = [
 						`navigateAndWait failed for ${path} after ${attempt + 1} attempts`,
 						`page.url(): ${page.url()}`,
+						`health: ${healthOk}`,
 						`responses: ${JSON.stringify(responses.slice(0, 5))}`,
 						`console: ${JSON.stringify(consoleMessages.slice(0, 10))}`,
 						`error: ${error.message?.slice(0, 200)}`,
