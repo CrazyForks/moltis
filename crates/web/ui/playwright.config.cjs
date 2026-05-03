@@ -210,6 +210,7 @@ if (ollamaQwenLiveEnabled) {
 }
 
 module.exports = defineConfig({
+	globalSetup: "./e2e/global-setup.js",
 	testDir: "./e2e/specs",
 	timeout: 60_000,
 	expect: {
