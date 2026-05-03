@@ -358,8 +358,6 @@ pub(crate) async fn build_nav_counts(gw: &GatewayState) -> NavCounts {
         })
         .unwrap_or(0);
 
-    let hooks = gw.inner.read().await.discovered_hooks.len();
-
     NavCounts {
         projects,
         providers,
@@ -367,7 +365,7 @@ pub(crate) async fn build_nav_counts(gw: &GatewayState) -> NavCounts {
         skills,
         mcp,
         crons,
-        hooks,
+        hooks: 0, // placeholder — set from a single inner.read() in build_gon_data
     }
 }
 
@@ -386,7 +384,22 @@ pub(crate) async fn build_gon_data(gw: &GatewayState) -> GonData {
         .and_then(|v| serde_json::from_value(v).ok())
         .unwrap_or_default();
 
-    let counts = build_nav_counts(gw).await;
+    let mut counts = build_nav_counts(gw).await;
+
+    // Read all fields from gw.inner in a SINGLE lock acquisition to avoid
+    // deadlocks with concurrent write-lock requests (tokio's fair RwLock
+    // blocks new reads when a write is queued).
+    let (hooks_count, heartbeat_config, cached_channels_offered, update) = {
+        let inner = gw.inner.read().await;
+        (
+            inner.discovered_hooks.len(),
+            inner.heartbeat_config.clone(),
+            inner.channels_offered.clone(),
+            inner.update.clone(),
+        )
+    };
+    counts.hooks = hooks_count;
+
     let (crons, cron_status, webhooks_val, webhook_profiles_val) = tokio::join!(
         gw.services.cron.list(),
         gw.services.cron.status(),
@@ -409,13 +422,6 @@ pub(crate) async fn build_gon_data(gw: &GatewayState) -> GonData {
         .ok()
         .and_then(|v| serde_json::from_value(v).ok())
         .unwrap_or_default();
-    let (heartbeat_config, cached_channels_offered) = {
-        let inner = gw.inner.read().await;
-        (
-            inner.heartbeat_config.clone(),
-            inner.channels_offered.clone(),
-        )
-    };
     let channels_offered = resolve_channels_offered(cached_channels_offered);
     let channel_descriptors: Vec<moltis_channels::ChannelDescriptor> = channels_offered
         .iter()
@@ -491,7 +497,7 @@ pub(crate) async fn build_gon_data(gw: &GatewayState) -> GonData {
             .join("moltis.db")
             .display()
             .to_string(),
-        update: gw.inner.read().await.update.clone(),
+        update,
         sandbox,
         routes: SPA_ROUTES.clone(),
         started_at: *PROCESS_STARTED_AT_MS,
