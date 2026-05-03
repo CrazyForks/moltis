@@ -82,22 +82,25 @@ async function deleteAgentByName(page, agentName) {
 test.describe("Agents settings page", () => {
 	test.beforeEach(async ({ page, baseURL }, testInfo) => {
 		testInfo.setTimeout(120_000);
-		// Agents tests run first alphabetically; on CI the gateway WS
-		// handler may not be ready when the HTTP health check passes.
-		// Navigate to chat first to warm up the WS, retrying if needed.
-		for (let i = 0; i < 3; i++) {
+		// Agents tests run first alphabetically; on some CI runners the
+		// gateway WS handler isn't ready when the HTTP health check passes.
+		// Navigate to chat first to warm up the WS, retrying with increasing
+		// backoff to accommodate slow runners.
+		for (let i = 0; i < 5; i++) {
 			try {
 				await page.goto(`${baseURL}/chats/main`, {
-					waitUntil: "domcontentloaded",
-					timeout: 15_000,
+					waitUntil: "networkidle",
+					timeout: 20_000,
 				});
 				await waitForWsConnected(page);
-				break;
+				return;
 			} catch {
-				if (i === 2) throw new Error("WS warm-up failed after 3 attempts");
-				await page.waitForTimeout(2_000);
+				await page.waitForTimeout(3_000 * (i + 1));
 			}
 		}
+		// Final attempt — let it throw naturally
+		await navigateAndWait(page, "/chats/main");
+		await waitForWsConnected(page);
 	});
 
 	test.afterEach(async ({ page, baseURL }, testInfo) => {
