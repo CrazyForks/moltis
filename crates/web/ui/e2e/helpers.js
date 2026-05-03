@@ -88,35 +88,19 @@ function isRetryableNavigationError(error) {
 async function navigateAndWait(page, path) {
 	const pageErrors = watchPageErrors(page);
 	let lastError = null;
-	for (let attempt = 0; attempt < 5; attempt++) {
+	for (let attempt = 0; attempt < 3; attempt++) {
 		try {
 			await page.goto(path, { waitUntil: "domcontentloaded" });
 			await expectPageContentMounted(page);
 			return pageErrors;
 		} catch (error) {
 			lastError = error;
-			if (!isRetryableNavigationError(error) || attempt === 4) {
+			if (!isRetryableNavigationError(error) || attempt === 2) {
 				break;
 			}
-			// On CI the WebSocket may fail to connect after many tests,
-			// leaving the SPA unable to render content.  A reload often
-			// re-establishes the connection.
-			await page.reload({ waitUntil: "domcontentloaded", timeout: 10_000 }).catch(() => {});
 		}
 	}
-	// Capture a full-page screenshot before throwing so CI artifacts show what the browser looked like.
-	if (lastError) {
-		try {
-			var screenshot = await page.screenshot({ fullPage: true });
-			var testInfo = require("@playwright/test").test.info();
-			if (testInfo) {
-				await testInfo.attach("navigateAndWait-failure", { body: screenshot, contentType: "image/png" });
-			}
-		} catch {
-			// page may be closed already
-		}
-		throw lastError;
-	}
+	if (lastError) throw lastError;
 	return pageErrors;
 }
 

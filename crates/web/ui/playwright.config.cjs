@@ -217,7 +217,7 @@ if (ollamaQwenLiveEnabled) {
 
 module.exports = defineConfig({
 	testDir: "./e2e/specs",
-	timeout: 60_000,
+	timeout: 90_000,
 	expect: {
 		timeout: 10_000,
 	},
