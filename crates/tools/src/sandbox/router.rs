@@ -678,6 +678,19 @@ impl SandboxRouter {
         .await;
     }
 
+    /// Get the current effective default image WITHOUT waiting for a build
+    /// to finish.  Used by gon data so page requests don't block on the
+    /// initial sandbox image build.
+    pub async fn resolve_default_image_nowait(&self) -> String {
+        if let Some(ref img) = *self.global_image_override.read().await {
+            return img.clone();
+        }
+        self.config
+            .image
+            .clone()
+            .unwrap_or_else(|| DEFAULT_SANDBOX_IMAGE.to_string())
+    }
+
     /// Get the current effective default image (runtime override > config > hardcoded).
     pub async fn default_image(&self) -> String {
         self.wait_for_build_if_needed().await;
