@@ -35,6 +35,10 @@ async function sendRpcFromPage(page, method, params) {
 
 		if (lastResponse?.ok) return lastResponse;
 		if (!isRetryableRpcError(lastResponse?.error?.message)) return lastResponse;
+		// After 5 consecutive timeouts, reload page to get fresh WS connection
+		if (attempt > 0 && attempt % 5 === 0) {
+			await page.reload({ waitUntil: "domcontentloaded" }).catch(() => {});
+		}
 	}
 	console.log(`[sendRpc] ${method} FAILED after 40 attempts, last: ${lastResponse?.error?.message?.slice(0, 100)}`);
 	return lastResponse;
