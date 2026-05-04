@@ -19,6 +19,9 @@ async function sendRpcFromPage(page, method, params) {
 	let lastResponse = null;
 	for (let attempt = 0; attempt < 40; attempt++) {
 		if (attempt > 0) {
+			if (attempt <= 5 || attempt % 10 === 0) {
+				console.log(`[sendRpc] ${method} retry #${attempt}, last error: ${lastResponse?.error?.message?.slice(0, 80)}`);
+			}
 			await waitForWsConnected(page);
 		}
 		lastResponse = await page
@@ -41,6 +44,7 @@ async function sendRpcFromPage(page, method, params) {
 		if (lastResponse?.ok) return lastResponse;
 		if (!isRetryableRpcError(lastResponse?.error?.message)) return lastResponse;
 	}
+	console.log(`[sendRpc] ${method} FAILED after 40 attempts, last: ${lastResponse?.error?.message?.slice(0, 100)}`);
 	return lastResponse;
 }
 
