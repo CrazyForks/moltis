@@ -292,7 +292,21 @@ export function sendRpc<T = unknown>(method: string, params: unknown): Promise<R
 			return;
 		}
 		const id = nextId();
-		S.pending[id] = resolve as (value: RpcResponse) => void;
+		// Timeout guard: if the server never responds (half-open TCP, stale WS),
+		// resolve with an error so callers don't hang forever.
+		const timer = setTimeout(() => {
+			if (S.pending[id]) {
+				delete S.pending[id];
+				resolve({
+					ok: false,
+					error: { code: "TIMEOUT", message: "WebSocket disconnected" },
+				} as unknown as RpcResponse<T>);
+			}
+		}, 30_000);
+		S.pending[id] = ((res: RpcResponse) => {
+			clearTimeout(timer);
+			resolve(res as RpcResponse<T>);
+		}) as (value: RpcResponse) => void;
 		S.ws.send(JSON.stringify({ type: "req", id: id, method: method, params: params }));
 	});
 }
