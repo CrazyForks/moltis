@@ -242,6 +242,7 @@ pub struct DiscoveredHookInfo {
 
 /// Client connection tracking, split from GatewayInner to avoid lock contention.
 /// broadcast() only needs this read lock — no longer contends with node/config/session writes.
+#[derive(Default)]
 pub struct ClientRegistryInner {
     pub clients: HashMap<String, ConnectedClient>,
     pub active_sessions: HashMap<String, String>,
