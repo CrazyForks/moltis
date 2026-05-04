@@ -358,7 +358,6 @@ jobs:
           path: |
             crates/web/ui/playwright-report/
             crates/web/ui/test-results/
-            target/e2e-runtime/gateway.log
           if-no-files-found: ignore
           retention-days: 14
 

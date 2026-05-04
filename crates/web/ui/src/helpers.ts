@@ -302,7 +302,7 @@ export function sendRpc<T = unknown>(method: string, params: unknown): Promise<R
 					error: { code: "TIMEOUT", message: "WebSocket disconnected" },
 				} as unknown as RpcResponse<T>);
 			}
-		}, 30_000);
+		}, 5_000);
 		S.pending[id] = ((res: RpcResponse) => {
 			clearTimeout(timer);
 			resolve(res as RpcResponse<T>);
