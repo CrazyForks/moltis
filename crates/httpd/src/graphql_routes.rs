@@ -139,28 +139,31 @@ impl moltis_service_traits::SystemInfoService for GatewaySystemInfoService {
     }
 
     async fn status(&self) -> ServiceResult {
-        let inner = self.state.inner.read().await;
+        let client_count = self.state.client_count().await;
         Ok(serde_json::json!({
             "hostname": self.state.hostname,
             "version": self.state.version,
-            "connections": inner.clients.len(),
+            "connections": client_count,
             "uptimeMs": self.state.uptime_ms(),
         }))
     }
 
     async fn system_presence(&self) -> ServiceResult {
-        let inner = self.state.inner.read().await;
-        let clients: Vec<_> = inner
-            .clients
-            .values()
-            .map(|c| {
-                serde_json::json!({
-                    "connId": c.conn_id,
-                    "role": c.role(),
-                    "connectedAt": c.connected_at.elapsed().as_secs(),
+        let clients: Vec<_> = {
+            let registry = self.state.client_registry.read().await;
+            registry
+                .clients
+                .values()
+                .map(|c| {
+                    serde_json::json!({
+                        "connId": c.conn_id,
+                        "role": c.role(),
+                        "connectedAt": c.connected_at.elapsed().as_secs(),
+                    })
                 })
-            })
-            .collect();
+                .collect()
+        };
+        let inner = self.state.inner.read().await;
         let nodes: Vec<_> = inner
             .nodes
             .list()

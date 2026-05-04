@@ -275,9 +275,11 @@ impl ClientRegistryInner {
 // ── Mutable runtime state ────────────────────────────────────────────────────
 
 /// All mutable runtime state, protected by the single `RwLock` on `GatewayState`.
+///
+/// **Note:** Client connections, active sessions, and active projects live in
+/// [`ClientRegistryInner`] behind the separate `client_registry` lock on
+/// `GatewayState`.  Do **not** duplicate them here.
 pub struct GatewayInner {
-    /// All connected WebSocket clients, keyed by conn_id.
-    pub clients: HashMap<String, ConnectedClient>,
     /// Connected device nodes.
     pub nodes: NodeRegistry,
     /// Device pairing state.
@@ -288,10 +290,6 @@ pub struct GatewayInner {
     pub pending_client_requests: HashMap<String, PendingClientRequest>,
     /// Late-bound chat service override (for circular init).
     pub chat_override: Option<Arc<dyn crate::services::ChatService>>,
-    /// Active session key per connection (conn_id → session key).
-    pub active_sessions: HashMap<String, String>,
-    /// Active project id per connection (conn_id → project id).
-    pub active_projects: HashMap<String, String>,
     /// Heartbeat configuration (for gon data and RPC methods).
     pub heartbeat_config: moltis_config::schema::HeartbeatConfig,
     /// Pending channel reply targets: when a channel message triggers a chat
@@ -350,14 +348,11 @@ pub struct GatewayInner {
 impl GatewayInner {
     fn new(hook_registry: Option<Arc<moltis_common::hooks::HookRegistry>>) -> Self {
         Self {
-            clients: HashMap::new(),
             nodes: NodeRegistry::new(),
             pairing: PairingState::new(),
             pending_invokes: HashMap::new(),
             pending_client_requests: HashMap::new(),
             chat_override: None,
-            active_sessions: HashMap::new(),
-            active_projects: HashMap::new(),
             heartbeat_config: moltis_config::schema::HeartbeatConfig::default(),
             channel_reply_queue: HashMap::new(),
             tts_session_overrides: HashMap::new(),
@@ -389,19 +384,6 @@ impl GatewayInner {
             passkey_host_update_pending: HashSet::new(),
             shiki_cdn_url: None,
         }
-    }
-
-    /// Insert a client, returning the new client count.
-    pub fn register_client(&mut self, client: ConnectedClient) -> usize {
-        let conn_id = client.conn_id.clone();
-        self.clients.insert(conn_id, client);
-        self.clients.len()
-    }
-
-    /// Remove a client by conn_id. Returns the removed client and the new count.
-    pub fn remove_client(&mut self, conn_id: &str) -> (Option<ConnectedClient>, usize) {
-        let removed = self.clients.remove(conn_id);
-        (removed, self.clients.len())
     }
 }
 
@@ -917,35 +899,50 @@ impl GatewayState {
 
         let (tx, rx) = oneshot::channel();
 
+        // Check that the client is connected before doing anything.
+        if !self
+            .client_registry
+            .read()
+            .await
+            .clients
+            .contains_key(conn_id)
+        {
+            return Err(moltis_protocol::ErrorShape::new(
+                moltis_protocol::error_codes::UNAVAILABLE,
+                "client not connected",
+            ));
+        }
+
         // Register the pending request BEFORE sending to avoid a race where
         // the client responds before the entry exists (response would be dropped).
-        {
-            let mut inner = self.inner.write().await;
-            if !inner.clients.contains_key(conn_id) {
-                return Err(moltis_protocol::ErrorShape::new(
-                    moltis_protocol::error_codes::UNAVAILABLE,
-                    "client not connected",
-                ));
-            }
-            inner
+        self.inner.write().await.pending_client_requests.insert(
+            request_id.clone(),
+            PendingClientRequest {
+                method: method.into(),
+                sender: tx,
+                created_at: Instant::now(),
+            },
+        );
+
+        // Send the request frame to the client.
+        let sent = self
+            .client_registry
+            .read()
+            .await
+            .clients
+            .get(conn_id)
+            .map(|c| c.send(&json))
+            .unwrap_or(false);
+        if !sent {
+            self.inner
+                .write()
+                .await
                 .pending_client_requests
-                .insert(request_id.clone(), PendingClientRequest {
-                    method: method.into(),
-                    sender: tx,
-                    created_at: Instant::now(),
-                });
-            let sent = inner
-                .clients
-                .get(conn_id)
-                .map(|c| c.send(&json))
-                .unwrap_or(false);
-            if !sent {
-                inner.pending_client_requests.remove(&request_id);
-                return Err(moltis_protocol::ErrorShape::new(
-                    moltis_protocol::error_codes::UNAVAILABLE,
-                    "client send failed",
-                ));
-            }
+                .remove(&request_id);
+            return Err(moltis_protocol::ErrorShape::new(
+                moltis_protocol::error_codes::UNAVAILABLE,
+                "client send failed",
+            ));
         }
 
         match tokio::time::timeout(timeout, rx).await {
@@ -970,10 +967,11 @@ impl GatewayState {
 
     /// Close a client: remove from registry and unregister from nodes.
     pub async fn close_client(&self, conn_id: &str) -> Option<ConnectedClient> {
-        let mut inner = self.inner.write().await;
-        inner.nodes.unregister_by_conn(conn_id);
-        let (removed, count) = inner.remove_client(conn_id);
-        drop(inner);
+        // Unregister the node first (inner lock).
+        self.inner.write().await.nodes.unregister_by_conn(conn_id);
+
+        // Then remove the client from the client registry (separate lock).
+        let (removed, count) = self.client_registry.write().await.remove_client(conn_id);
 
         #[cfg(feature = "metrics")]
         moltis_metrics::gauge!(moltis_metrics::system::CONNECTED_CLIENTS).set(count as f64);
@@ -986,28 +984,31 @@ impl GatewayState {
     /// Disconnect all WebSocket clients: send an `auth.credentials_changed`
     /// event so browsers can redirect to login, then drain every connection.
     pub async fn disconnect_all_clients(&self, reason: &str) {
-        let mut inner = self.inner.write().await;
+        // 1) Acquire client_registry write lock: send events + clear clients.
+        {
+            let mut registry = self.client_registry.write().await;
 
-        // Build and serialize the notification frame.
-        let seq = self.broadcaster.next_seq();
-        let frame = EventFrame::new(
-            "auth.credentials_changed",
-            serde_json::json!({ "reason": reason }),
-            seq,
-        );
-        if let Ok(json) = serde_json::to_string(&frame) {
-            for client in inner.clients.values() {
-                let _ = client.send(&json);
+            // Build and serialize the notification frame.
+            let seq = self.broadcaster.next_seq();
+            let frame = EventFrame::new(
+                "auth.credentials_changed",
+                serde_json::json!({ "reason": reason }),
+                seq,
+            );
+            if let Ok(json) = serde_json::to_string(&frame) {
+                for client in registry.clients.values() {
+                    let _ = client.send(&json);
+                }
             }
+
+            // Drain all client state.
+            registry.clients.clear();
+            registry.active_sessions.clear();
+            registry.active_projects.clear();
         }
 
-        // Drain all state keyed by connection.
-        inner.nodes.clear();
-        inner.clients.clear();
-        inner.active_sessions.clear();
-        inner.active_projects.clear();
-
-        drop(inner);
+        // 2) Acquire inner write lock: clear nodes.
+        self.inner.write().await.nodes.clear();
 
         // Reset the atomic node counter so has_connected_nodes() reflects
         // reality. The normal WS cleanup path won't decrement because
@@ -1113,11 +1114,11 @@ mod tests {
 
         // Set up some active_sessions / active_projects entries.
         {
-            let mut inner = state.inner.write().await;
-            inner
+            let mut registry = state.client_registry.write().await;
+            registry
                 .active_sessions
                 .insert("conn-1".into(), "session-a".into());
-            inner
+            registry
                 .active_projects
                 .insert("conn-2".into(), "project-b".into());
         }
@@ -1131,9 +1132,9 @@ mod tests {
 
         // active_sessions and active_projects are cleared.
         {
-            let inner = state.inner.read().await;
-            assert!(inner.active_sessions.is_empty());
-            assert!(inner.active_projects.is_empty());
+            let registry = state.client_registry.read().await;
+            assert!(registry.active_sessions.is_empty());
+            assert!(registry.active_projects.is_empty());
         }
 
         // Both receivers got the event frame before the channel closed.
