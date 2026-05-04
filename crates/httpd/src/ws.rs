@@ -535,8 +535,15 @@ pub async fn handle_connection(
         };
 
         // Touch activity timestamp (lock-free atomic, no write lock needed).
-        if let Some(client) = state.inner.read().await.clients.get(&conn_id) {
-            client.touch();
+        {
+            let t = std::time::Instant::now();
+            if let Some(client) = state.inner.read().await.clients.get(&conn_id) {
+                client.touch();
+            }
+            let ms = t.elapsed().as_millis();
+            if ms > 50 {
+                warn!(conn_id = %conn_id, ms, "ws: touch read-lock slow");
+            }
         }
 
         match frame {
@@ -560,7 +567,12 @@ pub async fn handle_connection(
                     state: Arc::clone(&state),
                     channel: req.channel,
                 };
+                let _rpc_t = std::time::Instant::now();
                 let response = methods.dispatch(ctx).await;
+                let rpc_ms = _rpc_t.elapsed().as_millis();
+                if rpc_ms > 50 {
+                    warn!(conn_id = %conn_id, method = %req.method, rpc_ms, "ws: RPC dispatch slow");
+                }
                 if state.ws_request_logs {
                     info!(
                         conn_id = %conn_id,

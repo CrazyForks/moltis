@@ -40,6 +40,8 @@ cd "${REPO_ROOT}"
 export MOLTIS_CONFIG_DIR="${CONFIG_DIR}"
 export MOLTIS_DATA_DIR="${DATA_DIR}"
 export MOLTIS_SERVER__PORT="${PORT}"
+# Log file for CI diagnostics (warn-level traces for lock contention).
+GATEWAY_LOG="${RUNTIME_ROOT}/gateway.log"
 
 binary_is_stale() {
 	local binary="$1"
@@ -78,7 +80,14 @@ if [ -n "${BINARY}" ] && binary_is_stale "${BINARY}"; then
 fi
 
 if [ -n "${BINARY}" ]; then
-	exec "${BINARY}" --no-tls --bind 127.0.0.1 --port "${PORT}"
+	"${BINARY}" --no-tls --bind 127.0.0.1 --port "${PORT}" 2>"${GATEWAY_LOG}" &
+	CHILD=$!
+	# Copy to stdout for Playwright health checks, tail in background
+	tail -f "${GATEWAY_LOG}" &
+	wait "${CHILD}"
 else
-	exec cargo run --bin moltis -- --no-tls --bind 127.0.0.1 --port "${PORT}"
+	cargo run --bin moltis -- --no-tls --bind 127.0.0.1 --port "${PORT}" 2>"${GATEWAY_LOG}" &
+	CHILD=$!
+	tail -f "${GATEWAY_LOG}" &
+	wait "${CHILD}"
 fi
