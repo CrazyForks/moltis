@@ -542,8 +542,8 @@ pub(super) fn register(reg: &mut MethodRegistry) {
                 params["_conn_id"] = serde_json::json!(ctx.client_conn_id);
                 // Forward client Accept-Language, public remote IP, and timezone.
                 {
-                    let inner = ctx.state.inner.read().await;
-                    if let Some(client) = inner.clients.get(&ctx.client_conn_id) {
+                    let registry = ctx.state.client_registry.read().await;
+                    if let Some(client) = registry.clients.get(&ctx.client_conn_id) {
                         if let Some(ref lang) = client.accept_language {
                             params["_accept_language"] = serde_json::json!(lang);
                         }
@@ -695,8 +695,8 @@ pub(super) fn register(reg: &mut MethodRegistry) {
                 params["_conn_id"] = serde_json::json!(ctx.client_conn_id);
                 // Forward client Accept-Language, public remote IP, and timezone.
                 {
-                    let inner = ctx.state.inner.read().await;
-                    if let Some(client) = inner.clients.get(&ctx.client_conn_id) {
+                    let registry = ctx.state.client_registry.read().await;
+                    if let Some(client) = registry.clients.get(&ctx.client_conn_id) {
                         if let Some(ref lang) = client.accept_language {
                             params["_accept_language"] = serde_json::json!(lang);
                         }
@@ -726,8 +726,8 @@ pub(super) fn register(reg: &mut MethodRegistry) {
                 params["_conn_id"] = serde_json::json!(ctx.client_conn_id);
                 // Forward client Accept-Language, public remote IP, and timezone.
                 {
-                    let inner = ctx.state.inner.read().await;
-                    if let Some(client) = inner.clients.get(&ctx.client_conn_id) {
+                    let registry = ctx.state.client_registry.read().await;
+                    if let Some(client) = registry.clients.get(&ctx.client_conn_id) {
                         if let Some(ref lang) = client.accept_language {
                             params["_accept_language"] = serde_json::json!(lang);
                         }
@@ -783,8 +783,8 @@ pub(super) fn register(reg: &mut MethodRegistry) {
                     .and_then(|v| v.as_bool())
                     .unwrap_or(true);
                 let previous_active_key = {
-                    let inner = ctx.state.inner.read().await;
-                    inner.active_sessions.get(&ctx.client_conn_id).cloned()
+                    let registry = ctx.state.client_registry.read().await;
+                    registry.active_sessions.get(&ctx.client_conn_id).cloned()
                 };
                 let was_existing_session =
                     if let Some(ref metadata) = ctx.state.services.session_metadata {
@@ -795,17 +795,17 @@ pub(super) fn register(reg: &mut MethodRegistry) {
 
                 // Store the active session (and project if provided) for this connection.
                 {
-                    let mut inner = ctx.state.inner.write().await;
-                    inner
+                    let mut registry = ctx.state.client_registry.write().await;
+                    registry
                         .active_sessions
                         .insert(ctx.client_conn_id.clone(), key.to_string());
 
                     if let Some(project_id) = ctx.params.get("project_id").and_then(|v| v.as_str())
                     {
                         if project_id.is_empty() {
-                            inner.active_projects.remove(&ctx.client_conn_id);
+                            registry.active_projects.remove(&ctx.client_conn_id);
                         } else {
-                            inner
+                            registry
                                 .active_projects
                                 .insert(ctx.client_conn_id.clone(), project_id.to_string());
                         }

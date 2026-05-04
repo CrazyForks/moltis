@@ -537,7 +537,7 @@ pub async fn handle_connection(
         // Touch activity timestamp (lock-free atomic, no write lock needed).
         {
             let t = std::time::Instant::now();
-            if let Some(client) = state.inner.read().await.clients.get(&conn_id) {
+            if let Some(client) = state.client_registry.read().await.clients.get(&conn_id) {
                 client.touch();
             }
             let ms = t.elapsed().as_millis();

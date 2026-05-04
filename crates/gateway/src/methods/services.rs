@@ -26,8 +26,8 @@ async fn active_session_key_for_ctx(ctx: &MethodContext) -> Option<String> {
     {
         return Some(session_key.to_string());
     }
-    let inner = ctx.state.inner.read().await;
-    inner.active_sessions.get(&ctx.client_conn_id).cloned()
+    let registry = ctx.state.client_registry.read().await;
+    registry.active_sessions.get(&ctx.client_conn_id).cloned()
 }
 
 async fn default_agent_id_for_ctx(ctx: &MethodContext) -> String {

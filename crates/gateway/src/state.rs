@@ -238,6 +238,39 @@ pub struct DiscoveredHookInfo {
     pub avg_latency_ms: u64,
 }
 
+// ── Client registry (separate lock for WS client operations) ────────────────
+
+/// Client connection tracking, split from GatewayInner to avoid lock contention.
+/// broadcast() only needs this read lock — no longer contends with node/config/session writes.
+pub struct ClientRegistryInner {
+    pub clients: HashMap<String, ConnectedClient>,
+    pub active_sessions: HashMap<String, String>,
+    pub active_projects: HashMap<String, String>,
+}
+
+impl ClientRegistryInner {
+    pub fn new() -> Self {
+        Self {
+            clients: HashMap::new(),
+            active_sessions: HashMap::new(),
+            active_projects: HashMap::new(),
+        }
+    }
+
+    pub fn register_client(&mut self, client: ConnectedClient) -> usize {
+        let conn_id = client.conn_id.clone();
+        self.clients.insert(conn_id, client);
+        self.clients.len()
+    }
+
+    pub fn remove_client(&mut self, conn_id: &str) -> (Option<ConnectedClient>, usize) {
+        self.active_sessions.remove(conn_id);
+        self.active_projects.remove(conn_id);
+        let removed = self.clients.remove(conn_id);
+        (removed, self.clients.len())
+    }
+}
+
 // ── Mutable runtime state ────────────────────────────────────────────────────
 
 /// All mutable runtime state, protected by the single `RwLock` on `GatewayState`.
@@ -471,6 +504,11 @@ pub struct GatewayState {
     /// Lock-free broadcast state (seq counter, GraphQL subscription channel).
     pub broadcaster: Arc<Broadcaster>,
 
+    // ── Client registry (dedicated lock — hot path) ─────────────────────────
+    /// WS client connections, session/project mappings. Separate lock so
+    /// broadcast reads don't contend with node/config/session writes.
+    pub client_registry: RwLock<ClientRegistryInner>,
+
     // ── Mutable runtime state (single lock) ─────────────────────────────────
     /// All mutable runtime state, behind a single lock.
     pub inner: RwLock<GatewayInner>,
@@ -573,6 +611,7 @@ impl GatewayState {
             node_count: Arc::new(AtomicUsize::new(0)),
             ssh_target_count: Arc::new(AtomicUsize::new(0)),
             broadcaster: Arc::new(Broadcaster::new()),
+            client_registry: RwLock::new(ClientRegistryInner::new()),
             inner: RwLock::new(GatewayInner::new(hook_registry)),
         })
     }
@@ -637,7 +676,7 @@ impl GatewayState {
 
     /// Register a new client connection.
     pub async fn register_client(&self, client: ConnectedClient) {
-        let count = self.inner.write().await.register_client(client);
+        let count = self.client_registry.write().await.register_client(client);
 
         #[cfg(feature = "metrics")]
         moltis_metrics::gauge!(moltis_metrics::system::CONNECTED_CLIENTS).set(count as f64);
@@ -645,7 +684,7 @@ impl GatewayState {
 
     /// Remove a client by conn_id. Returns the removed client if found.
     pub async fn remove_client(&self, conn_id: &str) -> Option<ConnectedClient> {
-        let (removed, count) = self.inner.write().await.remove_client(conn_id);
+        let (removed, count) = self.client_registry.write().await.remove_client(conn_id);
 
         #[cfg(feature = "metrics")]
         {
@@ -660,7 +699,7 @@ impl GatewayState {
 
     /// Number of connected clients.
     pub async fn client_count(&self) -> usize {
-        self.inner.read().await.clients.len()
+        self.client_registry.read().await.clients.len()
     }
 
     /// Push a reply target for a session (used when a channel message triggers chat.send).

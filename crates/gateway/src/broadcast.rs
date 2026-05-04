@@ -121,7 +121,7 @@ pub async fn broadcast(
     let required_scopes = guards.get(event);
 
     let _bcast_t = std::time::Instant::now();
-    let inner = state.inner.read().await;
+    let registry = state.client_registry.read().await;
     let bcast_lock_ms = _bcast_t.elapsed().as_millis();
     if bcast_lock_ms > 50 {
         warn!(event, bcast_lock_ms, "broadcast: read-lock slow");
@@ -129,10 +129,10 @@ pub async fn broadcast(
     trace!(
         event,
         seq,
-        clients = inner.clients.len(),
+        clients = registry.clients.len(),
         "broadcasting event"
     );
-    for client in inner.clients.values() {
+    for client in registry.clients.values() {
         // Check scope guard: if the event requires a scope, verify the client has it.
         if let Some(required) = required_scopes {
             let client_scopes = client.scopes();
