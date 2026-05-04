@@ -570,8 +570,12 @@ pub async fn handle_connection(
                 let _rpc_t = std::time::Instant::now();
                 let response = methods.dispatch(ctx).await;
                 let rpc_ms = _rpc_t.elapsed().as_millis();
+                // Always log RPCs so CI gateway.log shows whether they arrive.
+                // TODO: remove once CI RPC issue is diagnosed.
                 if rpc_ms > 50 {
-                    warn!(conn_id = %conn_id, method = %req.method, rpc_ms, "ws: RPC dispatch slow");
+                    warn!(conn_id = %conn_id, method = %req.method, rpc_ms, ok = response.ok, "ws: RPC slow");
+                } else {
+                    info!(conn_id = %conn_id, method = %req.method, rpc_ms, ok = response.ok, "ws: RPC");
                 }
                 if state.ws_request_logs {
                     info!(
@@ -645,7 +649,7 @@ pub async fn handle_connection(
     #[cfg(feature = "metrics")]
     moltis_metrics::gauge!(moltis_metrics::websocket::CONNECTIONS_ACTIVE).decrement(1.0);
 
-    debug!(
+    warn!(
         conn_id = %conn_id,
         duration_secs = duration.as_secs(),
         "ws: connection closed"

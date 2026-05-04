@@ -79,15 +79,10 @@ if [ -n "${BINARY}" ] && binary_is_stale "${BINARY}"; then
 	BINARY=""
 fi
 
+# Redirect all output to log file AND stdout so Playwright can see health
+# endpoint responses while the log is also captured for CI artifacts.
 if [ -n "${BINARY}" ]; then
-	"${BINARY}" --no-tls --bind 127.0.0.1 --port "${PORT}" 2>"${GATEWAY_LOG}" &
-	CHILD=$!
-	# Copy to stdout for Playwright health checks, tail in background
-	tail -f "${GATEWAY_LOG}" &
-	wait "${CHILD}"
+	exec "${BINARY}" --no-tls --bind 127.0.0.1 --port "${PORT}" > >(tee -a "${GATEWAY_LOG}") 2>&1
 else
-	cargo run --bin moltis -- --no-tls --bind 127.0.0.1 --port "${PORT}" 2>"${GATEWAY_LOG}" &
-	CHILD=$!
-	tail -f "${GATEWAY_LOG}" &
-	wait "${CHILD}"
+	exec cargo run --bin moltis -- --no-tls --bind 127.0.0.1 --port "${PORT}" > >(tee -a "${GATEWAY_LOG}") 2>&1
 fi
