@@ -14,15 +14,15 @@ export const localizeStructuredError = (...args) => M.localizeStructuredError?.(
 export const formatAssistantTokenUsage = (...args) => M.formatAssistantTokenUsage?.(...args);
 export const formatTokens = (...args) => M.formatTokens?.(...args);
 export const formatBytes = (...args) => M.formatBytes?.(...args);
-// Wrap sendRpc with a 30s timeout so E2E tests don't hang forever
-// if the WS connection drops between waitForWsConnected and the RPC call.
+// Wrap sendRpc with a 1s timeout — RPCs should be instant (~10ms).
+// If the WS dropped, fail fast so the retry loop reconnects.
 export const sendRpc = (...args) => {
 	var result = M.sendRpc?.(...args);
 	if (!result || typeof result.then !== "function") return result;
 	return Promise.race([
 		result,
 		new Promise((_, reject) =>
-			setTimeout(() => reject(new Error("WebSocket disconnected (RPC timeout)")), 30_000),
+			setTimeout(() => reject(new Error("WebSocket disconnected (RPC timeout)")), 1_000),
 		),
 	]);
 };
