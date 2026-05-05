@@ -557,7 +557,6 @@ pub(super) fn register(reg: &mut MethodRegistry) {
                 }
                 ctx.state
                     .chat()
-                    .await
                     .send(params)
                     .await
                     .map_err(ErrorShape::from)
@@ -570,7 +569,6 @@ pub(super) fn register(reg: &mut MethodRegistry) {
             Box::pin(async move {
                 ctx.state
                     .chat()
-                    .await
                     .abort(ctx.params.clone())
                     .await
                     .map_err(ErrorShape::from)
@@ -583,7 +581,6 @@ pub(super) fn register(reg: &mut MethodRegistry) {
             Box::pin(async move {
                 ctx.state
                     .chat()
-                    .await
                     .peek(ctx.params.clone())
                     .await
                     .map_err(ErrorShape::from)
@@ -596,7 +593,6 @@ pub(super) fn register(reg: &mut MethodRegistry) {
             Box::pin(async move {
                 ctx.state
                     .chat()
-                    .await
                     .cancel_queued(ctx.params.clone())
                     .await
                     .map_err(ErrorShape::from)
@@ -611,7 +607,6 @@ pub(super) fn register(reg: &mut MethodRegistry) {
                 params["_conn_id"] = serde_json::json!(ctx.client_conn_id);
                 ctx.state
                     .chat()
-                    .await
                     .history(params)
                     .await
                     .map_err(ErrorShape::from)
@@ -624,7 +619,6 @@ pub(super) fn register(reg: &mut MethodRegistry) {
             Box::pin(async move {
                 ctx.state
                     .chat()
-                    .await
                     .inject(ctx.params.clone())
                     .await
                     .map_err(ErrorShape::from)
@@ -648,7 +642,6 @@ pub(super) fn register(reg: &mut MethodRegistry) {
                 params["_conn_id"] = serde_json::json!(ctx.client_conn_id);
                 ctx.state
                     .chat()
-                    .await
                     .clear(params)
                     .await
                     .map_err(ErrorShape::from)
@@ -663,7 +656,6 @@ pub(super) fn register(reg: &mut MethodRegistry) {
                 params["_conn_id"] = serde_json::json!(ctx.client_conn_id);
                 ctx.state
                     .chat()
-                    .await
                     .compact(params)
                     .await
                     .map_err(ErrorShape::from)
@@ -679,7 +671,6 @@ pub(super) fn register(reg: &mut MethodRegistry) {
                 params["_conn_id"] = serde_json::json!(ctx.client_conn_id);
                 ctx.state
                     .chat()
-                    .await
                     .context(params)
                     .await
                     .map_err(ErrorShape::from)
@@ -710,7 +701,6 @@ pub(super) fn register(reg: &mut MethodRegistry) {
                 }
                 ctx.state
                     .chat()
-                    .await
                     .raw_prompt(params)
                     .await
                     .map_err(ErrorShape::from)
@@ -741,7 +731,6 @@ pub(super) fn register(reg: &mut MethodRegistry) {
                 }
                 ctx.state
                     .chat()
-                    .await
                     .full_context(params)
                     .await
                     .map_err(ErrorShape::from)
@@ -757,7 +746,6 @@ pub(super) fn register(reg: &mut MethodRegistry) {
                 params["_conn_id"] = serde_json::json!(ctx.client_conn_id);
                 ctx.state
                     .chat()
-                    .await
                     .refresh_prompt_memory(params)
                     .await
                     .map_err(ErrorShape::from)
@@ -970,7 +958,7 @@ pub(super) fn register(reg: &mut MethodRegistry) {
 
                 // Inject replying state so frontend restores thinking
                 // indicator and voice-pending state after page reload.
-                let chat = ctx.state.chat().await;
+                let chat = ctx.state.chat();
                 let active_keys = chat.active_session_keys().await;
                 let replying = active_keys.iter().any(|k| k == key);
                 if let Some(obj) = result.as_object_mut() {

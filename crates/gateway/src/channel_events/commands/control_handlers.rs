@@ -669,7 +669,7 @@ pub(in crate::channel_events) async fn handle_stop(
     state: &Arc<GatewayState>,
     session_key: &str,
 ) -> ChannelResult<String> {
-    let chat = state.chat().await;
+    let chat = state.chat();
     let params = serde_json::json!({ "sessionKey": session_key });
     match chat.abort(params).await {
         Ok(res) => {
@@ -760,7 +760,7 @@ pub(in crate::channel_events) async fn handle_peek(
     state: &Arc<GatewayState>,
     session_key: &str,
 ) -> ChannelResult<String> {
-    let chat = state.chat().await;
+    let chat = state.chat();
     let params = serde_json::json!({ "sessionKey": session_key });
     match chat.peek(params).await {
         Ok(res) => {

@@ -251,15 +251,13 @@ async fn gateway_startup_with_llm_wiring_does_not_block() {
         db_pool1,
     ));
     if !registry.read().await.is_empty() {
-        state
-            .set_chat(Arc::new(LiveChatService::new(
-                Arc::clone(&registry),
-                Arc::new(tokio::sync::RwLock::new(DisabledModelsStore::default())),
-                moltis_gateway::chat::GatewayChatRuntime::from_state(Arc::clone(&state)),
-                Arc::clone(&session_store1),
-                Arc::clone(&session_metadata1),
-            )))
-            .await;
+        state.set_chat(Arc::new(LiveChatService::new(
+            Arc::clone(&registry),
+            Arc::new(tokio::sync::RwLock::new(DisabledModelsStore::default())),
+            moltis_gateway::chat::GatewayChatRuntime::from_state(Arc::clone(&state)),
+            Arc::clone(&session_store1),
+            Arc::clone(&session_metadata1),
+        )));
     }
 
     // Even without real API keys the override path must work.
@@ -282,20 +280,18 @@ async fn gateway_startup_with_llm_wiring_does_not_block() {
     let session_metadata2 = Arc::new(moltis_sessions::metadata::SqliteSessionMetadata::new(
         db_pool2,
     ));
-    state2
-        .set_chat(Arc::new(LiveChatService::new(
-            Arc::clone(&registry2),
-            Arc::new(tokio::sync::RwLock::new(DisabledModelsStore::default())),
-            moltis_gateway::chat::GatewayChatRuntime::from_state(Arc::clone(&state2)),
-            Arc::clone(&session_store2),
-            Arc::clone(&session_metadata2),
-        )))
-        .await;
+    state2.set_chat(Arc::new(LiveChatService::new(
+        Arc::clone(&registry2),
+        Arc::new(tokio::sync::RwLock::new(DisabledModelsStore::default())),
+        moltis_gateway::chat::GatewayChatRuntime::from_state(Arc::clone(&state2)),
+        Arc::clone(&session_store2),
+        Arc::clone(&session_metadata2),
+    )));
 
     // Verify chat override is active — chat.send should use the LiveChatService,
     // not the noop. If no providers are configured it errors; if Codex tokens
     // exist on this machine it may succeed (returns a runId).
-    let chat = state2.chat().await;
+    let chat = state2.chat();
     let result = chat.send(serde_json::json!({ "text": "hello" })).await;
     match result {
         Err(e) => assert!(

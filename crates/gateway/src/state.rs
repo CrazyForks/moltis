@@ -288,8 +288,6 @@ pub struct GatewayInner {
     pub pending_invokes: HashMap<String, PendingInvoke>,
     /// Pending server → client RPC requests awaiting client responses (v4).
     pub pending_client_requests: HashMap<String, PendingClientRequest>,
-    /// Late-bound chat service override (for circular init).
-    pub chat_override: Option<Arc<dyn crate::services::ChatService>>,
     /// Heartbeat configuration (for gon data and RPC methods).
     pub heartbeat_config: moltis_config::schema::HeartbeatConfig,
     /// Pending channel reply targets: when a channel message triggers a chat
@@ -352,7 +350,6 @@ impl GatewayInner {
             pairing: PairingState::new(),
             pending_invokes: HashMap::new(),
             pending_client_requests: HashMap::new(),
-            chat_override: None,
             heartbeat_config: moltis_config::schema::HeartbeatConfig::default(),
             channel_reply_queue: HashMap::new(),
             tts_session_overrides: HashMap::new(),
@@ -474,7 +471,12 @@ pub struct GatewayState {
     /// Late-bound skill usage store for per-skill read/write telemetry.
     pub skill_usage_store: std::sync::OnceLock<moltis_skills::usage::SkillUsageStore>,
 
-    // ── Atomics (lock-free) ─────────────────────────────────────────────────
+    // ── Chat override (set once, read frequently) ─��───────────────────────
+    /// Late-bound chat service override. Uses `std::sync::RwLock` (non-async)
+    /// so `chat()` never awaits the `inner` tokio lock.
+    pub chat_override: std::sync::RwLock<Option<Arc<dyn crate::services::ChatService>>>,
+
+    // ── Atomics (lock-free) ───────────────────────────────��─────────────────
     pub tts_phrase_counter: AtomicUsize,
     /// Live count of connected nodes.  Shared with `ExecTool` via the
     /// `GatewayNodeExecProvider` so `parameters_schema()` can check it
@@ -590,6 +592,7 @@ impl GatewayState {
             webhook_rate_limiter: moltis_webhooks::rate_limit::WebhookRateLimiter::default(),
             webhook_worker_tx: std::sync::OnceLock::new(),
             skill_usage_store: std::sync::OnceLock::new(),
+            chat_override: std::sync::RwLock::new(None),
             tts_phrase_counter: AtomicUsize::new(0),
             node_count: Arc::new(AtomicUsize::new(0)),
             ssh_target_count: Arc::new(AtomicUsize::new(0)),
@@ -611,8 +614,11 @@ impl GatewayState {
     }
 
     /// Set a late-bound chat service (for circular init).
-    pub async fn set_chat(&self, chat: Arc<dyn crate::services::ChatService>) {
-        self.inner.write().await.chat_override = Some(chat);
+    pub fn set_chat(&self, chat: Arc<dyn crate::services::ChatService>) {
+        *self
+            .chat_override
+            .write()
+            .unwrap_or_else(|e| e.into_inner()) = Some(chat);
     }
 
     /// Set the push notification service (late-bound initialization).
@@ -636,8 +642,14 @@ impl GatewayState {
     }
 
     /// Get the active chat service (override or default).
-    pub async fn chat(&self) -> Arc<dyn crate::services::ChatService> {
-        if let Some(c) = self.inner.read().await.chat_override.as_ref() {
+    /// Lock-free: reads from a dedicated field to avoid inner lock contention.
+    pub fn chat(&self) -> Arc<dyn crate::services::ChatService> {
+        if let Some(c) = self
+            .chat_override
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+        {
             return Arc::clone(c);
         }
         Arc::clone(&self.services.chat)

@@ -483,7 +483,7 @@ pub(super) async fn complete_startup(
             Arc::new(move |req: moltis_webhooks::worker::ExecuteRequest| {
                 let chat_state = Arc::clone(&worker_state_ref);
                 Box::pin(async move {
-                    let chat = chat_state.chat().await;
+                    let chat = chat_state.chat();
                     let mut params = serde_json::json!({
                         "text": req.message,
                         "_session_key": req.session_key,
@@ -1171,7 +1171,7 @@ pub(super) async fn complete_startup(
                     if let Some(model) = req.model {
                         params["model"] = serde_json::json!(model);
                     }
-                    let chat = state.chat().await;
+                    let chat = state.chat();
                     if req.wait_for_reply {
                         chat.send_sync(params)
                             .await
@@ -1360,7 +1360,7 @@ pub(super) async fn complete_startup(
         }
 
         let live_chat = Arc::new(chat_service);
-        state.set_chat(live_chat).await;
+        state.set_chat(live_chat);
 
         live_mcp
             .set_tool_registry(Arc::clone(&shared_tool_registry))
