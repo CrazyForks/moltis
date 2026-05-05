@@ -78,6 +78,13 @@ if [ -n "${BINARY}" ] && binary_is_stale "${BINARY}"; then
 	BINARY=""
 fi
 
+GATEWAY_LOG="${RUNTIME_ROOT}/gateway.log"
+
+# Duplicate stderr to a log file for CI artifact upload while still
+# forwarding to Playwright's webServer capture. Use process substitution
+# so exec still replaces this shell with the binary (Playwright tracks PIDs).
+exec 2> >(tee "${GATEWAY_LOG}" >&2)
+
 if [ -n "${BINARY}" ]; then
 	exec "${BINARY}" --no-tls --bind 127.0.0.1 --port "${PORT}"
 else
