@@ -376,6 +376,10 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+      - name: Clean E2E runtime directories
+        if: ${{ always() }}
+        run: sudo rm -rf target/e2e-runtime*
+
   macos-app:
     name: macOS App
     if: ${{ github.event_name != 'pull_request' }}
