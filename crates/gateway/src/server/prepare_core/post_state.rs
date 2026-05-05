@@ -1353,6 +1353,7 @@ pub(super) async fn complete_startup(
         )
         .with_session_state_store(Arc::clone(&session_state_store))
         .with_tools(Arc::clone(&shared_tool_registry))
+        .with_config(config.clone())
         .with_failover(config.failover.clone());
 
         if let Some(ref hooks) = state.inner.read().await.hook_registry {

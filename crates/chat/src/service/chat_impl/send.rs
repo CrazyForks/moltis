@@ -22,8 +22,8 @@ use crate::{
     },
     prompt::{
         apply_request_runtime_context, build_prompt_runtime_context, discover_skills_if_enabled,
-        load_prompt_persona_for_agent, load_prompt_persona_for_session,
-        resolve_channel_runtime_context, resolve_prompt_agent_id, resolve_prompt_mode_context,
+        load_prompt_persona_for_session, resolve_channel_runtime_context, resolve_prompt_agent_id,
+        resolve_prompt_mode_context,
     },
     run_with_tools::run_with_tools,
     streaming::run_streaming,
@@ -181,6 +181,7 @@ impl LiveChatService {
         // construction, hook dispatch, or other I/O. If a run already owns the
         // session, queue immediately instead of letting a follow-up request
         // contend with the active run's locks.
+        let message_queue_mode = self.config.chat.message_queue_mode;
         let session_sem = self.session_semaphore(&session_key).await;
         let permit: OwnedSemaphorePermit = match session_sem.clone().try_acquire_owned() {
             Ok(p) => {
@@ -193,7 +194,7 @@ impl LiveChatService {
                 p
             },
             Err(_) => {
-                let queue_mode = moltis_config::discover_and_load().chat.message_queue_mode;
+                let queue_mode = message_queue_mode;
                 let position = {
                     let mut q = self.message_queue.write().await;
                     let entry = q.entry(session_key.clone()).or_default();
@@ -446,7 +447,7 @@ impl LiveChatService {
                     .remove(&session_key_clone)
                     .unwrap_or_default();
                 if !queued.is_empty() {
-                    let queue_mode = moltis_config::discover_and_load().chat.message_queue_mode;
+                    let queue_mode = message_queue_mode;
                     let chat = state_for_drain.chat_service().await;
                     match queue_mode {
                         MessageQueueMode::Followup => {
@@ -835,8 +836,7 @@ impl LiveChatService {
 
         // Discover enabled skills/plugins for prompt injection (gated on
         // `[skills] enabled` — see #655).
-        let discovered_skills =
-            discover_skills_if_enabled(&moltis_config::discover_and_load()).await;
+        let discovered_skills = discover_skills_if_enabled(&self.config).await;
         info!(
             session = %session_key,
             skills_len = discovered_skills.len(),
@@ -848,16 +848,33 @@ impl LiveChatService {
         // per-session sandbox override details for prompt runtime context.
         let session_entry = self.session_metadata.get(&session_key).await;
         let session_agent_id = resolve_prompt_agent_id(session_entry.as_ref());
+        info!(
+            session = %session_key,
+            agent_id = %session_agent_id,
+            client_seq = ?client_seq,
+            "chat.send: loading persona"
+        );
         let persona = load_prompt_persona_for_session(
             &session_key,
             session_entry.as_ref(),
             self.session_state_store.as_deref(),
         )
         .await;
+        info!(
+            session = %session_key,
+            agent_id = %session_agent_id,
+            client_seq = ?client_seq,
+            "chat.send: persona loaded"
+        );
         let mcp_disabled = session_entry
             .as_ref()
             .and_then(|entry| entry.mcp_disabled)
             .unwrap_or(false);
+        info!(
+            session = %session_key,
+            client_seq = ?client_seq,
+            "chat.send: building runtime context"
+        );
         let mut runtime_context = build_prompt_runtime_context(
             &self.state,
             &provider,
@@ -928,12 +945,8 @@ impl LiveChatService {
         // `chat.compaction.threshold_percent` of the model context window.
         // The value is clamped to the 0.1–0.95 range in case config
         // validation missed a typo; the default (0.95) is loaded via
-        // load_prompt_persona_for_agent for the session's agent and
-        // matches the pre-PR-#653 hardcoded trigger.
-        let compaction_cfg = &load_prompt_persona_for_agent(&session_agent_id)
-            .config
-            .chat
-            .compaction;
+        // the session persona and matches the pre-PR-#653 hardcoded trigger.
+        let compaction_cfg = &persona.config.chat.compaction;
         let context_window = provider.context_window() as u64;
         let token_usage = session_token_usage_from_messages(&history);
         let estimated_next_input = token_usage
@@ -1073,7 +1086,7 @@ impl LiveChatService {
             }
         }
 
-        let agent_timeout_secs = moltis_config::discover_and_load().tools.agent_timeout_secs;
+        let agent_timeout_secs = self.config.tools.agent_timeout_secs;
 
         let message_queue = Arc::clone(&self.message_queue);
         let state_for_drain = Arc::clone(&self.state);
@@ -1353,7 +1366,7 @@ impl LiveChatService {
                 .remove(&session_key_clone)
                 .unwrap_or_default();
             if !queued.is_empty() {
-                let queue_mode = moltis_config::discover_and_load().chat.message_queue_mode;
+                let queue_mode = message_queue_mode;
                 let chat = state_for_drain.chat_service().await;
                 match queue_mode {
                     MessageQueueMode::Followup => {
