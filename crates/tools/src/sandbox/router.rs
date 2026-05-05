@@ -679,8 +679,8 @@ impl SandboxRouter {
     }
 
     /// Get the current effective default image WITHOUT waiting for a build
-    /// to finish.  Used by gon data so page requests don't block on the
-    /// initial sandbox image build.
+    /// to finish. Used by request paths that must not block on the initial
+    /// sandbox image build.
     pub async fn resolve_default_image_nowait(&self) -> String {
         if let Some(ref img) = *self.global_image_override.read().await {
             return img.clone();
@@ -691,10 +691,9 @@ impl SandboxRouter {
             .unwrap_or_else(|| DEFAULT_SANDBOX_IMAGE.to_string())
     }
 
-    /// Resolve the container image for prompt/runtime metadata without waiting
-    /// for any background image build. This must stay cheap: callers use it
-    /// while preparing chat turns, where blocking on sandbox provisioning would
-    /// delay the RPC response that returns the run id.
+    /// Resolve the container image without waiting for any background image
+    /// build. This must stay cheap: callers use it from RPC and tool paths
+    /// where blocking on sandbox provisioning would stall user-visible work.
     pub async fn resolve_image_nowait(
         &self,
         session_key: &str,
@@ -712,7 +711,7 @@ impl SandboxRouter {
         {
             info!(
                 session = %session_key,
-                "sandbox image build in progress, resolving prompt image without waiting"
+                "sandbox image build in progress, resolving image without waiting"
             );
         }
         self.resolve_default_image_nowait().await
