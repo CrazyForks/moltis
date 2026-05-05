@@ -56,6 +56,7 @@ async function waitForWsConnected(page, timeoutMs = 20_000) {
 					.then((cls) => /connected/.test(cls || ""))
 					.catch(() => false);
 				if (!statusDotConnected) return false;
+				// Verify both state.connected and a live RPC round-trip.
 				return page
 					.evaluate(async () => {
 						const appScript = document.querySelector('script[type="module"][src*="js/app.js"]');
@@ -63,7 +64,14 @@ async function waitForWsConnected(page, timeoutMs = 20_000) {
 						const appUrl = new URL(appScript.src, window.location.origin);
 						const prefix = appUrl.href.slice(0, appUrl.href.length - "js/app.js".length);
 						const state = await import(`${prefix}js/state.js`);
-						return Boolean(state.connected && state.ws && state.ws.readyState === WebSocket.OPEN);
+						if (!state.connected || !state.ws || state.ws.readyState !== WebSocket.OPEN) return false;
+						// Warmup RPC: verify the WS can actually round-trip a request.
+						const helpers = await import(`${prefix}js/helpers.js`);
+						const res = await Promise.race([
+							helpers.sendRpc("status", {}),
+							new Promise((r) => setTimeout(() => r(null), 2000)),
+						]);
+						return res?.ok === true;
 					})
 					.catch(() => false);
 			},
