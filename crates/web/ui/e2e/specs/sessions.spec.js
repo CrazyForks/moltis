@@ -375,6 +375,7 @@ test.describe("Session management", () => {
 	test("share button creates cutoff notice and copyable link", async ({ page }) => {
 		const pageErrors = await navigateAndWait(page, "/");
 		await waitForWsConnected(page);
+		await createSession(page);
 
 		await page.evaluate(() => {
 			window.__shareTestCopiedLink = "";
@@ -412,11 +413,10 @@ test.describe("Session management", () => {
 			})
 			.toMatch(/\/share\//);
 
-		await expect(
-			page.locator(".msg.system").filter({
-				hasText: "This session until here has been shared. Later messages are not included in the shared link.",
-			}),
-		).toBeVisible();
+		const cutoffNotice = page.locator(".msg.system").filter({
+			hasText: "This session until here has been shared. Later messages are not included in the shared link.",
+		});
+		await expect.poll(() => cutoffNotice.count(), { timeout: 5_000 }).toBeGreaterThan(0);
 
 		expect(pageErrors).toEqual([]);
 	});

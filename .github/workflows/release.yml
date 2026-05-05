@@ -286,6 +286,7 @@ jobs:
 
       - name: Install Playwright browsers
         if: ${{ env.RELEASE_DRY_RUN != 'true' }}
+        timeout-minutes: 2
         working-directory: crates/web/ui
         run: npx playwright install --with-deps chromium
 

@@ -303,6 +303,7 @@ jobs:
 
       - name: Install Playwright browsers
         if: env.SKIP != 'true'
+        timeout-minutes: 2
         working-directory: crates/web/ui
         run: npx playwright install --with-deps chromium
 
@@ -381,6 +382,7 @@ jobs:
         run: cargo build --bin moltis
 
       - name: Install Playwright browsers
+        timeout-minutes: 2
         working-directory: crates/web/ui
         run: npx playwright install --with-deps chromium
 

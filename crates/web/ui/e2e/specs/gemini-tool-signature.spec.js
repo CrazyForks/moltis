@@ -183,7 +183,7 @@ async function startGeminiMockServer() {
 
 test.describe("Gemini tool-call thought signatures", () => {
 	test("web chat round-trips tool call metadata into the follow-up provider request", async ({ page }) => {
-		test.setTimeout(120_000);
+		test.setTimeout(45_000);
 		const mock = await startGeminiMockServer();
 		const pageErrors = watchPageErrors(page);
 		let providerName = "";
@@ -248,7 +248,7 @@ test.describe("Gemini tool-call thought signatures", () => {
 						const assistantMessages = (historyResponse.payload || []).filter((message) => message.role === "assistant");
 						return String(assistantMessages.at(-1)?.content || "");
 					},
-					{ timeout: 120_000 },
+					{ timeout: 45_000 },
 				)
 				.toContain(SENTINEL);
 

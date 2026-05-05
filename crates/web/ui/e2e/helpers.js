@@ -20,7 +20,7 @@ async function expectPageContentMounted(page) {
 				}
 			},
 			{
-				timeout: 20_000,
+				timeout: 10_000,
 			},
 		)
 		.toBeGreaterThan(0);
@@ -46,7 +46,7 @@ function watchPageErrors(page) {
  * Note: #statusText is intentionally set to "" when connected, so we
  * only check the dot's CSS class.
  */
-async function waitForWsConnected(page, timeoutMs = 20_000) {
+async function waitForWsConnected(page, timeoutMs = 10_000) {
 	await expect
 		.poll(
 			async () => {
@@ -64,12 +64,12 @@ async function waitForWsConnected(page, timeoutMs = 20_000) {
 						const appUrl = new URL(appScript.src, window.location.origin);
 						const prefix = appUrl.href.slice(0, appUrl.href.length - "js/app.js".length);
 						const state = await import(`${prefix}js/state.js`);
-						if (!state.connected || !state.ws || state.ws.readyState !== WebSocket.OPEN) return false;
+						if (!(state.connected && state.ws) || state.ws.readyState !== WebSocket.OPEN) return false;
 						// Warmup RPC: verify the WS can actually round-trip a request.
 						const helpers = await import(`${prefix}js/helpers.js`);
 						const res = await Promise.race([
 							helpers.sendRpc("status", {}),
-							new Promise((r) => setTimeout(() => r(null), 2000)),
+							new Promise((r) => setTimeout(() => r(null), 1000)),
 						]);
 						return res?.ok === true;
 					})
@@ -103,7 +103,7 @@ async function navigateAndWait(page, path) {
 			if (attempt > 0) {
 				await page.goto("about:blank").catch(() => {});
 			}
-			await page.goto(path, { waitUntil: "domcontentloaded", timeout: 20_000 });
+			await page.goto(path, { waitUntil: "domcontentloaded", timeout: 10_000 });
 			await expectPageContentMounted(page);
 			return pageErrors;
 		} catch (error) {
@@ -201,7 +201,7 @@ async function navigateAndWait(page, path) {
  * if their assertions require it.
  */
 async function createSession(page) {
-	const timeoutMs = 20_000;
+	const timeoutMs = 10_000;
 	const previousActiveKey = await page.evaluate(() => {
 		return window.__moltis_stores?.sessionStore?.activeSessionKey?.value || "";
 	});
@@ -239,31 +239,28 @@ function isRetryableRpcError(message) {
 
 /**
  * Send an RPC from the page context with retry logic for transient WS errors.
- * Retries up to 10 times with WS state diagnostics on failure.
+ * Retries a few transient WS disconnects with WS state diagnostics on failure.
  */
 async function sendRpcFromPage(page, method, params) {
 	let lastResponse = null;
-	for (let attempt = 0; attempt < 10; attempt++) {
+	for (let attempt = 0; attempt < 3; attempt++) {
 		if (attempt > 0) {
-			if (attempt <= 5) {
-				const wsState = await page
-					.evaluate(() => {
-						var s = window.__moltis_state;
-						return {
-							connected: s?.connected,
-							subscribed: s?.subscribed,
-							wsExists: !!s?.ws,
-							readyState: s?.ws?.readyState,
-							pendingCount: s?.pending ? Object.keys(s.pending).length : -1,
-						};
-					})
-					.catch(() => ({}));
-				console.log(
-					`[sendRpc] ${method} retry #${attempt} ws=${JSON.stringify(wsState)} err=${lastResponse?.error?.message?.slice(0, 60)}`,
-				);
-			}
-			await waitForWsConnected(page).catch(() => {});
-			await page.waitForTimeout(100);
+			const wsState = await page
+				.evaluate(() => {
+					var s = window.__moltis_state;
+					return {
+						connected: s?.connected,
+						subscribed: s?.subscribed,
+						wsExists: !!s?.ws,
+						readyState: s?.ws?.readyState,
+						pendingCount: s?.pending ? Object.keys(s.pending).length : -1,
+					};
+				})
+				.catch(() => ({}));
+			console.log(
+				`[sendRpc] ${method} retry #${attempt} ws=${JSON.stringify(wsState)} err=${lastResponse?.error?.message?.slice(0, 60)}`,
+			);
+			await waitForWsConnected(page, 1_000).catch(() => {});
 		}
 		lastResponse = await page
 			.evaluate(
@@ -284,12 +281,8 @@ async function sendRpcFromPage(page, method, params) {
 
 		if (lastResponse?.ok) return lastResponse;
 		if (!isRetryableRpcError(lastResponse?.error?.message)) return lastResponse;
-		// After 5 consecutive timeouts, reload page to get fresh WS connection
-		if (attempt > 0 && attempt % 5 === 0) {
-			await page.reload({ waitUntil: "domcontentloaded" }).catch(() => {});
-		}
 	}
-	console.log(`[sendRpc] ${method} FAILED after 10 attempts, last: ${lastResponse?.error?.message?.slice(0, 100)}`);
+	console.log(`[sendRpc] ${method} FAILED after 3 attempts, last: ${lastResponse?.error?.message?.slice(0, 100)}`);
 	return lastResponse;
 }
 

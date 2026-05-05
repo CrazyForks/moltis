@@ -295,9 +295,9 @@ export function sendRpc<T = unknown>(method: string, params: unknown): Promise<R
 		}
 		const id = nextId();
 		// Timeout guard: chat.send should only acknowledge with a runId; longer
-		// work streams through events. Other RPCs include provider setup and can
-		// legitimately take longer without meaning the WebSocket is wedged.
-		const timeoutMs = method === "chat.send" ? 1_000 : 30_000;
+		// work streams through events. Other RPCs should also return promptly
+		// instead of hiding stalled request paths behind long client waits.
+		const timeoutMs = method === "chat.send" ? 1_000 : 5_000;
 		const timer = setTimeout(() => {
 			if (S.pending[id]) {
 				delete S.pending[id];

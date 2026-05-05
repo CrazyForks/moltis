@@ -47,10 +47,6 @@ async function deleteAgentByName(page, agentName) {
 }
 
 test.describe("Agents settings page", () => {
-	test.beforeEach(async ({ page: _page }, testInfo) => {
-		testInfo.setTimeout(90_000);
-	});
-
 	test("settings/agents loads and shows heading", async ({ page }) => {
 		const pageErrors = watchPageErrors(page);
 		await navigateAndWait(page, "/settings/agents");
@@ -339,7 +335,6 @@ test.describe("Agents settings page", () => {
 });
 
 test.describe("Welcome card agent picker", () => {
-	test.skip(!!process.env.CI, "gateway WS disconnects on CI runners");
 	test("welcome card shows main agent chip and hatch button with one agent", async ({ page }) => {
 		const pageErrors = watchPageErrors(page);
 
