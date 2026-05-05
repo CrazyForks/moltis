@@ -294,6 +294,7 @@ export function sendRpc<T = unknown>(method: string, params: unknown): Promise<R
 		const id = nextId();
 		// Timeout guard: if the server never responds (half-open TCP, stale WS),
 		// resolve with an error so callers don't hang forever.
+		// 30s allows heavy RPCs (chat.send, provider setup) to complete on slow CI.
 		const timer = setTimeout(() => {
 			if (S.pending[id]) {
 				delete S.pending[id];
@@ -302,7 +303,7 @@ export function sendRpc<T = unknown>(method: string, params: unknown): Promise<R
 					error: { code: "TIMEOUT", message: "WebSocket disconnected" },
 				} as unknown as RpcResponse<T>);
 			}
-		}, 5_000);
+		}, 30_000);
 		S.pending[id] = ((res: RpcResponse) => {
 			clearTimeout(timer);
 			resolve(res as RpcResponse<T>);
