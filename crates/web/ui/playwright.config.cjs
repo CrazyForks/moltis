@@ -422,7 +422,9 @@ module.exports = defineConfig({
 	forbidOnly: !!process.env.CI,
 	retries: 0,
 	workers: 1,
-	reporter: process.env.CI ? [["github"], ["html", { open: "never" }]] : [["list"], ["html", { open: "never" }]],
+	reporter: process.env.CI
+		? [[path.join(__dirname, "e2e/ci-dot-reporter.cjs")], ["github"], ["html", { open: "never" }]]
+		: [["list"], ["html", { open: "never" }]],
 	use: {
 		baseURL: baseURL,
 		locale: "en-US",
