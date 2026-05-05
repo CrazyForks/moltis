@@ -32,7 +32,7 @@ class CiDotReporter {
 		this.count = 0;
 		this.total = 0;
 		this.label = runLabel();
-		this.lineOpen = false;
+		this.pendingMarks = "";
 	}
 
 	printsToStdio() {
@@ -45,42 +45,33 @@ class CiDotReporter {
 		process.stdout.write(
 			`[${this.label}] Running ${this.total} ${plural(this.total, "test", "tests")} using ${workerCount} ${plural(workerCount, "worker", "workers")}\n`,
 		);
-		this.startProgressLine();
 	}
 
 	onTestEnd(test, result) {
 		this.count += 1;
 		const mark = outcomeMark(test, result);
-		process.stdout.write(mark);
-		this.lineOpen = true;
+		this.pendingMarks += mark;
 
 		if (test.outcome() === "unexpected") {
-			process.stdout.write(` ${this.count}/${this.total}\n[${this.label}] ${mark} ${failedTestTitle(test)}\n`);
-			this.startProgressLine();
+			this.flushProgressLine();
+			process.stdout.write(`[${this.label}] ${mark} ${failedTestTitle(test)}\n`);
 			return;
 		}
 
-		if (this.count % 20 === 0) {
-			process.stdout.write(` ${this.count}/${this.total}\n`);
-			this.startProgressLine();
+		if (this.count % 10 === 0 || this.count === this.total) {
+			this.flushProgressLine();
 		}
 	}
 
 	onEnd(result) {
-		if (this.lineOpen) {
-			process.stdout.write(` ${this.count}/${this.total}\n`);
-			this.lineOpen = false;
-		}
+		this.flushProgressLine();
 		process.stdout.write(`[${this.label}] ${result.status}\n`);
 	}
 
-	startProgressLine() {
-		if (this.count >= this.total) {
-			this.lineOpen = false;
-			return;
-		}
-		process.stdout.write(`[${this.label}] `);
-		this.lineOpen = true;
+	flushProgressLine() {
+		if (!this.pendingMarks) return;
+		process.stdout.write(`[${this.label}] ${this.pendingMarks} ${this.count}/${this.total}\n`);
+		this.pendingMarks = "";
 	}
 }
 
