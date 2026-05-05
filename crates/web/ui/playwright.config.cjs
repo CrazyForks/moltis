@@ -71,9 +71,10 @@ function defaultSpecFiles() {
 }
 
 const defaultSpecWeights = new Map([
-	// Keep CI shards balanced by test count. Specs with data-driven tests can
-	// look small in source but expand heavily after Playwright loads them.
-	["settings-nav.spec.js", 48],
+	// Keep CI shards balanced by observed runtime. Some settings specs do much
+	// more UI setup than their raw test count suggests.
+	["settings-nav.spec.js", 34],
+	["settings-channels.spec.js", 32],
 	["sessions.spec.js", 26],
 	["cron.spec.js", 21],
 	["chat-input.spec.js", 20],
