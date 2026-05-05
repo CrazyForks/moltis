@@ -267,7 +267,14 @@ jobs:
         if: ${{ env.RELEASE_DRY_RUN != 'true' }}
         with:
           node-version: "22"
-          package-manager-cache: false
+          cache: npm
+          cache-dependency-path: crates/web/ui/package-lock.json
+
+      - uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2
+        if: ${{ env.RELEASE_DRY_RUN != 'true' }}
+        with:
+          shared-key: release-e2e-v1
+          cache-all-crates: true
 
       - name: Install npm dependencies
         if: ${{ env.RELEASE_DRY_RUN != 'true' }}
@@ -284,11 +291,18 @@ jobs:
         if: ${{ env.RELEASE_DRY_RUN != 'true' }}
         run: cargo build --bin moltis
 
+      - name: Cache Playwright browsers
+        if: ${{ env.RELEASE_DRY_RUN != 'true' }}
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('crates/web/ui/package-lock.json') }}
+
       - name: Install Playwright browsers
         if: ${{ env.RELEASE_DRY_RUN != 'true' }}
         timeout-minutes: 2
         working-directory: crates/web/ui
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install chromium
 
       - name: Run E2E tests
         if: ${{ env.RELEASE_DRY_RUN != 'true' }}
