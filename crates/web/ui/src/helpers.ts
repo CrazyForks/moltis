@@ -268,6 +268,7 @@ mdRenderer.link = ({ href, text }) => {
 mdRenderer.html = ({ text }) => esc(text);
 
 const markedInstance = new Marked({ renderer: mdRenderer, breaks: true, gfm: true, async: false });
+const RPC_TIMEOUT_MS = 5_000;
 
 export function renderMarkdown(raw: string): string {
 	// Extract ASCII tables as placeholders before marked processes the text.
@@ -294,10 +295,6 @@ export function sendRpc<T = unknown>(method: string, params: unknown): Promise<R
 			return;
 		}
 		const id = nextId();
-		// Timeout guard: chat.send should only acknowledge with a runId; longer
-		// work streams through events. Other RPCs should also return promptly
-		// instead of hiding stalled request paths behind long client waits.
-		const timeoutMs = method === "chat.send" ? 1_000 : 5_000;
 		const timer = setTimeout(() => {
 			if (S.pending[id]) {
 				delete S.pending[id];
@@ -306,7 +303,7 @@ export function sendRpc<T = unknown>(method: string, params: unknown): Promise<R
 					error: { code: "TIMEOUT", message: "WebSocket disconnected" },
 				} as unknown as RpcResponse<T>);
 			}
-		}, timeoutMs);
+		}, RPC_TIMEOUT_MS);
 		S.pending[id] = ((res: RpcResponse) => {
 			clearTimeout(timer);
 			resolve(res as RpcResponse<T>);

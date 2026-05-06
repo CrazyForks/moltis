@@ -120,12 +120,7 @@ pub async fn broadcast(
     let guards = event_scope_guards();
     let required_scopes = guards.get(event);
 
-    let _bcast_t = std::time::Instant::now();
     let registry = state.client_registry.read().await;
-    let bcast_lock_ms = _bcast_t.elapsed().as_millis();
-    if bcast_lock_ms > 50 {
-        warn!(event, bcast_lock_ms, "broadcast: read-lock slow");
-    }
     trace!(
         event,
         seq,

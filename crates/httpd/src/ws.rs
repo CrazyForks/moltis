@@ -46,7 +46,7 @@ pub async fn handle_connection(
 ) {
     let conn_id = uuid::Uuid::new_v4().to_string();
     let conn_remote_ip = remote_addr.ip().to_string();
-    info!(conn_id = %conn_id, remote_ip = %conn_remote_ip, "ws: new connection");
+    debug!(conn_id = %conn_id, remote_ip = %conn_remote_ip, "ws: new connection");
 
     let (mut ws_tx, mut ws_rx) = socket.split();
     // Bounded channel prevents unbounded memory growth from slow clients.
@@ -347,7 +347,7 @@ pub async fn handle_connection(
     #[allow(clippy::unwrap_used)] // serializing known-valid struct
     let _ = client_tx.try_send(serde_json::to_string(&resp).unwrap());
 
-    info!(
+    debug!(
         conn_id = %conn_id,
         client_id = %params.client.id,
         client_version = %params.client.version,
@@ -542,15 +542,8 @@ pub async fn handle_connection(
         };
 
         // Touch activity timestamp (lock-free atomic, no write lock needed).
-        {
-            let t = std::time::Instant::now();
-            if let Some(client) = state.client_registry.read().await.clients.get(&conn_id) {
-                client.touch();
-            }
-            let ms = t.elapsed().as_millis();
-            if ms > 50 {
-                warn!(conn_id = %conn_id, ms, "ws: touch read-lock slow");
-            }
+        if let Some(client) = state.client_registry.read().await.clients.get(&conn_id) {
+            client.touch();
         }
 
         match frame {
@@ -584,14 +577,7 @@ pub async fn handle_connection(
                 let rpc_methods = Arc::clone(&methods);
                 let rpc_state = Arc::clone(&state);
                 tokio::spawn(async move {
-                    let rpc_t = std::time::Instant::now();
                     let response = rpc_methods.dispatch(ctx).await;
-                    let rpc_ms = rpc_t.elapsed().as_millis();
-                    if rpc_ms > 50 {
-                        warn!(conn_id = %rpc_conn_id, method = %rpc_method, rpc_ms, ok = response.ok, "ws: RPC slow");
-                    } else {
-                        info!(conn_id = %rpc_conn_id, method = %rpc_method, rpc_ms, ok = response.ok, "ws: RPC");
-                    }
                     if rpc_state.ws_request_logs {
                         info!(
                             conn_id = %rpc_conn_id,
@@ -604,30 +590,14 @@ pub async fn handle_connection(
                     #[allow(clippy::unwrap_used)] // serializing known-valid struct
                     let response_json = serde_json::to_string(&response).unwrap();
                     let response_len = response_json.len();
-                    let send_t = std::time::Instant::now();
-                    match rpc_tx.send(response_json).await {
-                        Ok(()) => {
-                            let send_ms = send_t.elapsed().as_millis();
-                            if send_ms > 50 || rpc_method == "chat.send" {
-                                info!(
-                                    conn_id = %rpc_conn_id,
-                                    request_id = %rpc_request_id,
-                                    method = %rpc_method,
-                                    response_len,
-                                    send_ms,
-                                    "ws: queued response frame"
-                                );
-                            }
-                        },
-                        Err(_) => {
-                            warn!(
-                                conn_id = %rpc_conn_id,
-                                request_id = %rpc_request_id,
-                                method = %rpc_method,
-                                response_len,
-                                "ws: failed to queue response frame; client writer is closed"
-                            );
-                        },
+                    if rpc_tx.send(response_json).await.is_err() {
+                        warn!(
+                            conn_id = %rpc_conn_id,
+                            request_id = %rpc_request_id,
+                            method = %rpc_method,
+                            response_len,
+                            "ws: failed to queue response frame; client writer is closed"
+                        );
                     }
                 });
             },
@@ -691,7 +661,7 @@ pub async fn handle_connection(
     #[cfg(feature = "metrics")]
     moltis_metrics::gauge!(moltis_metrics::websocket::CONNECTIONS_ACTIVE).decrement(1.0);
 
-    warn!(
+    debug!(
         conn_id = %conn_id,
         duration_secs = duration.as_secs(),
         "ws: connection closed"
