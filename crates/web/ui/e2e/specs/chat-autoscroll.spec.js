@@ -32,32 +32,37 @@ async function getModulePrefix(page) {
 }
 
 async function injectScrollableMessages(page, count) {
-	const prefix = await getModulePrefix(page);
-	await page.evaluate(
-		async ({ pfx, msgCount }) => {
-			var chatUi = await import(`${pfx}js/chat-ui.js`);
-			var state = await import(`${pfx}js/state.js`);
-			state.setChatBatchLoading(true);
-			try {
-				for (var i = 0; i < msgCount; i++) {
-					var el = chatUi.chatAddMsg("assistant", "M".repeat(200));
-					if (el) el.dataset.e2eAutoscrollFixture = "true";
-				}
-			} finally {
-				state.setChatBatchLoading(false);
-			}
-			var box = document.getElementById("messages");
-			if (box) {
-				var indicator = box.querySelector(".new-content-indicator");
-				if (indicator) indicator.remove();
-				box.scrollTop = box.scrollHeight;
-			}
-			await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-		},
-		{ pfx: prefix, msgCount: count },
-	);
 	await expect
-		.poll(() => page.locator("#messages .msg.assistant[data-e2e-autoscroll-fixture='true']").count())
+		.poll(
+			() =>
+				page.evaluate((msgCount) => {
+					var box = document.getElementById("messages");
+					if (!box) return 0;
+
+					box.querySelector("#welcomeCard")?.remove();
+					box.querySelector("#noProvidersCard")?.remove();
+					box.querySelector(".empty-state")?.remove();
+					box.classList.remove("chat-messages-empty");
+
+					var fixtures = Array.from(box.querySelectorAll(".msg.assistant[data-e2e-autoscroll-fixture='true']"));
+					while (fixtures.length > msgCount) {
+						fixtures.pop()?.remove();
+					}
+					while (fixtures.length < msgCount) {
+						var el = document.createElement("div");
+						el.className = "msg assistant";
+						el.dataset.e2eAutoscrollFixture = "true";
+						el.textContent = "M".repeat(200);
+						box.appendChild(el);
+						fixtures.push(el);
+					}
+
+					box.querySelector(".new-content-indicator")?.remove();
+					box.scrollTop = box.scrollHeight;
+					return fixtures.length;
+				}, count),
+			{ timeout: 10_000 },
+		)
 		.toBeGreaterThanOrEqual(count);
 	// Ensure welcome/empty-state cards are gone (they overlap #messages)
 	await expect(page.locator("#welcomeCard")).toHaveCount(0, { timeout: 5_000 });

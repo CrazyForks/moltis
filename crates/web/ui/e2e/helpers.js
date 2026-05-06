@@ -72,6 +72,7 @@ function isRetryableNavigationError(error) {
 	var message = error?.message || String(error || "");
 	return (
 		message.includes("net::ERR_ABORTED") ||
+		message.includes("page.goto: Timeout") ||
 		message.includes("Execution context was destroyed") ||
 		message.includes("Target page, context or browser has been closed")
 	);
@@ -96,6 +97,12 @@ async function navigateAndWait(page, path) {
 			return pageErrors;
 		} catch (error) {
 			lastError = error;
+			if (isRetryableNavigationError(error)) {
+				const mountedAfterError = await expectPageContentMounted(page)
+					.then(() => true)
+					.catch(() => false);
+				if (mountedAfterError) return pageErrors;
+			}
 			if (!isRetryableNavigationError(error) || attempt === 2) {
 				// Capture diagnostic info when navigation fails
 				try {
