@@ -19,6 +19,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [20260507.05] - 2026-05-07
+### Added
+- [nodes] Ed25519 challenge-response node identity (TOFU) (#979)
+- [telephony] Add phone call support via Twilio (#920)
+
+
+### Removed
+- [release] Remove gpg signing confirmation prompt
+
+
+### Fixed
+- [website] Hide unpublished releases from changelog
+- [website] Publish 20260507.04 changelog
+- [release] Avoid signing build tools
+- [release] Read gpg signing confirmation from tty
+- [release] Log gpg signing confirmation input
+- [release] Compare gpg confirmation literally
+- [browser] Resolve sandbox profile host mounts (#980)
+- [release] Remove macos app cache from release workflow
+- [ci] Stabilize e2e navigation and nodes setup
+
 ## [20260507.04] - 2026-05-07
 ### Fixed
 - [e2e] Align sandbox settings tests with tabs
