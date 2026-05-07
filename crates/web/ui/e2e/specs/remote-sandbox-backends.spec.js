@@ -1,6 +1,19 @@
 const { expect, test } = require("../base-test");
 const { navigateAndWait, watchPageErrors } = require("../helpers");
 
+async function openSandboxTab(page, tabName) {
+	await navigateAndWait(page, "/settings/sandboxes");
+	const tab = page.getByRole("tab", { name: tabName, exact: true });
+	await tab.click();
+	await expect(tab).toHaveAttribute("aria-selected", "true");
+}
+
+function backendSection(page, heading) {
+	return page.locator("div.max-w-form", {
+		has: page.getByRole("heading", { name: heading, exact: true }),
+	});
+}
+
 test.describe("Remote sandbox backend configuration", () => {
 	test.beforeEach(async ({ page }) => {
 		// Mock the GET endpoint to simulate no backends configured initially.
@@ -20,25 +33,29 @@ test.describe("Remote sandbox backend configuration", () => {
 	});
 
 	test.afterEach(async ({ page }) => {
-		await page.unrouteAll({ behavior: "ignoreErrors" }).catch(() => {});
+		await page.unrouteAll({ behavior: "ignoreErrors" }).catch(() => undefined);
 	});
 
 	test("remote backends section is visible on sandbox settings page", async ({ page }) => {
 		const pageErrors = watchPageErrors(page);
 		await navigateAndWait(page, "/settings/sandboxes");
 
-		await expect(page.getByText("Remote sandbox backends")).toBeVisible();
-		await expect(page.getByText("Vercel Sandbox")).toBeVisible();
-		await expect(page.getByText("Daytona")).toBeVisible();
+		await expect(page.getByRole("tab", { name: "Vercel", exact: true })).toBeVisible();
+		await expect(page.getByRole("tab", { name: "Daytona", exact: true })).toBeVisible();
+		await page.getByRole("tab", { name: "Vercel", exact: true }).click();
+		await expect(page.getByRole("heading", { name: "Vercel Sandbox", exact: true })).toBeVisible();
+		await page.getByRole("tab", { name: "Daytona", exact: true }).click();
+		await expect(page.getByRole("heading", { name: "Daytona", exact: true })).toBeVisible();
 		expect(pageErrors).toEqual([]);
 	});
 
 	test("shows not-configured badges when no credentials are set", async ({ page }) => {
 		const pageErrors = watchPageErrors(page);
-		await navigateAndWait(page, "/settings/sandboxes");
+		await openSandboxTab(page, "Vercel");
 
-		const badges = page.getByText("not configured");
-		await expect(badges.first()).toBeVisible();
+		await expect(backendSection(page, "Vercel Sandbox").getByText("not configured")).toBeVisible();
+		await page.getByRole("tab", { name: "Daytona", exact: true }).click();
+		await expect(backendSection(page, "Daytona").getByText("not configured")).toBeVisible();
 		expect(pageErrors).toEqual([]);
 	});
 
@@ -76,14 +93,16 @@ test.describe("Remote sandbox backend configuration", () => {
 			return route.continue();
 		});
 
-		await navigateAndWait(page, "/settings/sandboxes");
+		await openSandboxTab(page, "Vercel");
+		const section = backendSection(page, "Vercel Sandbox");
 
 		// Fill Vercel token
-		const tokenInput = page.locator('input[placeholder*="Vercel token"]');
+		const tokenInput = section.locator('input[placeholder*="Vercel token"]');
 		await tokenInput.fill("ver_test_token_12345");
+		await section.locator('input[placeholder*="Project ID"]').fill("prj_test_12345");
 
 		// Click save
-		const saveBtn = page.getByRole("button", { name: "Save Vercel", exact: true });
+		const saveBtn = section.getByRole("button", { name: "Save", exact: true });
 		await expect(saveBtn).toBeEnabled();
 		await saveBtn.click();
 
@@ -97,6 +116,7 @@ test.describe("Remote sandbox backend configuration", () => {
 		expect(savedBody).not.toBeNull();
 		expect(savedBody.backend).toBe("vercel");
 		expect(savedBody.config.token).toBe("ver_test_token_12345");
+		expect(savedBody.config.project_id).toBe("prj_test_12345");
 
 		expect(pageErrors).toEqual([]);
 	});
@@ -135,14 +155,15 @@ test.describe("Remote sandbox backend configuration", () => {
 			return route.continue();
 		});
 
-		await navigateAndWait(page, "/settings/sandboxes");
+		await openSandboxTab(page, "Daytona");
+		const section = backendSection(page, "Daytona");
 
 		// Fill Daytona API key
-		const keyInput = page.locator('input[placeholder*="Daytona API key"]');
+		const keyInput = section.locator('input[placeholder*="Daytona API key"]');
 		await keyInput.fill("dyt_test_key_67890");
 
 		// Click save
-		const saveBtn = page.getByRole("button", { name: "Save Daytona", exact: true });
+		const saveBtn = section.getByRole("button", { name: "Save", exact: true });
 		await expect(saveBtn).toBeEnabled();
 		await saveBtn.click();
 
@@ -159,10 +180,11 @@ test.describe("Remote sandbox backend configuration", () => {
 
 	test("save button is disabled when token field is empty", async ({ page }) => {
 		const pageErrors = watchPageErrors(page);
-		await navigateAndWait(page, "/settings/sandboxes");
+		await openSandboxTab(page, "Daytona");
+		const section = backendSection(page, "Daytona");
 
 		// Daytona save button should be disabled without API key
-		const daytonaSave = page.getByRole("button", { name: "Save Daytona", exact: true });
+		const daytonaSave = section.getByRole("button", { name: "Save", exact: true });
 		await expect(daytonaSave).toBeDisabled();
 
 		expect(pageErrors).toEqual([]);
@@ -192,12 +214,14 @@ test.describe("Remote sandbox backend configuration", () => {
 			return route.continue();
 		});
 
-		await navigateAndWait(page, "/settings/sandboxes");
+		await openSandboxTab(page, "Vercel");
+		const section = backendSection(page, "Vercel Sandbox");
 
-		const tokenInput = page.locator('input[placeholder*="Vercel token"]');
+		const tokenInput = section.locator('input[placeholder*="Vercel token"]');
 		await tokenInput.fill("ver_will_fail");
+		await section.locator('input[placeholder*="Project ID"]').fill("prj_will_fail");
 
-		const saveBtn = page.getByRole("button", { name: "Save Vercel", exact: true });
+		const saveBtn = section.getByRole("button", { name: "Save", exact: true });
 		await saveBtn.click();
 
 		// Verify error message is shown
@@ -247,14 +271,15 @@ test.describe("Remote sandbox backend configuration", () => {
 			return route.continue();
 		});
 
-		await navigateAndWait(page, "/settings/sandboxes");
+		await openSandboxTab(page, "Vercel");
+		const section = backendSection(page, "Vercel Sandbox");
 
 		// Fill all Vercel fields
-		await page.locator('input[placeholder*="Vercel token"]').fill("ver_abc");
-		await page.locator('input[placeholder*="Project ID"]').fill("prj_123");
-		await page.locator('input[placeholder*="Team ID"]').fill("team_456");
+		await section.locator('input[placeholder*="Vercel token"]').fill("ver_abc");
+		await section.locator('input[placeholder*="Project ID"]').fill("prj_123");
+		await section.locator('input[placeholder*="Team ID"]').fill("team_456");
 
-		await page.getByRole("button", { name: "Save Vercel", exact: true }).click();
+		await section.getByRole("button", { name: "Save", exact: true }).click();
 		await expect(page.getByText("vercel configuration saved")).toBeVisible({ timeout: 5000 });
 
 		expect(savedBody.config.token).toBe("ver_abc");
