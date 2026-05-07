@@ -5,11 +5,9 @@ use std::{
 
 use {
     async_trait::async_trait,
-    secrecy::Secret,
+    secrecy::{ExposeSecret, Secret},
     tracing::{debug, info, warn},
 };
-
-use secrecy::ExposeSecret;
 
 use {
     moltis_providers::{PendingDiscoveries, ProviderRegistry},
@@ -940,6 +938,12 @@ pub(super) async fn complete_startup(
             moltis_tools::send_image::SendImageTool::new()
                 .with_sandbox_router(Arc::clone(&sandbox_router)),
         ));
+        #[cfg(feature = "provider-openai-codex")]
+        if moltis_providers::openai_codex::has_stored_tokens() {
+            tool_registry.register(Box::new(
+                moltis_tools::image_generation::GenerateImageTool::new(),
+            ));
+        }
         tool_registry.register(Box::new(
             moltis_tools::send_document::SendDocumentTool::new()
                 .with_sandbox_router(Arc::clone(&sandbox_router))

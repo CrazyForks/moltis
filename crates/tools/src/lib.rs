@@ -26,6 +26,8 @@ pub mod firecrawl;
 #[cfg(feature = "fs-tools")]
 pub mod fs;
 pub mod image_cache;
+#[cfg(feature = "provider-openai-codex")]
+pub mod image_generation;
 pub mod location;
 pub mod map;
 pub mod nodes;
