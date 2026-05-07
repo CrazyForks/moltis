@@ -937,6 +937,7 @@ jobs:
     needs: [clippy, test, e2e]
     runs-on: macos-latest
     name: Build macOS app
+    timeout-minutes: 180
     permissions:
       contents: read
       id-token: write # Required for Sigstore keyless signing
@@ -1011,6 +1012,7 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Build Swift bridge artifacts and generate Xcode project
+        timeout-minutes: 120
         env:
           MOLTIS_VERSION: ${{ steps.version.outputs.version }}
         run: |
