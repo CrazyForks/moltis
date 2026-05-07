@@ -159,16 +159,25 @@ done
 if [[ "$SKIP_CONFIRM" != true ]]; then
   echo ""
   if [[ "$DRY_RUN" == true ]]; then
-    read -r -p "Sign these artifacts (dry-run, no upload)? [y/N] " confirm
+    prompt="Sign these artifacts (dry-run, no upload)? [y/N] "
   else
-    read -r -p "Sign and upload .asc files to release $VERSION? [y/N] " confirm
+    prompt="Sign and upload .asc files to release $VERSION? [y/N] "
   fi
-  confirm="${confirm#"${confirm%%[![:space:]]*}"}"
-  confirm="${confirm%"${confirm##*[![:space:]]}"}"
-  if [[ ! "$confirm" =~ ^[Yy]([Ee][Ss])?$ ]]; then
-    echo "Aborted."
-    exit 0
+
+  if [[ -r /dev/tty ]]; then
+    IFS= read -r -p "$prompt" confirm </dev/tty || confirm=""
+  else
+    IFS= read -r -p "$prompt" confirm || confirm=""
   fi
+
+  confirm="$(printf '%s' "$confirm" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')"
+  case "$confirm" in
+    y|yes) ;;
+    *)
+      echo "Aborted."
+      exit 0
+      ;;
+  esac
 fi
 
 # --- Sign ---
