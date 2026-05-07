@@ -699,7 +699,6 @@ function ConnectedNodesList(): VNode {
 				<div className="text-sm text-[var(--text-muted)] py-4 text-center">
 					<p>No nodes connected.</p>
 				</div>
-				<ConnectNodeForm />
 			</div>
 		);
 	}
@@ -905,8 +904,8 @@ function NodesPage(): VNode {
 				<TabBar />
 				{activeTab.value === "connected" ? (
 					<>
+						<ConnectNodeForm />
 						<ConnectedNodesList />
-						{nodes.value.length > 0 ? <ConnectNodeForm /> : null}
 					</>
 				) : null}
 				{activeTab.value === "paired" ? <PairedDevicesList /> : null}

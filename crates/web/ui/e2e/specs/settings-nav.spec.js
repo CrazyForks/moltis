@@ -317,9 +317,10 @@ test.describe("Settings navigation", () => {
 		// Re-navigate so ConnectNodeForm re-renders with the spoofed gon port.
 		await navigateAndWait(page, "/settings/nodes");
 
-		const endpointCode = page.locator("code").filter({ hasText: /^wss?:\/\// });
+		const endpointCode = page.locator("code").filter({ hasText: /^moltis node add --host wss?:\/\// });
 		await expect(endpointCode).toBeVisible();
-		const wsUrl = (await endpointCode.textContent()).trim();
+		const endpointText = (await endpointCode.textContent()).trim();
+		const wsUrl = endpointText.replace(/^moltis node add --host\s+/, "");
 
 		// The URL must use the browser's port (location.port), NOT the spoofed
 		// gon port 99999 — proving we are immune to the behind-proxy bug (#426).

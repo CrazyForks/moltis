@@ -85,6 +85,7 @@ function isRetryableNavigationError(error) {
 async function navigateAndWait(page, path) {
 	const pageErrors = watchPageErrors(page);
 	let lastError = null;
+	const gotoTimeoutMs = 10_000;
 	for (let attempt = 0; attempt < 3; attempt++) {
 		try {
 			// Navigate to about:blank first to release any pending connections
@@ -92,7 +93,7 @@ async function navigateAndWait(page, path) {
 			if (attempt > 0) {
 				await page.goto("about:blank").catch(() => undefined);
 			}
-			await page.goto(path, { waitUntil: "commit", timeout: 5_000 });
+			await page.goto(path, { waitUntil: "commit", timeout: gotoTimeoutMs });
 			await expectPageContentMounted(page);
 			return pageErrors;
 		} catch (error) {
@@ -112,7 +113,7 @@ async function navigateAndWait(page, path) {
 					page.on("response", (r) => responses.push(`${r.status()} ${r.url()}`));
 					page.on("console", (m) => consoleMessages.push(`[${m.type()}] ${m.text()}`));
 					// Try one more goto with a short timeout to capture what happens
-					await page.goto(path, { waitUntil: "commit", timeout: 5_000 }).catch(() => undefined);
+					await page.goto(path, { waitUntil: "commit", timeout: gotoTimeoutMs }).catch(() => undefined);
 					// Check server health to see if it's alive
 					var healthOk = "unknown";
 					try {
@@ -225,6 +226,7 @@ async function createSession(page) {
 		.toBe(true);
 
 	await expectPageContentMounted(page);
+	await waitForChatSessionReady(page);
 }
 
 async function waitForChatSessionReady(page) {
