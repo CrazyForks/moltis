@@ -37,6 +37,7 @@ use {
 mod log_persistence;
 mod post_state;
 mod sandbox;
+mod tool_registration;
 /// Prepare the core gateway: load config, run migrations, wire services,
 /// spawn background tasks, and return the core state without any HTTP layer.
 /// This is the transport-agnostic initialisation. Non-HTTP consumers (TUI,
@@ -116,6 +117,8 @@ pub async fn prepare_gateway_core(
     // store the TOML entries are cleared and subsequent runs are a no-op.
     #[cfg(feature = "voice")]
     crate::voice::migrate_voice_keys_to_key_store(&config);
+    #[cfg(feature = "telephony")]
+    crate::methods::phone::merge_phone_keys(&mut config);
 
     // Merge any previously saved API keys into the provider config so they
     // survive gateway restarts without requiring env vars.
@@ -1133,6 +1136,8 @@ pub async fn prepare_gateway_core(
     let msteams_webhook_plugin = channel_result.msteams_webhook_plugin;
     #[cfg(feature = "slack")]
     let slack_webhook_plugin = channel_result.slack_webhook_plugin;
+    #[cfg(feature = "telephony")]
+    let telephony_webhook_plugin = channel_result.telephony_webhook_plugin;
 
     services = services.with_session_metadata(Arc::clone(&session_metadata));
     services = services.with_session_store(Arc::clone(&session_store));
@@ -1254,6 +1259,8 @@ pub async fn prepare_gateway_core(
         msteams_webhook_plugin,
         #[cfg(feature = "slack")]
         slack_webhook_plugin,
+        #[cfg(feature = "telephony")]
+        telephony_webhook_plugin,
         #[cfg(feature = "local-llm")]
         local_llm_service,
         #[cfg(feature = "vault")]

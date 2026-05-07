@@ -63,6 +63,7 @@ moltis-skills           = { workspace = true }
 moltis-slack            = { optional = true, workspace = true }
 moltis-tailscale        = { optional = true, workspace = true }
 moltis-telegram         = { optional = true, workspace = true }
+moltis-telephony        = { optional = true, workspace = true }
 moltis-tools            = { workspace = true }
 moltis-vault            = { optional = true, workspace = true }
 moltis-voice            = { optional = true, workspace = true }
@@ -137,6 +138,7 @@ default = [
   "slack",
   "tailscale",
   "telegram",
+  "telephony",
   "tls",
   "trusted-network",
   "vault",
@@ -189,6 +191,7 @@ signal = ["dep:moltis-signal"]
 slack = ["dep:moltis-slack", "moltis-slack/metrics"]
 tailscale = ["dep:moltis-tailscale"]
 telegram = ["dep:moltis-telegram", "moltis-chat/telegram"]
+telephony = ["dep:moltis-telephony"]
 tls = []
 trusted-network = ["dep:moltis-network-filter"]
 vault = [

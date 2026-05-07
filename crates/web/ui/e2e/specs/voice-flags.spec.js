@@ -6,21 +6,28 @@ const { navigateAndWait, sendRpcFromPage, waitForWsConnected, watchPageErrors } 
 // ── Gon override helpers ─────────────────────────────────────────────────────
 
 /**
- * Patch gon data across all three layers (initScript, /api/gon, /api/bootstrap)
+ * Patch gon data across the HTML payload, /api/gon, and /api/bootstrap
  * so that voice feature flags reflect the given values for the whole test.
  */
 async function mockVoiceFlags(page, { sttEnabled = true, ttsEnabled = true } = {}) {
-	// Intercept ALL navigation responses to patch __MOLTIS__ gon data in HTML.
-	await page.route("**/*", async (route) => {
-		var url = route.request().url();
-		if (url.includes("/api/") || url.includes("/assets/")) return route.continue();
+	await page.route("**/{chats,settings,onboarding}{,/**}", async (route) => {
 		var response = await route.fetch();
-		var ct = response.headers()["content-type"] || "";
-		if (!ct.includes("text/html")) return route.continue();
-		var body = await response.text();
-		if (!sttEnabled) body = body.replaceAll('"stt_enabled":true', '"stt_enabled":false');
-		if (!ttsEnabled) body = body.replaceAll('"tts_enabled":true', '"tts_enabled":false');
-		return route.fulfill({ response, body });
+		var contentType = response.headers()["content-type"] || "";
+		if (!contentType.includes("text/html")) return route.fulfill({ response });
+		var html = await response.text();
+		html = html.replace(/window\.__MOLTIS__=({.*?});<\/script>/s, (_match, rawGon) => {
+			var gon = JSON.parse(rawGon);
+			gon.stt_enabled = sttEnabled;
+			gon.tts_enabled = ttsEnabled;
+			return `window.__MOLTIS__=${JSON.stringify(gon)};</script>`;
+		});
+		var headers = response.headers();
+		delete headers["content-length"];
+		return route.fulfill({
+			response,
+			body: html,
+			headers: { ...headers, "content-type": contentType },
+		});
 	});
 
 	await page.route("**/api/gon*", async (route) => {
@@ -43,11 +50,11 @@ async function mockVoiceFlags(page, { sttEnabled = true, ttsEnabled = true } = {
 /** After page load, set gon flags in the bundled app, freeze them, and update voice UI. */
 async function applyVoiceFlags(page, { sttEnabled = true, ttsEnabled = true } = {}) {
 	await page.evaluate(
-		({ sttEnabled, ttsEnabled }) => {
+		(flags) => {
 			var gon = window.__moltis_modules?.gon;
 			if (gon?.set) {
-				gon.set("stt_enabled", sttEnabled);
-				gon.set("tts_enabled", ttsEnabled);
+				gon.set("stt_enabled", flags.sttEnabled);
+				gon.set("tts_enabled", flags.ttsEnabled);
 				// Prevent gon.refresh() from overwriting our values
 				gon.refresh = () => Promise.resolve();
 			}
@@ -56,7 +63,7 @@ async function applyVoiceFlags(page, { sttEnabled = true, ttsEnabled = true } = 
 			// buttons to match the flag state as a reliable fallback.
 			var mic = document.getElementById("micBtn");
 			var vad = document.getElementById("vadBtn");
-			if (!sttEnabled) {
+			if (!flags.sttEnabled) {
 				if (mic) mic.style.display = "none";
 				if (vad) vad.style.display = "none";
 			}
@@ -70,7 +77,9 @@ async function applyVoiceFlags(page, { sttEnabled = true, ttsEnabled = true } = 
 
 test.describe("voice config flags", () => {
 	test.afterEach(async ({ page }) => {
-		await page.unrouteAll({ behavior: "ignoreErrors" }).catch(() => {});
+		await page.unrouteAll({ behavior: "ignoreErrors" }).catch(() => {
+			// Route cleanup can race with browser teardown after a failed test.
+		});
 	});
 
 	test("mic and VAD buttons are hidden when stt is disabled", async ({ page }) => {

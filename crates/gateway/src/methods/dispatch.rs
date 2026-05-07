@@ -131,6 +131,9 @@ const READ_METHODS: &[&str] = &[
     "openclaw.detect",
     "openclaw.scan",
     "system.describe",
+    "voicecall.status",
+    #[cfg(feature = "telephony")]
+    "phone.providers.all",
 ];
 
 const WRITE_METHODS: &[&str] = &[
@@ -258,6 +261,16 @@ const WRITE_METHODS: &[&str] = &[
     "hooks.reload",
     "location.result",
     "openclaw.import",
+    "voicecall.initiate",
+    "voicecall.end",
+    #[cfg(feature = "telephony")]
+    "phone.provider.toggle",
+    #[cfg(feature = "telephony")]
+    "phone.config.save_key",
+    #[cfg(feature = "telephony")]
+    "phone.config.save_settings",
+    #[cfg(feature = "telephony")]
+    "phone.config.remove_key",
     "subscribe",
     "unsubscribe",
     "channel.join",

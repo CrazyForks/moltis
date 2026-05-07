@@ -183,7 +183,15 @@ pub struct McpOAuthOverrideEntry {
 /// Kept in `moltis-config` (not `moltis-channels`) so the config crate stays
 /// independent of the channels crate while still validating channel names.
 pub const KNOWN_CHANNEL_TYPES: &[&str] = &[
-    "telegram", "whatsapp", "msteams", "discord", "slack", "matrix", "nostr", "signal",
+    "telegram",
+    "whatsapp",
+    "msteams",
+    "discord",
+    "slack",
+    "matrix",
+    "nostr",
+    "signal",
+    "telephony",
 ];
 
 /// Per-chat-type tool policy for a channel account.
@@ -254,6 +262,9 @@ pub struct ChannelsConfig {
     /// Signal accounts backed by signal-cli, keyed by account ID.
     #[serde(default)]
     pub signal: HashMap<String, serde_json::Value>,
+    /// Telephony (phone call) accounts, keyed by account ID.
+    #[serde(default)]
+    pub telephony: HashMap<String, serde_json::Value>,
     /// Additional channel types not covered by the named fields above.
     ///
     /// This allows new channel plugins to be configured without changing
@@ -267,7 +278,7 @@ impl ChannelsConfig {
     ///
     /// This is the single source of truth for the set of named channel types.
     /// Keep in sync with the struct fields.
-    fn named_fields(&self) -> [(&str, &HashMap<String, serde_json::Value>); 7] {
+    fn named_fields(&self) -> [(&str, &HashMap<String, serde_json::Value>); 8] {
         [
             ("telegram", &self.telegram),
             ("whatsapp", &self.whatsapp),
@@ -276,6 +287,7 @@ impl ChannelsConfig {
             ("slack", &self.slack),
             ("nostr", &self.nostr),
             ("signal", &self.signal),
+            ("telephony", &self.telephony),
         ]
     }
 
@@ -333,6 +345,7 @@ impl Default for ChannelsConfig {
             slack: HashMap::new(),
             nostr: HashMap::new(),
             signal: HashMap::new(),
+            telephony: HashMap::new(),
             extra: HashMap::new(),
         }
     }

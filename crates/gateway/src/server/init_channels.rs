@@ -14,6 +14,9 @@ pub(crate) struct ChannelInitResult {
     pub(crate) msteams_webhook_plugin: Arc<tokio::sync::RwLock<moltis_msteams::MsTeamsPlugin>>,
     #[cfg(feature = "slack")]
     pub(crate) slack_webhook_plugin: Arc<tokio::sync::RwLock<moltis_slack::SlackPlugin>>,
+    #[cfg(feature = "telephony")]
+    pub(crate) telephony_webhook_plugin:
+        Arc<tokio::sync::RwLock<moltis_telephony::TelephonyPlugin>>,
 }
 
 /// Wire the channel store, channel registry, and all channel plugins.
@@ -153,6 +156,21 @@ pub(crate) async fn init_channels(
     #[cfg(not(feature = "whatsapp"))]
     let _ = &channel_sink; // silence unused warning
 
+    #[cfg(feature = "telephony")]
+    let telephony_webhook_plugin: Arc<tokio::sync::RwLock<moltis_telephony::TelephonyPlugin>>;
+    #[cfg(feature = "telephony")]
+    {
+        let telephony_plugin = Arc::new(tokio::sync::RwLock::new(
+            moltis_telephony::TelephonyPlugin::new()
+                .with_message_log(Arc::clone(&message_log))
+                .with_event_sink(Arc::clone(&channel_sink)),
+        ));
+        telephony_webhook_plugin = Arc::clone(&telephony_plugin);
+        registry
+            .register(telephony_plugin as Arc<tokio::sync::RwLock<dyn ChannelPlugin>>)
+            .await;
+    }
+
     #[cfg(feature = "slack")]
     let slack_webhook_plugin: Arc<tokio::sync::RwLock<moltis_slack::SlackPlugin>>;
     #[cfg(feature = "slack")]
@@ -173,6 +191,15 @@ pub(crate) async fn init_channels(
     // don't block startup sequentially.
     let mut pending_starts: Vec<(String, String, serde_json::Value)> = Vec::new();
     let mut queued: HashSet<(String, String)> = HashSet::new();
+
+    #[cfg(feature = "telephony")]
+    if let Some((account_id, account_config)) = crate::methods::phone::phone_channel_account(config)
+    {
+        let key = ("telephony".to_string(), account_id.clone());
+        if registry.get("telephony").is_some() && queued.insert(key) {
+            pending_starts.push(("telephony".to_string(), account_id, account_config));
+        }
+    }
 
     for (channel_type, accounts) in config.channels.all_channel_configs() {
         if registry.get(channel_type).is_none() {
@@ -278,5 +305,7 @@ pub(crate) async fn init_channels(
         msteams_webhook_plugin,
         #[cfg(feature = "slack")]
         slack_webhook_plugin,
+        #[cfg(feature = "telephony")]
+        telephony_webhook_plugin,
     }
 }

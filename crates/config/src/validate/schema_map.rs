@@ -437,6 +437,7 @@ pub(super) fn build_schema_map() -> KnownKeys {
                     ("matrix", Map(Box::new(channel_account()))),
                     ("nostr", Map(Box::new(channel_account()))),
                     ("signal", Map(Box::new(channel_account()))),
+                    ("telephony", Map(Box::new(channel_account()))),
                 ]),
             }
         }),
@@ -764,6 +765,45 @@ pub(super) fn build_schema_map() -> KnownKeys {
                                 ("sample_rate", Leaf),
                             ])),
                         ),
+                    ])),
+                ),
+            ])),
+        ),
+        (
+            "phone",
+            Struct(HashMap::from([
+                ("enabled", Leaf),
+                ("provider", Leaf),
+                ("providers", Array(Box::new(Leaf))),
+                ("inbound_policy", Leaf),
+                ("allowlist", Array(Box::new(Leaf))),
+                ("max_duration_secs", Leaf),
+                (
+                    "twilio",
+                    Struct(HashMap::from([
+                        ("account_sid", Leaf),
+                        ("auth_token", Leaf),
+                        ("from_number", Leaf),
+                        ("webhook_url", Leaf),
+                    ])),
+                ),
+                (
+                    "telnyx",
+                    Struct(HashMap::from([
+                        ("api_key", Leaf),
+                        ("connection_id", Leaf),
+                        ("public_key", Leaf),
+                        ("from_number", Leaf),
+                        ("webhook_url", Leaf),
+                    ])),
+                ),
+                (
+                    "plivo",
+                    Struct(HashMap::from([
+                        ("auth_id", Leaf),
+                        ("auth_token", Leaf),
+                        ("from_number", Leaf),
+                        ("webhook_url", Leaf),
                     ])),
                 ),
             ])),

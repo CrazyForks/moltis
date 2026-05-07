@@ -91,6 +91,7 @@ test.describe("Settings navigation", () => {
 		{ id: "environment", heading: "Environment" },
 		{ id: "crons", heading: "Cron Jobs" },
 		{ id: "voice", heading: "Voice" },
+		{ id: "phone", heading: "Phone" },
 		{ id: "security", heading: "Security" },
 		{ id: "ssh", heading: "SSH" },
 		{ id: "remote-access", heading: "Remote Access" },
@@ -611,7 +612,8 @@ test.describe("Settings navigation", () => {
 		await expect(page.locator(".settings-group-label").nth(3)).toHaveText("Systems");
 
 		const navItems = (await page.locator(".settings-nav-item").allTextContents()).map((text) => text.trim());
-		const expectedPrefix = [
+		const presentOptionalItems = (items) => items.filter((item) => navItems.includes(item));
+		const expected = [
 			"User Profile",
 			"Agents",
 			"Nodes",
@@ -623,10 +625,7 @@ test.describe("Settings navigation", () => {
 			"Webhooks",
 			"Heartbeat",
 			"Authentication",
-		];
-		if (navItems.includes("Encryption")) expectedPrefix.push("Encryption");
-		if (navItems.includes("SSH")) expectedPrefix.push("SSH");
-		expectedPrefix.push(
+			...presentOptionalItems(["Encryption", "SSH"]),
 			"Remote Access",
 			"Network Audit",
 			"Sandboxes",
@@ -636,15 +635,14 @@ test.describe("Settings navigation", () => {
 			"Tools",
 			"MCP",
 			"Skills",
-		);
-		if (navItems.includes("Imports")) expectedPrefix.push("Imports");
-		const expectedSystem = ["Terminal", "Monitoring", "Logs"];
-		const expected = [...expectedPrefix];
-		if (navItems.includes("OpenClaw Import")) expected.push("OpenClaw Import");
-		if (navItems.includes("Voice")) expected.push("Voice");
-		expected.push(...expectedSystem);
-		if (navItems.includes("GraphQL")) expected.push("GraphQL");
-		expected.push("Configuration");
+			...presentOptionalItems(["Imports"]),
+			...presentOptionalItems(["OpenClaw Import", "Voice", "Phone"]),
+			"Terminal",
+			"Monitoring",
+			"Logs",
+			...presentOptionalItems(["GraphQL"]),
+			"Configuration",
+		];
 		expect(navItems).toEqual(expected);
 
 		await expect(page.locator('.settings-nav-item[data-section="providers"]')).toHaveText("LLMs");

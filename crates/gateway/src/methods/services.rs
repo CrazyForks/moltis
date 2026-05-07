@@ -510,6 +510,7 @@ mod modes;
 mod sessions;
 mod system;
 mod voice_personas;
+mod voicecall;
 
 pub(super) fn register(reg: &mut MethodRegistry) {
     agents::register(reg);
@@ -520,6 +521,7 @@ pub(super) fn register(reg: &mut MethodRegistry) {
     system::register(reg);
     admin::register(reg);
     voice_personas::register(reg);
+    voicecall::register(reg);
 }
 async fn reload_hooks(state: &Arc<crate::state::GatewayState>) {
     let disabled = state.inner.read().await.disabled_hooks.clone();

@@ -44,6 +44,7 @@ import { IdentitySection } from "./sections/IdentitySection";
 import { ImportSection } from "./sections/ImportSection";
 import { MemorySection } from "./sections/MemorySection";
 import { NotificationsSection } from "./sections/NotificationsSection";
+import { PhoneSection } from "./sections/PhoneSection";
 import { RemoteAccessSection } from "./sections/RemoteAccessSection";
 import { SecuritySection } from "./sections/SecuritySection";
 import { SshSection } from "./sections/SshSection";
@@ -189,6 +190,11 @@ const sections: SectionItem[] = [
 		id: "voice",
 		label: "Voice",
 		icon: <span className="icon icon-microphone" />,
+	},
+	{
+		id: "phone",
+		label: "Phone",
+		icon: <span className="icon icon-phone" />,
 	},
 	{ group: "Systems" },
 	{ id: "terminal", label: "Terminal", page: true },
@@ -401,6 +407,7 @@ function SettingsPage(): VNode {
 							</div>
 						)
 					) : null}
+					{section === "phone" ? <PhoneSection /> : null}
 					{section === "notifications" ? <NotificationsSection /> : null}
 					{section === "import" ? <ImportSection /> : null}
 					{section === "graphql" ? <GraphqlSection /> : null}

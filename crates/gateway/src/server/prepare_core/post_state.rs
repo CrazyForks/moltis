@@ -92,6 +92,8 @@ pub(super) struct PostStateInputs {
     pub msteams_webhook_plugin: Arc<tokio::sync::RwLock<moltis_msteams::MsTeamsPlugin>>,
     #[cfg(feature = "slack")]
     pub slack_webhook_plugin: Arc<tokio::sync::RwLock<moltis_slack::SlackPlugin>>,
+    #[cfg(feature = "telephony")]
+    pub telephony_webhook_plugin: Arc<tokio::sync::RwLock<moltis_telephony::TelephonyPlugin>>,
     #[cfg(feature = "local-llm")]
     pub local_llm_service: Option<Arc<crate::local_llm_setup::LiveLocalLlmService>>,
     #[cfg(feature = "vault")]
@@ -318,7 +320,7 @@ pub(super) async fn complete_startup(
         resolved_auth,
         deploy_platform,
         session_event_bus,
-        services,
+        mut services,
         registry,
         effective_providers,
         config_env_overrides,
@@ -351,6 +353,8 @@ pub(super) async fn complete_startup(
         msteams_webhook_plugin,
         #[cfg(feature = "slack")]
         slack_webhook_plugin,
+        #[cfg(feature = "telephony")]
+        telephony_webhook_plugin,
         #[cfg(feature = "local-llm")]
         local_llm_service,
         #[cfg(feature = "vault")]
@@ -428,6 +432,11 @@ pub(super) async fn complete_startup(
     #[cfg(feature = "code-index-builtin")]
     #[allow(unused_variables)]
     let code_index_for_tools_builtin = Arc::clone(&code_index);
+
+    #[cfg(feature = "telephony")]
+    {
+        services.telephony_plugin = Some(Arc::clone(&telephony_webhook_plugin));
+    }
 
     let state = GatewayState::with_options(
         resolved_auth,
@@ -877,6 +886,12 @@ pub(super) async fn complete_startup(
         tool_registry.register(Box::new(crate::channel_agent_tools::SendMessageTool::new(
             Arc::clone(&state.services.channel),
         )));
+        #[cfg(feature = "telephony")]
+        crate::server::prepare_core::tool_registration::register_voice_call_tool(
+            &mut tool_registry,
+            &state,
+        )
+        .await;
         // MCP management tools — let agents add/remove/restart MCP servers directly.
         {
             let mcp = Arc::clone(&state.services.mcp);
@@ -1452,6 +1467,8 @@ pub(super) async fn complete_startup(
         msteams_webhook_plugin,
         #[cfg(feature = "slack")]
         slack_webhook_plugin,
+        #[cfg(feature = "telephony")]
+        telephony_webhook_plugin,
         #[cfg(feature = "push-notifications")]
         push_service,
         #[cfg(feature = "trusted-network")]

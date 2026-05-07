@@ -167,6 +167,7 @@ full = [
   "slack",
   "tailscale",
   "telegram",
+  "telephony",
   "tls",
   "trusted-network",
   "vault",
@@ -229,6 +230,7 @@ signal             = ["moltis-httpd/signal"]
 slack              = ["moltis-httpd/slack"]
 tailscale          = ["moltis-httpd/tailscale", "moltis-web?/tailscale"]
 telegram           = ["moltis-gateway/telegram"]
+telephony          = ["moltis-httpd/telephony"]
 tls                = ["moltis-httpd/tls"]
 trusted-network    = ["moltis-httpd/trusted-network"]
 vault              = ["moltis-httpd/vault", "moltis-web?/vault"]
