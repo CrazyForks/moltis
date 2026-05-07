@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [20260507.02] - 2026-05-07
+### Fixed
+- [sandbox] Compile firecracker backend with all features
+
 ## [20260507.01] - 2026-05-07
 ### Added
 - [sandbox] Remote & multi-backend sandbox support (Vercel, Daytona, Firecracker) (#942)
