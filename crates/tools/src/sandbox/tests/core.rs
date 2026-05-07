@@ -496,9 +496,7 @@ fn test_resolve_home_persistence_guest_path_on_host_uses_session_mount() {
         scope: SandboxScope::Session,
         key: "sess-1".into(),
     };
-    let guest_file = guest_visible_sandbox_home_persistence_host_dir(&config, &id)
-        .unwrap()
-        .join("history.txt");
+    let guest_file = PathBuf::from("/home/sandbox/history.txt");
 
     let resolved =
         resolve_home_persistence_guest_path_on_host(&config, Some("docker"), &id, &guest_file)
@@ -507,6 +505,33 @@ fn test_resolve_home_persistence_guest_path_on_host_uses_session_mount() {
     assert_eq!(
         resolved,
         host_data_dir.join("sandbox/home/session/sess-1/history.txt")
+    );
+}
+
+#[test]
+fn test_resolve_home_persistence_guest_path_on_host_uses_shared_mount() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let host_data_dir = temp_dir.path().join("moltis-data");
+    let config = SandboxConfig {
+        host_data_dir: Some(host_data_dir.clone()),
+        ..Default::default()
+    };
+    let id = SandboxId {
+        scope: SandboxScope::Session,
+        key: "sess-1".into(),
+    };
+
+    let resolved = resolve_home_persistence_guest_path_on_host(
+        &config,
+        Some("docker"),
+        &id,
+        &PathBuf::from("/home/sandbox/history.txt"),
+    )
+    .unwrap();
+
+    assert_eq!(
+        resolved,
+        host_data_dir.join("sandbox/home/shared/history.txt")
     );
 }
 
@@ -567,6 +592,34 @@ async fn test_docker_write_file_uses_mounted_workspace_path() {
     assert_eq!(
         std::fs::read_to_string(host_data_dir.join("notes/todo.txt")).unwrap(),
         "docker mounted write"
+    );
+}
+
+#[tokio::test]
+async fn test_docker_write_file_uses_mounted_home_path() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let host_data_dir = temp_dir.path().join("moltis-data");
+    let docker = DockerSandbox::new(SandboxConfig {
+        home_persistence: HomePersistence::Session,
+        host_data_dir: Some(host_data_dir.clone()),
+        ..Default::default()
+    });
+    let id = SandboxId {
+        scope: SandboxScope::Session,
+        key: "test-docker-home-write".into(),
+    };
+    let host_home = host_data_dir.join("sandbox/home/session/test-docker-home-write");
+    std::fs::create_dir_all(&host_home).unwrap();
+
+    let result = docker
+        .write_file(&id, "/home/sandbox/todo.txt", b"docker home write")
+        .await
+        .unwrap();
+
+    assert!(result.is_none());
+    assert_eq!(
+        std::fs::read_to_string(host_home.join("todo.txt")).unwrap(),
+        "docker home write"
     );
 }
 
