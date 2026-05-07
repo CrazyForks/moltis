@@ -29,7 +29,6 @@ Signs release artifacts with a local GPG key (e.g. YubiKey-resident).
 Options:
   -k, --key KEY_ID    GPG key ID or fingerprint to sign with
   -n, --dry-run       Download and sign but do not upload .asc files
-  -y, --yes           Skip confirmation prompt
   -h, --help          Show this help
 
 Environment:
@@ -47,14 +46,12 @@ EOF
 KEY_ID="${GPG_KEY_ID:-}"
 REPO="${MOLTIS_REPO:-moltis-org/moltis}"
 DRY_RUN=false
-SKIP_CONFIRM=false
 VERSION=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -k|--key)    KEY_ID="$2"; shift 2 ;;
     -n|--dry-run) DRY_RUN=true; shift ;;
-    -y|--yes)    SKIP_CONFIRM=true; shift ;;
     -h|--help)   usage; exit 0 ;;
     -*)          echo "Unknown option: $1" >&2; usage; exit 1 ;;
     *)           VERSION="$1"; shift ;;
@@ -155,35 +152,14 @@ for f in "${ARTIFACTS[@]}"; do
   echo "  $(basename "$f")"
 done
 
-# --- Confirm ---
-if [[ "$SKIP_CONFIRM" != true ]]; then
-  echo ""
-  if [[ "$DRY_RUN" == true ]]; then
-    prompt="Sign these artifacts (dry-run, no upload)? [y/N] "
-  else
-    prompt="Sign and upload .asc files to release $VERSION? [y/N] "
-  fi
-
-  confirm_source="stdin"
-  if [[ -r /dev/tty ]]; then
-    confirm_source="/dev/tty"
-    echo "Confirmation source: ${confirm_source}"
-    IFS= read -r -p "$prompt" confirm </dev/tty || confirm=""
-  else
-    echo "Confirmation source: ${confirm_source}"
-    IFS= read -r -p "$prompt" confirm || confirm=""
-  fi
-
-  confirm="$(printf '%s' "$confirm" | LC_ALL=C tr -d '[:space:]' | LC_ALL=C tr '[:upper:]' '[:lower:]')"
-  if [[ "$confirm" != "y" && "$confirm" != "yes" ]]; then
-    confirm_bytes="$(printf '%s' "$confirm" | od -An -tx1 | tr -d ' \n')"
-    echo "Aborted: confirmation was '${confirm:-<empty>}' after normalization (hex: ${confirm_bytes:-empty})."
-    exit 0
-  fi
-fi
-
 # --- Sign ---
 echo ""
+if [[ "$DRY_RUN" == true ]]; then
+  echo "Dry run: signing locally only; no .asc files will be uploaded."
+else
+  echo "Signing and uploading .asc files to release $VERSION."
+fi
+
 ASC_FILES=()
 for file in "${ARTIFACTS[@]}"; do
   name="$(basename "$file")"
