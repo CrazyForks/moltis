@@ -231,12 +231,12 @@ impl FirecrackerSandbox {
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
-        if let Ok(resp) = serde_json::from_str::<serde_json::Value>(&stdout) {
-            if resp.get("fault_message").is_some() {
-                return Err(Error::message(format!(
-                    "firecracker: API error on {method} {path}: {stdout}"
-                )));
-            }
+        if serde_json::from_str::<serde_json::Value>(&stdout)
+            .is_ok_and(|resp| resp.get("fault_message").is_some())
+        {
+            return Err(Error::message(format!(
+                "firecracker: API error on {method} {path}: {stdout}"
+            )));
         }
 
         Ok(())
@@ -396,10 +396,8 @@ impl FirecrackerSandbox {
                 .output()
                 .await;
 
-            if let Ok(output) = result {
-                if output.status.success() {
-                    return Ok(());
-                }
+            if result.is_ok_and(|output| output.status.success()) {
+                return Ok(());
             }
 
             if tokio::time::Instant::now() >= deadline {
@@ -1047,15 +1045,16 @@ mod tests {
     }
 
     #[test]
-    fn test_firecracker_bin_available_checks_configured_path() {
-        let tempdir = tempfile::tempdir().unwrap();
+    fn test_firecracker_bin_available_checks_configured_path() -> std::io::Result<()> {
+        let tempdir = tempfile::tempdir()?;
         let bin = tempdir.path().join("firecracker");
-        std::fs::write(&bin, b"#!/bin/sh\n").unwrap();
+        std::fs::write(&bin, b"#!/bin/sh\n")?;
 
         assert!(firecracker_bin_available(Some(&bin)));
         assert!(!firecracker_bin_available(Some(
             &tempdir.path().join("missing-firecracker")
         )));
+        Ok(())
     }
 
     #[test]
@@ -1073,13 +1072,13 @@ mod tests {
     }
 
     #[test]
-    fn test_subnet_allocation() {
+    fn test_subnet_allocation() -> Result<()> {
         let sandbox = FirecrackerSandbox::new(
             SandboxConfig::default(),
             FirecrackerSandboxConfig::default(),
         );
-        let (host1, guest1, idx1) = sandbox.allocate_subnet().unwrap();
-        let (host2, guest2, idx2) = sandbox.allocate_subnet().unwrap();
+        let (host1, guest1, idx1) = sandbox.allocate_subnet()?;
+        let (host2, guest2, idx2) = sandbox.allocate_subnet()?;
 
         assert_eq!(idx1, 1);
         assert_eq!(idx2, 2);
@@ -1087,10 +1086,11 @@ mod tests {
         assert_ne!(guest1, guest2);
         assert!(host1.starts_with("172.16."));
         assert!(guest1.starts_with("172.16."));
+        Ok(())
     }
 
     #[test]
-    fn test_remote_shell_command_quotes_exec_env() {
+    fn test_remote_shell_command_quotes_exec_env() -> Result<()> {
         let command = FirecrackerSandbox::remote_shell_command(
             "/home/sandbox/project dir",
             "printf '%s' \"$API_TOKEN\"",
@@ -1098,21 +1098,21 @@ mod tests {
                 ("API_TOKEN".to_string(), "secret'value".to_string()),
                 ("SESSION_ID".to_string(), "abc 123".to_string()),
             ],
-        )
-        .unwrap();
+        )?;
 
         assert_eq!(
             command,
             "env 'API_TOKEN=secret'\\''value' 'SESSION_ID=abc 123' sh -lc 'cd '\\''/home/sandbox/project dir'\\'' && printf '\\''%s'\\'' \"$API_TOKEN\"'"
         );
+        Ok(())
     }
 
     #[test]
-    fn test_remote_shell_command_without_env() {
-        let command =
-            FirecrackerSandbox::remote_shell_command("/home/sandbox", "pwd", &[]).unwrap();
+    fn test_remote_shell_command_without_env() -> Result<()> {
+        let command = FirecrackerSandbox::remote_shell_command("/home/sandbox", "pwd", &[])?;
 
         assert_eq!(command, "env sh -lc 'cd /home/sandbox && pwd'");
+        Ok(())
     }
 
     #[test]
@@ -1126,7 +1126,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_no_active_vm_returns_error() {
+    async fn test_no_active_vm_returns_error() -> Result<()> {
         let sandbox = FirecrackerSandbox::new(
             SandboxConfig::default(),
             FirecrackerSandboxConfig::default(),
@@ -1137,7 +1137,10 @@ mod tests {
         };
         let opts = ExecOpts::default();
         let result = sandbox.exec(&id, "echo hello", &opts).await;
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("no active VM"));
+        let Err(error) = result else {
+            return Err(Error::message("expected exec without active VM to fail"));
+        };
+        assert!(error.to_string().contains("no active VM"));
+        Ok(())
     }
 }

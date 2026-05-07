@@ -1,5 +1,7 @@
 //! Web-UI API handlers (bootstrap, skills, images, containers, media, logs).
 
+#[cfg(target_os = "linux")]
+use std::path::Path as FsPath;
 use std::{collections::HashMap, path::PathBuf};
 
 use {
@@ -997,7 +999,9 @@ pub async fn api_available_backends_handler() -> impl IntoResponse {
         }));
     }
     #[cfg(target_os = "linux")]
-    if moltis_tools::sandbox::firecracker_bin_available(sb.firecracker_bin.as_deref()) {
+    if moltis_tools::sandbox::firecracker_bin_available(
+        sb.firecracker_bin.as_deref().map(FsPath::new),
+    ) {
         backends.push(serde_json::json!({
             "id": "firecracker",
             "label": "Firecracker (microVM)",
