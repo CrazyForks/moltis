@@ -483,11 +483,35 @@ install_proxmox() {
         error "This does not appear to be a Proxmox VE host."
     fi
 
-    # Use the community-scripts helper when merged upstream, fall back to fork.
-    PROXMOX_SCRIPT_URL="https://raw.githubusercontent.com/moltis-org/ProxmoxVED/feat/moltis/ct/moltis.sh"
+    PROXMOX_REPO_URL="https://raw.githubusercontent.com/moltis-org/ProxmoxVED/feat/moltis"
+    PROXMOX_SCRIPT_URL="$PROXMOX_REPO_URL/ct/moltis.sh"
+
+    tmpdir=$(mktemp -d)
+    trap 'rm -rf "$tmpdir"' EXIT
+    proxmox_script="$tmpdir/moltis-proxmox.sh"
+    patched_script="$tmpdir/moltis-proxmox-patched.sh"
+
+    download "$PROXMOX_SCRIPT_URL" "$proxmox_script" || error "Failed to download Proxmox helper"
+
+    # The upstream community-scripts install helper currently writes a hardcoded
+    # /usr/bin/update URL. Patch the fetched helper so new Moltis LXCs update
+    # from the Moltis fork until the helper honors COMMUNITY_SCRIPTS_URL there.
+    awk -v repo_url="$PROXMOX_REPO_URL" '
+        {
+            print
+            if ($0 == "description" && !patched) {
+                q = sprintf("%c", 39)
+                print "pct exec \"$CTID\" -- bash -c \"cat > /usr/bin/update <<" q "MOLTIS_UPDATE_EOF" q
+                print "bash -c \\\"\\$(curl -fsSL " repo_url "/ct/moltis.sh)\\\""
+                print "MOLTIS_UPDATE_EOF"
+                print "chmod +x /usr/bin/update\" || true"
+                patched = 1
+            }
+        }
+    ' "$proxmox_script" >"$patched_script"
 
     info "Launching Proxmox VE helper script..."
-    bash -c "$(curl -fsSL "$PROXMOX_SCRIPT_URL")"
+    bash "$patched_script"
 }
 
 install_from_source() {
