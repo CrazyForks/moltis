@@ -22,6 +22,7 @@ use super::host::provision_packages;
 #[cfg(target_os = "macos")]
 use super::paths::{
     ensure_sandbox_home_persistence_host_dir, resolve_home_persistence_guest_path_on_host,
+    resolve_workspace_guest_path_on_host,
 };
 #[cfg(target_os = "macos")]
 use super::types::{
@@ -168,11 +169,16 @@ impl AppleContainerSandbox {
     }
 
     fn mounted_host_path(&self, id: &SandboxId, guest_path: &str) -> Option<std::path::PathBuf> {
-        resolve_home_persistence_guest_path_on_host(
-            &self.config,
-            Some("container"),
-            id,
-            std::path::Path::new(guest_path),
+        let guest_path = std::path::Path::new(guest_path);
+        resolve_workspace_guest_path_on_host(&self.config, Some("container"), guest_path).or_else(
+            || {
+                resolve_home_persistence_guest_path_on_host(
+                    &self.config,
+                    Some("container"),
+                    id,
+                    guest_path,
+                )
+            },
         )
     }
 
