@@ -174,14 +174,12 @@ if [[ "$SKIP_CONFIRM" != true ]]; then
     IFS= read -r -p "$prompt" confirm || confirm=""
   fi
 
-  confirm="$(printf '%s' "$confirm" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')"
-  case "$confirm" in
-    y|yes) ;;
-    *)
-      echo "Aborted: confirmation was '${confirm:-<empty>}' after normalization."
-      exit 0
-      ;;
-  esac
+  confirm="$(printf '%s' "$confirm" | LC_ALL=C tr -d '[:space:]' | LC_ALL=C tr '[:upper:]' '[:lower:]')"
+  if [[ "$confirm" != "y" && "$confirm" != "yes" ]]; then
+    confirm_bytes="$(printf '%s' "$confirm" | od -An -tx1 | tr -d ' \n')"
+    echo "Aborted: confirmation was '${confirm:-<empty>}' after normalization (hex: ${confirm_bytes:-empty})."
+    exit 0
+  fi
 fi
 
 # --- Sign ---
