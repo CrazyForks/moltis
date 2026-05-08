@@ -11,6 +11,11 @@ async function waitForProviderCards(page) {
 	await expect(page.locator(".provider-card").first()).toBeVisible({ timeout: 15_000 });
 }
 
+async function openVoiceTab(page, name) {
+	await page.getByRole("tab", { name, exact: true }).click();
+	await expect(page.getByRole("tab", { name, exact: true })).toHaveAttribute("aria-selected", "true");
+}
+
 /**
  * Find a provider card by its display name text.
  */
@@ -86,6 +91,7 @@ test.describe("Voice provider visibility", () => {
 	test("all TTS providers are visible by default", async ({ page }) => {
 		await openVoicePage(page);
 		await waitForProviderCards(page);
+		await openVoiceTab(page, "Text-to-Speech");
 
 		const pageText = await page.locator("#pageContent").innerText();
 
@@ -108,7 +114,8 @@ test.describe("Local provider setup instructions", () => {
 		await expect(card).toBeVisible();
 
 		await card.getByRole("button", { name: /configure/i }).click();
-		await expect(page.getByText("faster-whisper-server")).toBeVisible({ timeout: 5_000 });
+		const modal = page.locator(".modal-box:visible").last();
+		await expect(modal).toContainText("faster-whisper-server", { timeout: 5_000 });
 	});
 
 	test("voxtral-local shows setup instructions", async ({ page }) => {
@@ -119,7 +126,10 @@ test.describe("Local provider setup instructions", () => {
 		await expect(card).toBeVisible();
 
 		await card.getByRole("button", { name: /configure/i }).click();
-		await expect(page.getByText("vllm serve")).toBeVisible({ timeout: 5_000 });
+		const modal = page.locator(".modal-box:visible").last();
+		await expect(modal).toContainText(/vllm serve mistralai\/Voxtral/, {
+			timeout: 5_000,
+		});
 	});
 });
 
@@ -230,6 +240,7 @@ test.describe("Cloud TTS provider configuration", () => {
 		const pageErrors = watchPageErrors(page);
 		await openVoicePage(page);
 		await waitForProviderCards(page);
+		await openVoiceTab(page, "Text-to-Speech");
 
 		await configureCloudProvider(page, "OpenAI TTS", OPENAI_KEY);
 
@@ -244,6 +255,7 @@ test.describe("Cloud TTS provider configuration", () => {
 		const pageErrors = watchPageErrors(page);
 		await openVoicePage(page);
 		await waitForProviderCards(page);
+		await openVoiceTab(page, "Text-to-Speech");
 
 		await configureCloudProvider(page, "ElevenLabs", ELEVENLABS_KEY);
 
@@ -258,6 +270,7 @@ test.describe("Cloud TTS provider configuration", () => {
 		const pageErrors = watchPageErrors(page);
 		await openVoicePage(page);
 		await waitForProviderCards(page);
+		await openVoiceTab(page, "Text-to-Speech");
 
 		await configureCloudProvider(page, "Google Cloud TTS", GOOGLE_KEY);
 
@@ -286,7 +299,7 @@ test.describe("Voice provider toggle", () => {
 
 		// Verify via providers list
 		const result = await expectRpcOk(page, "voice.providers.all", {});
-		const stt = result?.result?.stt || [];
+		const stt = result?.payload?.stt || [];
 		const whisper = stt.find((p) => p.id === "whisper");
 		expect(whisper).toBeTruthy();
 

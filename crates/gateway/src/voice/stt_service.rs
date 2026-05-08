@@ -504,6 +504,8 @@ base_url = "http://127.0.0.1:8001/"
         let providers = service.providers().await.unwrap();
 
         let providers_arr = providers.as_array().unwrap();
+        // 6 cloud providers + 4 local providers.
+        assert_eq!(providers_arr.len(), 10);
         // Check all providers are listed
         let ids: Vec<_> = providers_arr
             .iter()
@@ -515,6 +517,7 @@ base_url = "http://127.0.0.1:8001/"
         assert!(ids.contains(&"google"));
         assert!(ids.contains(&"mistral"));
         assert!(ids.contains(&"voxtral-local"));
+        assert!(ids.contains(&"whisper-local"));
         assert!(ids.contains(&"whisper-cli"));
         assert!(ids.contains(&"sherpa-onnx"));
         assert!(ids.contains(&"elevenlabs-stt"));
