@@ -1737,22 +1737,23 @@ jobs:
           MAIN_SHA=$(gh api "repos/${REPO}/git/ref/heads/main" --jq '.object.sha')
           BASE_TREE=$(gh api "repos/${REPO}/git/commits/${MAIN_SHA}" --jq '.tree.sha')
 
-          # Create blobs for each updated file
-          DO_BLOB=$(gh api "repos/${REPO}/git/blobs" \
-            -f content="$(base64 -w0 .do/deploy.template.yaml)" \
-            -f encoding=base64 --jq '.sha')
-          RENDER_BLOB=$(gh api "repos/${REPO}/git/blobs" \
-            -f content="$(base64 -w0 render.yaml)" \
-            -f encoding=base64 --jq '.sha')
-          FLY_BLOB=$(gh api "repos/${REPO}/git/blobs" \
-            -f content="$(base64 -w0 fly.toml)" \
-            -f encoding=base64 --jq '.sha')
-          RELEASES_BLOB=$(gh api "repos/${REPO}/git/blobs" \
-            -f content="$(base64 -w0 website/releases.json)" \
-            -f encoding=base64 --jq '.sha')
-          CHANGELOG_BLOB=$(gh api "repos/${REPO}/git/blobs" \
-            -f content="$(base64 -w0 website/changelog/index.html)" \
-            -f encoding=base64 --jq '.sha')
+          create_blob() {
+            local path="$1"
+            local encoded
+            encoded=$(mktemp)
+            base64 -w0 "$path" > "$encoded"
+            jq -n --rawfile content "$encoded" '{content: $content, encoding: "base64"}' \
+              | gh api "repos/${REPO}/git/blobs" --input - --jq '.sha'
+            rm -f "$encoded"
+          }
+
+          # Create blobs for each updated file. Send payloads via stdin so large
+          # generated files do not exceed the runner's argument length limit.
+          DO_BLOB=$(create_blob .do/deploy.template.yaml)
+          RENDER_BLOB=$(create_blob render.yaml)
+          FLY_BLOB=$(create_blob fly.toml)
+          RELEASES_BLOB=$(create_blob website/releases.json)
+          CHANGELOG_BLOB=$(create_blob website/changelog/index.html)
 
           # Create a new tree with the updated files (JSON input for proper array structure)
           TREE_SHA=$(jq -n \
