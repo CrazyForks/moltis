@@ -19,6 +19,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [20260508.01] - 2026-05-08
+### Added
+- [voice] Add whisper-local STT provider, show all voice providers by default (#981)
+- [voice] Surface OpenAI realtime model guidance (#984)
+
+
+### Fixed
+- [sandbox] Map home file tools to mounted path
+- [agents] Preserve tool argument diagnostics (#983)
+- [sandbox] Map apple container workspace paths
+- [install] Keep proxmox updates on fork
+- [ci] Update voice provider e2e expectations
+
 ## [20260507.05] - 2026-05-07
 ### Added
 - [nodes] Ed25519 challenge-response node identity (TOFU) (#979)
