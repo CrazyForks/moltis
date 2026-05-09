@@ -41,6 +41,7 @@ export interface RpcMethodMap {
 	"chat.full_context": unknown;
 	"chat.prompt_memory.refresh": unknown;
 	"chat.send": unknown;
+	"chat.send_sync": unknown;
 
 	// ── Cron ────────────────────────────────────────────────────
 	"cron.list": unknown;
@@ -145,7 +146,7 @@ export interface RpcMethodMap {
 	"sessions.patch": { result?: Record<string, unknown> };
 	"sessions.search": SessionMeta[];
 	"sessions.switch": unknown;
-	"sessions.voice.generate": { audio?: string };
+	"sessions.voice.generate": { audio?: string; ttsProvider?: string };
 
 	// ── Skills ──────────────────────────────────────────────────
 	"skills.emergency_disable": unknown;

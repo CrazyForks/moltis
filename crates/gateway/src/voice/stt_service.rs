@@ -130,35 +130,65 @@ impl LiveSttService {
                     None
                 }
             },
-            SttProviderId::Groq => cfg.voice.stt.groq.api_key.as_ref().map(|key| {
-                Box::new(GroqStt::with_options(
-                    Some(key.clone()),
-                    cfg.voice.stt.groq.model.clone(),
-                    cfg.voice.stt.groq.language.clone(),
-                )) as Box<dyn SttProvider + Send + Sync>
-            }),
-            SttProviderId::Deepgram => cfg.voice.stt.deepgram.api_key.as_ref().map(|key| {
-                Box::new(DeepgramStt::with_options(
-                    Some(key.clone()),
-                    cfg.voice.stt.deepgram.model.clone(),
-                    cfg.voice.stt.deepgram.language.clone(),
-                    cfg.voice.stt.deepgram.smart_format,
-                )) as Box<dyn SttProvider + Send + Sync>
-            }),
-            SttProviderId::Google => cfg.voice.stt.google.api_key.as_ref().map(|key| {
-                Box::new(GoogleStt::with_options(
-                    Some(key.clone()),
-                    cfg.voice.stt.google.language.clone(),
-                    cfg.voice.stt.google.model.clone(),
-                )) as Box<dyn SttProvider + Send + Sync>
-            }),
-            SttProviderId::Mistral => cfg.voice.stt.mistral.api_key.as_ref().map(|key| {
-                Box::new(MistralStt::with_options(
-                    Some(key.clone()),
-                    cfg.voice.stt.mistral.model.clone(),
-                    cfg.voice.stt.mistral.language.clone(),
-                )) as Box<dyn SttProvider + Send + Sync>
-            }),
+            SttProviderId::Groq => cfg
+                .voice
+                .stt
+                .groq
+                .api_key
+                .clone()
+                .or_else(|| Self::env_secret("GROQ_API_KEY"))
+                .or_else(|| cfg.providers.get("groq").and_then(|p| p.api_key.clone()))
+                .map(|key| {
+                    Box::new(GroqStt::with_options(
+                        Some(key),
+                        cfg.voice.stt.groq.model.clone(),
+                        cfg.voice.stt.groq.language.clone(),
+                    )) as Box<dyn SttProvider + Send + Sync>
+                }),
+            SttProviderId::Deepgram => cfg
+                .voice
+                .stt
+                .deepgram
+                .api_key
+                .clone()
+                .or_else(|| Self::env_secret("DEEPGRAM_API_KEY"))
+                .map(|key| {
+                    Box::new(DeepgramStt::with_options(
+                        Some(key),
+                        cfg.voice.stt.deepgram.model.clone(),
+                        cfg.voice.stt.deepgram.language.clone(),
+                        cfg.voice.stt.deepgram.smart_format,
+                    )) as Box<dyn SttProvider + Send + Sync>
+                }),
+            SttProviderId::Google => cfg
+                .voice
+                .stt
+                .google
+                .api_key
+                .clone()
+                .or_else(|| Self::env_secret("GOOGLE_API_KEY"))
+                .or_else(|| Self::env_secret("GOOGLE_CLOUD_API_KEY"))
+                .map(|key| {
+                    Box::new(GoogleStt::with_options(
+                        Some(key),
+                        cfg.voice.stt.google.language.clone(),
+                        cfg.voice.stt.google.model.clone(),
+                    )) as Box<dyn SttProvider + Send + Sync>
+                }),
+            SttProviderId::Mistral => cfg
+                .voice
+                .stt
+                .mistral
+                .api_key
+                .clone()
+                .or_else(|| Self::env_secret("MISTRAL_API_KEY"))
+                .map(|key| {
+                    Box::new(MistralStt::with_options(
+                        Some(key),
+                        cfg.voice.stt.mistral.model.clone(),
+                        cfg.voice.stt.mistral.language.clone(),
+                    )) as Box<dyn SttProvider + Send + Sync>
+                }),
             SttProviderId::VoxtralLocal => {
                 let provider = VoxtralLocalStt::with_options(
                     Some(cfg.voice.stt.voxtral_local.endpoint.clone()),
@@ -207,14 +237,29 @@ impl LiveSttService {
                     None
                 }
             },
-            SttProviderId::ElevenLabs => cfg.voice.stt.elevenlabs.api_key.as_ref().map(|key| {
-                Box::new(ElevenLabsStt::with_options(
-                    Some(key.clone()),
-                    cfg.voice.stt.elevenlabs.model.clone(),
-                    cfg.voice.stt.elevenlabs.language.clone(),
-                )) as Box<dyn SttProvider + Send + Sync>
-            }),
+            SttProviderId::ElevenLabs => cfg
+                .voice
+                .stt
+                .elevenlabs
+                .api_key
+                .clone()
+                .or_else(|| cfg.voice.tts.elevenlabs.api_key.clone())
+                .or_else(|| Self::env_secret("ELEVENLABS_API_KEY"))
+                .map(|key| {
+                    Box::new(ElevenLabsStt::with_options(
+                        Some(key),
+                        cfg.voice.stt.elevenlabs.model.clone(),
+                        cfg.voice.stt.elevenlabs.language.clone(),
+                    )) as Box<dyn SttProvider + Send + Sync>
+                }),
         }
+    }
+
+    fn env_secret(name: &str) -> Option<Secret<String>> {
+        std::env::var(name)
+            .ok()
+            .filter(|value| !value.is_empty())
+            .map(Secret::new)
     }
 
     /// List all providers with their configuration status (reads fresh config
@@ -224,24 +269,53 @@ impl LiveSttService {
         vec![
             (
                 SttProviderId::Whisper,
-                cfg.voice.stt.whisper.api_key.is_some()
+                resolve_openai_key(cfg.voice.stt.whisper.api_key.as_ref(), &cfg).is_some()
                     || resolve_openai_whisper_base_url(&cfg).is_some(),
             ),
-            (SttProviderId::Groq, cfg.voice.stt.groq.api_key.is_some()),
+            (
+                SttProviderId::Groq,
+                cfg.voice.stt.groq.api_key.is_some()
+                    || Self::env_secret("GROQ_API_KEY").is_some()
+                    || cfg
+                        .providers
+                        .get("groq")
+                        .and_then(|p| p.api_key.as_ref())
+                        .is_some(),
+            ),
             (
                 SttProviderId::Deepgram,
-                cfg.voice.stt.deepgram.api_key.is_some(),
+                cfg.voice.stt.deepgram.api_key.is_some()
+                    || Self::env_secret("DEEPGRAM_API_KEY").is_some(),
             ),
             (
                 SttProviderId::Google,
-                cfg.voice.stt.google.api_key.is_some(),
+                cfg.voice.stt.google.api_key.is_some()
+                    || Self::env_secret("GOOGLE_API_KEY").is_some()
+                    || Self::env_secret("GOOGLE_CLOUD_API_KEY").is_some(),
             ),
             (
                 SttProviderId::Mistral,
-                cfg.voice.stt.mistral.api_key.is_some(),
+                cfg.voice.stt.mistral.api_key.is_some()
+                    || Self::env_secret("MISTRAL_API_KEY").is_some(),
             ),
-            (SttProviderId::VoxtralLocal, true), // Always available
-            (SttProviderId::WhisperLocal, true), // Always available
+            (
+                SttProviderId::VoxtralLocal,
+                VoxtralLocalStt::with_options(
+                    Some(cfg.voice.stt.voxtral_local.endpoint.clone()),
+                    cfg.voice.stt.voxtral_local.model.clone(),
+                    cfg.voice.stt.voxtral_local.language.clone(),
+                )
+                .is_configured(),
+            ),
+            (
+                SttProviderId::WhisperLocal,
+                WhisperLocalStt::with_options(
+                    Some(cfg.voice.stt.whisper_local.endpoint.clone()),
+                    cfg.voice.stt.whisper_local.model.clone(),
+                    cfg.voice.stt.whisper_local.language.clone(),
+                )
+                .is_configured(),
+            ),
             (
                 SttProviderId::WhisperCli,
                 cfg.voice.stt.whisper_cli.model_path.is_some(),
@@ -252,7 +326,9 @@ impl LiveSttService {
             ),
             (
                 SttProviderId::ElevenLabs,
-                cfg.voice.stt.elevenlabs.api_key.is_some(),
+                cfg.voice.stt.elevenlabs.api_key.is_some()
+                    || cfg.voice.tts.elevenlabs.api_key.is_some()
+                    || Self::env_secret("ELEVENLABS_API_KEY").is_some(),
             ),
         ]
     }
@@ -482,6 +558,33 @@ base_url = "http://127.0.0.1:8001/"
             LiveSttService::resolve_provider(Some(moltis_config::VoiceSttProvider::Whisper)),
             Some(SttProviderId::Whisper)
         );
+    }
+
+    #[test]
+    fn test_live_stt_local_provider_config_status_uses_provider_rules() {
+        let _guard = VoiceConfigTestGuard::with_config(
+            r#"
+[server]
+port = 18080
+
+[voice.stt.voxtral_local]
+endpoint = "http://127.0.0.1:9000/"
+
+[voice.stt.whisper_local]
+endpoint = "http://127.0.0.1:9001/"
+"#,
+        );
+
+        let providers = LiveSttService::list_providers();
+        let voxtral_local = providers
+            .iter()
+            .find(|(id, _)| *id == SttProviderId::VoxtralLocal);
+        let whisper_local = providers
+            .iter()
+            .find(|(id, _)| *id == SttProviderId::WhisperLocal);
+
+        assert_eq!(voxtral_local, Some(&(SttProviderId::VoxtralLocal, true)));
+        assert_eq!(whisper_local, Some(&(SttProviderId::WhisperLocal, true)));
     }
 
     #[tokio::test]

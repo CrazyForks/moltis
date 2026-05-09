@@ -170,6 +170,9 @@
     border-top: 1px dashed var(--border);
     background: var(--surface);
   }
+  .queued-tray.hidden {
+    display: none;
+  }
   .msg.user.queued {
     opacity: 0.6;
     border-style: dashed;
@@ -314,26 +317,6 @@
   @keyframes thinking-pulse {
     0%, 100% { opacity: 0.6; }
     50% { opacity: 1; }
-  }
-  .thinking-stop-btn {
-    margin-left: 12px;
-    flex-shrink: 0;
-    padding: 2px 7px;
-    font-size: 0.65rem;
-    font-weight: 600;
-    color: #fff;
-    background: #ef4444;
-    border: none;
-    border-radius: 999px;
-    cursor: pointer;
-    transition: opacity 0.15s;
-  }
-  .thinking-stop-btn:hover {
-    opacity: 0.85;
-  }
-  .thinking-stop-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
   .msg-reasoning {
     margin-top: 8px;
@@ -2030,6 +2013,21 @@
   .icon-waveform {
     -webkit-mask-image: url("./icons/masks/mask-waveform.svg");
     mask-image: url("./icons/masks/mask-waveform.svg");
+  }
+
+  .icon-paperclip {
+    -webkit-mask-image: url("./icons/masks/mask-paperclip.svg");
+    mask-image: url("./icons/masks/mask-paperclip.svg");
+  }
+
+  .icon-arrow-up {
+    -webkit-mask-image: url("./icons/masks/mask-arrow-up.svg");
+    mask-image: url("./icons/masks/mask-arrow-up.svg");
+  }
+
+  .icon-stop {
+    -webkit-mask-image: url("./icons/masks/mask-stop.svg");
+    mask-image: url("./icons/masks/mask-stop.svg");
   }
 
   /* Status icons */

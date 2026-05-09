@@ -5,6 +5,7 @@
 // and "More concise" options.
 // Icons use CSS mask-image classes (icon-*) backed by SVG files on disk.
 
+import { isChatAtBottom, scrollChatToBottom } from "./chat-ui";
 import * as gon from "./gon";
 import { sendRpc } from "./helpers";
 import { renderPersistedAudio } from "./message-voice";
@@ -50,6 +51,7 @@ export interface MessageActionContext {
 
 export function appendMessageActions(ctx: MessageActionContext): void {
 	const { messageEl, sessionKey } = ctx;
+	const shouldKeepBottomAnchored = isChatAtBottom();
 
 	// Surface server-side audio warnings inline on the message.
 	if (ctx.audioWarning) {
@@ -118,7 +120,13 @@ export function appendMessageActions(ctx: MessageActionContext): void {
 			voiceBtn.classList.remove("msg-action-btn-active");
 			const payload = result?.payload as Record<string, unknown> | undefined;
 			if (result?.ok && payload?.audio) {
-				renderPersistedAudio(messageEl, sessionKey, payload.audio as string, true);
+				renderPersistedAudio(
+					messageEl,
+					sessionKey,
+					payload.audio as string,
+					true,
+					payload.ttsProvider as string | undefined,
+				);
 				voiceBtn.replaceChildren(iconSpan("icon-checkmark"));
 				voiceBtn.title = "Voice generated";
 			} else {
@@ -147,6 +155,7 @@ export function appendMessageActions(ctx: MessageActionContext): void {
 	bar.appendChild(forkBtn);
 
 	messageEl.appendChild(bar);
+	if (shouldKeepBottomAnchored) scrollChatToBottom(true);
 }
 
 // ── Button factory ───────────────────────────────────────────

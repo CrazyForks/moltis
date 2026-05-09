@@ -416,30 +416,42 @@ export function updateCommandInputUI(): void {
 	updateTokenBar();
 }
 
+export function setComposerStopButton(active: boolean, sessionKey: string = S.activeSessionKey): void {
+	const btn = S.$<HTMLButtonElement>("sendBtn");
+	if (!btn) return;
+	const icon = btn.querySelector(".icon");
+	btn.classList.toggle("is-stop", active);
+	btn.classList.remove("is-stopping");
+	btn.dataset.mode = active ? "stop" : "send";
+	btn.dataset.stopSessionKey = active ? sessionKey : "";
+	btn.title = active ? "Stop generation" : "Send";
+	btn.setAttribute("aria-label", active ? "Stop generation" : "Send");
+	btn.disabled = active ? false : !S.connected;
+	if (icon) {
+		icon.classList.toggle("icon-arrow-up", !active);
+		icon.classList.toggle("icon-stop", active);
+	}
+}
+
 export function updateTokenBar(): void {
 	const bar = S.$("tokenBar");
 	if (!bar) return;
-	const total = S.sessionTokens.input + S.sessionTokens.output;
-	let text =
-		formatTokens(S.sessionTokens.input) +
-		" in / " +
-		formatTokens(S.sessionTokens.output) +
-		" out \u00b7 " +
-		formatTokens(total) +
-		" tokens";
+	const total =
+		S.sessionCurrentContextTokens || S.sessionCurrentInputTokens || S.sessionTokens.input + S.sessionTokens.output;
+	let text = formatTokens(total);
 	if (S.sessionContextWindow > 0) {
-		const currentInput = S.sessionCurrentInputTokens || 0;
-		const pct = Math.max(0, 100 - Math.round((currentInput / S.sessionContextWindow) * 100));
-		text += ` \u00b7 Context left before auto-compact: ${pct}%`;
+		const pct = Math.min(100, Math.max(0, Math.round((total / S.sessionContextWindow) * 100)));
+		text += ` (${pct}%)`;
+	}
+	bar.title = total > 0 ? "Context tokens used by the latest assistant turn" : "";
+	if (text === "0 (0%)") {
+		text = "";
 	}
 	if (!S.sessionToolsEnabled) {
-		text += " \u00b7 Tools: disabled";
+		text += `${text ? " \u00b7 " : ""}Tools: disabled`;
 	}
-	const execModeLabel = S.sessionExecMode === "sandbox" ? "sandboxed" : "host";
-	const promptSymbol = S.sessionExecPromptSymbol || "$";
-	text += ` \u00b7 Execute: ${execModeLabel} (${promptSymbol})`;
 	if (S.commandModeEnabled) {
-		text += " \u00b7 /sh mode";
+		text += `${text ? " \u00b7 " : ""}/sh mode`;
 	}
 	bar.textContent = text;
 }

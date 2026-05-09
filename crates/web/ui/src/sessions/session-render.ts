@@ -27,6 +27,7 @@ import {
 	toolCallSummary,
 } from "../helpers";
 import { appendMessageActions } from "../message-actions";
+import { upsertTtsProviderFooter } from "../message-voice";
 import { navigate } from "../router";
 import { settingsPath } from "../routes";
 import * as S from "../state";
@@ -68,12 +69,17 @@ interface AssistantMsg extends HistoryMessage {
 	inputTokens?: number;
 	outputTokens?: number;
 	cacheReadTokens?: number;
+	cacheWriteTokens?: number;
 	durationMs?: number;
 	reasoning?: string;
 	audio?: string;
+	tts_provider?: string;
 	run_id?: string;
 	historyIndex?: number;
 	requestInputTokens?: number;
+	requestOutputTokens?: number;
+	requestCacheReadTokens?: number;
+	requestCacheWriteTokens?: number;
 }
 
 interface UserMsg extends Omit<HistoryMessage, "content"> {
@@ -106,6 +112,7 @@ interface TokenUsage {
 	outputTokens?: number;
 	estimatedNextInputTokens?: number;
 	currentInputTokens?: number;
+	currentTotal?: number;
 }
 
 /** Execution environment info returned by chat.context RPC. */
@@ -237,6 +244,7 @@ function renderHistoryAssistantMessage(msg: AssistantMsg): HTMLElement | null {
 	if (el && msg.model) {
 		const footer = createModelFooter(msg);
 		el.appendChild(footer);
+		upsertTtsProviderFooter(el, msg.tts_provider);
 		appendMessageActions({
 			messageEl: el,
 			sessionKey: S.activeSessionKey,
@@ -255,6 +263,12 @@ function renderHistoryAssistantMessage(msg: AssistantMsg): HTMLElement | null {
 	} else if (msg.inputTokens || msg.outputTokens) {
 		S.setSessionCurrentInputTokens(msg.inputTokens || 0);
 	}
+	S.setSessionCurrentContextTokens(
+		(msg.requestInputTokens ?? msg.inputTokens ?? 0) +
+			(msg.requestOutputTokens ?? msg.outputTokens ?? 0) +
+			(msg.requestCacheReadTokens ?? msg.cacheReadTokens ?? 0) +
+			(msg.requestCacheWriteTokens ?? msg.cacheWriteTokens ?? 0),
+	);
 	return el;
 }
 
@@ -369,6 +383,7 @@ export function postHistoryLoadActions(
 					output: tu.outputTokens || 0,
 				});
 				S.setSessionCurrentInputTokens(tu.estimatedNextInputTokens || tu.currentInputTokens || tu.inputTokens || 0);
+				S.setSessionCurrentContextTokens(tu.currentTotal || tu.estimatedNextInputTokens || tu.currentInputTokens || 0);
 			}
 			S.setSessionToolsEnabled(p.supportsTools !== false);
 			const execution = p.execution || {};
@@ -574,6 +589,7 @@ export function renderHistory(
 	const msgEls: (HTMLElement | null)[] = [];
 	S.setSessionTokens({ input: 0, output: 0 });
 	S.setSessionCurrentInputTokens(0);
+	S.setSessionCurrentContextTokens(0);
 	S.setChatBatchLoading(true);
 	history.forEach((msg) => {
 		if (msg.role === "user") {
