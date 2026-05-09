@@ -547,6 +547,10 @@ exit 0
         let mut permissions = fs::metadata(&script).unwrap().permissions();
         permissions.set_mode(0o755);
         fs::set_permissions(&script, permissions).unwrap();
+
+        // Linux CI can briefly report ETXTBSY when executing a file immediately
+        // after creating it on the runner filesystem.
+        std::thread::sleep(Duration::from_millis(50));
         script
     }
 
