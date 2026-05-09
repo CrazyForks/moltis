@@ -51,7 +51,8 @@ async function injectScrollableMessages(page, count) {
 					while (fixtures.length < msgCount) {
 						var el = document.createElement("div");
 						el.className = "msg assistant";
-						el.style.minHeight = "32px";
+						el.style.flex = "0 0 48px";
+						el.style.minHeight = "48px";
 						el.dataset.e2eAutoscrollFixture = "true";
 						el.textContent = "M".repeat(200);
 						box.appendChild(el);
