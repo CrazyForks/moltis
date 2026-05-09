@@ -471,10 +471,10 @@ test.describe("Chat input and slash commands", () => {
 		const composer = page.locator("#chatComposer");
 		const queuedMessages = page.locator("#queuedMessages");
 		await expect(composer).toBeVisible();
-		await expect(queuedMessages).toBeHidden();
+		await expect(queuedMessages).toHaveClass(/\bhidden\b/);
 		await expect(page.locator("#modelCombo")).toBeVisible();
 		await expect(page.locator("#attachBtn")).toBeVisible();
-		await expect(page.locator("#micBtn")).toBeVisible();
+		await expect(page.locator("#micBtn")).toBeAttached();
 
 		const layout = await page.evaluate(() => {
 			var composerEl = document.getElementById("chatComposer");

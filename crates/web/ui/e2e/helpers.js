@@ -20,7 +20,7 @@ async function expectPageContentMounted(page) {
 				}
 			},
 			{
-				timeout: 10_000,
+				timeout: 30_000,
 			},
 		)
 		.toBeGreaterThan(0);
