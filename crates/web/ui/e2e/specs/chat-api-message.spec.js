@@ -82,6 +82,20 @@ test.describe("API-sent user messages (GH #729)", () => {
 	// handler can detect "I already rendered this" and suppress the echo.
 	test("user_message broadcast is deduplicated for the originating client", async ({ page }) => {
 		await expectRpcOk(page, "chat.clear", {});
+		await page.waitForFunction(
+			async () => {
+				var appScript = document.querySelector('script[type="module"][src*="js/app.js"]');
+				if (!appScript) return false;
+				var appUrl = new URL(appScript.src, window.location.origin);
+				var prefix = appUrl.href.slice(0, appUrl.href.length - "js/app.js".length);
+				var state = await import(`${prefix}js/state.js`);
+				return (
+					!(state.sessionSwitchInProgress || state.chatBatchLoading) &&
+					document.querySelectorAll(".msg.user").length === 0
+				);
+			},
+			{ timeout: 10_000 },
+		);
 
 		// Simulate the web UI having optimistically rendered a message at
 		// seq 1: add the DOM element and advance the client chatSeq.
