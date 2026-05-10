@@ -6,13 +6,19 @@
 //
 // This shim re-exports everything the e2e tests need.
 
-const M = window.__moltis_modules?.["chat-ui"] || {};
+function chatUi() {
+	return window.__moltis_modules?.["chat-ui"] || {};
+}
 
-export default M;
+export default new Proxy({}, {
+	get(_target, prop) {
+		return chatUi()[prop];
+	},
+});
 
-export const chatAddMsg = (...args) => M.chatAddMsg?.(...args);
-export const chatAddMsgWithImages = (...args) => M.chatAddMsgWithImages?.(...args);
-export const updateTokenBar = (...args) => M.updateTokenBar?.(...args);
-export const renderApprovalCard = (...args) => M.renderApprovalCard?.(...args);
-export const updateCommandInputUI = (...args) => M.updateCommandInputUI?.(...args);
-export const smartScrollToBottom = (...args) => M.smartScrollToBottom?.(...args);
+export const chatAddMsg = (...args) => chatUi().chatAddMsg?.(...args);
+export const chatAddMsgWithImages = (...args) => chatUi().chatAddMsgWithImages?.(...args);
+export const updateTokenBar = (...args) => chatUi().updateTokenBar?.(...args);
+export const renderApprovalCard = (...args) => chatUi().renderApprovalCard?.(...args);
+export const updateCommandInputUI = (...args) => chatUi().updateCommandInputUI?.(...args);
+export const smartScrollToBottom = (...args) => chatUi().smartScrollToBottom?.(...args);

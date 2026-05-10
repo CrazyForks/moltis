@@ -8,47 +8,54 @@
 // values use `export let` with a requestAnimationFrame sync loop so
 // reads always return the current value from the bundled state.
 
-const S = window.__moltis_state || {};
+function state() {
+	return window.__moltis_state || {};
+}
 
-// Default export — direct reference to the bundled state namespace
-export default S;
+// Default export — proxy to the bundled state namespace, even if imported early.
+export default new Proxy({}, {
+	get(_target, prop) {
+		return state()[prop];
+	},
+});
 
 // ── Live-synced state (export let + rAF) ────────────────────
 // ES module `export let` creates live bindings that update when
 // reassigned. We sync all mutable state on each animation frame.
-export let connected = S.connected;
-export let ws = S.ws;
-export let pending = S.pending;
-export let reqId = S.reqId;
-export let activeSessionKey = S.activeSessionKey;
-export let sessions = S.sessions;
-export let models = S.models;
-export let chatSeq = S.chatSeq;
-export let chatInput = S.chatInput;
-export let chatSendBtn = S.chatSendBtn;
-export let chatMsgBox = S.chatMsgBox;
-export let sessionTokens = S.sessionTokens;
-export let sessionCurrentInputTokens = S.sessionCurrentInputTokens;
-export let sessionCurrentContextTokens = S.sessionCurrentContextTokens;
-export let sessionContextWindow = S.sessionContextWindow;
-export let sessionToolsEnabled = S.sessionToolsEnabled;
-export let sessionExecMode = S.sessionExecMode;
-export let sessionExecPromptSymbol = S.sessionExecPromptSymbol;
-export let commandModeEnabled = S.commandModeEnabled;
-export let streamEl = S.streamEl;
-export let streamText = S.streamText;
-export let voicePending = S.voicePending;
-export let sandboxInfo = S.sandboxInfo;
-export let cachedChannels = S.cachedChannels;
-export let selectedModelId = S.selectedModelId;
-export let nodeCombo = S.nodeCombo;
-export let nodeComboBtn = S.nodeComboBtn;
-export let nodeComboLabel = S.nodeComboLabel;
-export let nodeDropdown = S.nodeDropdown;
-export let nodeDropdownList = S.nodeDropdownList;
+export let connected = state().connected;
+export let ws = state().ws;
+export let pending = state().pending;
+export let reqId = state().reqId;
+export let activeSessionKey = state().activeSessionKey;
+export let sessions = state().sessions;
+export let models = state().models;
+export let chatSeq = state().chatSeq;
+export let chatInput = state().chatInput;
+export let chatSendBtn = state().chatSendBtn;
+export let chatMsgBox = state().chatMsgBox;
+export let sessionTokens = state().sessionTokens;
+export let sessionCurrentInputTokens = state().sessionCurrentInputTokens;
+export let sessionCurrentContextTokens = state().sessionCurrentContextTokens;
+export let sessionContextWindow = state().sessionContextWindow;
+export let sessionToolsEnabled = state().sessionToolsEnabled;
+export let sessionExecMode = state().sessionExecMode;
+export let sessionExecPromptSymbol = state().sessionExecPromptSymbol;
+export let commandModeEnabled = state().commandModeEnabled;
+export let streamEl = state().streamEl;
+export let streamText = state().streamText;
+export let voicePending = state().voicePending;
+export let sandboxInfo = state().sandboxInfo;
+export let cachedChannels = state().cachedChannels;
+export let selectedModelId = state().selectedModelId;
+export let nodeCombo = state().nodeCombo;
+export let nodeComboBtn = state().nodeComboBtn;
+export let nodeComboLabel = state().nodeComboLabel;
+export let nodeDropdown = state().nodeDropdown;
+export let nodeDropdownList = state().nodeDropdownList;
 
 // Sync all mutable state from the bundled namespace on each frame.
 function _sync() {
+	const S = state();
 	connected = S.connected;
 	ws = S.ws;
 	pending = S.pending;
@@ -84,46 +91,46 @@ function _sync() {
 requestAnimationFrame(_sync);
 
 // ── Setters (proxy to real state module) ────────────────────
-export function setConnected(v) { S.setConnected?.(v); connected = v; }
-export function setWs(v) { S.setWs?.(v); ws = v; }
-export function setReqId(v) { S.setReqId?.(v); reqId = v; }
-export function setSubscribed(v) { S.setSubscribed?.(v); }
-export function setModels(v) { S.setModels?.(v); models = v; }
-export function setSessions(v) { S.setSessions?.(v); sessions = v; }
-export function setActiveSessionKey(v) { S.setActiveSessionKey?.(v); activeSessionKey = v; }
-export function setChatSeq(v) { S.setChatSeq?.(v); chatSeq = v; }
-export function setChatInput(v) { S.setChatInput?.(v); chatInput = v; }
-export function setChatSendBtn(v) { S.setChatSendBtn?.(v); chatSendBtn = v; }
-export function setChatMsgBox(v) { S.setChatMsgBox?.(v); chatMsgBox = v; }
-export function setStreamEl(v) { S.setStreamEl?.(v); streamEl = v; }
-export function setStreamText(v) { S.setStreamText?.(v); streamText = v; }
-export function setVoicePending(v) { S.setVoicePending?.(v); voicePending = v; }
-export function setSessionTokens(v) { S.setSessionTokens?.(v); sessionTokens = v; }
-export function setSessionCurrentInputTokens(v) { S.setSessionCurrentInputTokens?.(v); sessionCurrentInputTokens = v; }
-export function setSessionCurrentContextTokens(v) { S.setSessionCurrentContextTokens?.(v); sessionCurrentContextTokens = v; }
-export function setSessionContextWindow(v) { S.setSessionContextWindow?.(v); sessionContextWindow = v; }
-export function setSessionToolsEnabled(v) { S.setSessionToolsEnabled?.(v); sessionToolsEnabled = v; }
-export function setSessionExecMode(v) { S.setSessionExecMode?.(v); sessionExecMode = v; }
-export function setSessionExecPromptSymbol(v) { S.setSessionExecPromptSymbol?.(v); sessionExecPromptSymbol = v; }
-export function setCommandModeEnabled(v) { S.setCommandModeEnabled?.(v); commandModeEnabled = v; }
-export function setSelectedModelId(v) { S.setSelectedModelId?.(v); selectedModelId = v; }
-export function setSandboxInfo(v) { S.setSandboxInfo?.(v); sandboxInfo = v; }
-export function setCachedChannels(v) { S.setCachedChannels?.(v); cachedChannels = v; }
-export function setLastHistoryIndex(v) { S.setLastHistoryIndex?.(v); }
-export function setSessionSwitchInProgress(v) { S.setSessionSwitchInProgress?.(v); }
-export function setChatBatchLoading(v) { S.setChatBatchLoading?.(v); }
-export function setHostExecIsRoot(v) { S.setHostExecIsRoot?.(v); }
-export function setLogsEventHandler(v) { S.setLogsEventHandler?.(v); }
-export function setNetworkAuditEventHandler(v) { S.setNetworkAuditEventHandler?.(v); }
-export function setUnseenErrors(v) { S.setUnseenErrors?.(v); }
-export function setUnseenWarns(v) { S.setUnseenWarns?.(v); }
-export function setReconnectDelay(v) { S.setReconnectDelay?.(v); }
-export function setNodeCombo(v) { S.setNodeCombo?.(v); nodeCombo = v; }
-export function setNodeComboBtn(v) { S.setNodeComboBtn?.(v); nodeComboBtn = v; }
-export function setNodeComboLabel(v) { S.setNodeComboLabel?.(v); nodeComboLabel = v; }
-export function setNodeDropdown(v) { S.setNodeDropdown?.(v); nodeDropdown = v; }
-export function setNodeDropdownList(v) { S.setNodeDropdownList?.(v); nodeDropdownList = v; }
-export function setAutoScrollMode(v) { S.setAutoScrollMode?.(v); }
+export function setConnected(v) { state().setConnected?.(v); connected = v; }
+export function setWs(v) { state().setWs?.(v); ws = v; }
+export function setReqId(v) { state().setReqId?.(v); reqId = v; }
+export function setSubscribed(v) { state().setSubscribed?.(v); }
+export function setModels(v) { state().setModels?.(v); models = v; }
+export function setSessions(v) { state().setSessions?.(v); sessions = v; }
+export function setActiveSessionKey(v) { state().setActiveSessionKey?.(v); activeSessionKey = v; }
+export function setChatSeq(v) { state().setChatSeq?.(v); chatSeq = v; }
+export function setChatInput(v) { state().setChatInput?.(v); chatInput = v; }
+export function setChatSendBtn(v) { state().setChatSendBtn?.(v); chatSendBtn = v; }
+export function setChatMsgBox(v) { state().setChatMsgBox?.(v); chatMsgBox = v; }
+export function setStreamEl(v) { state().setStreamEl?.(v); streamEl = v; }
+export function setStreamText(v) { state().setStreamText?.(v); streamText = v; }
+export function setVoicePending(v) { state().setVoicePending?.(v); voicePending = v; }
+export function setSessionTokens(v) { state().setSessionTokens?.(v); sessionTokens = v; }
+export function setSessionCurrentInputTokens(v) { state().setSessionCurrentInputTokens?.(v); sessionCurrentInputTokens = v; }
+export function setSessionCurrentContextTokens(v) { state().setSessionCurrentContextTokens?.(v); sessionCurrentContextTokens = v; }
+export function setSessionContextWindow(v) { state().setSessionContextWindow?.(v); sessionContextWindow = v; }
+export function setSessionToolsEnabled(v) { state().setSessionToolsEnabled?.(v); sessionToolsEnabled = v; }
+export function setSessionExecMode(v) { state().setSessionExecMode?.(v); sessionExecMode = v; }
+export function setSessionExecPromptSymbol(v) { state().setSessionExecPromptSymbol?.(v); sessionExecPromptSymbol = v; }
+export function setCommandModeEnabled(v) { state().setCommandModeEnabled?.(v); commandModeEnabled = v; }
+export function setSelectedModelId(v) { state().setSelectedModelId?.(v); selectedModelId = v; }
+export function setSandboxInfo(v) { state().setSandboxInfo?.(v); sandboxInfo = v; }
+export function setCachedChannels(v) { state().setCachedChannels?.(v); cachedChannels = v; }
+export function setLastHistoryIndex(v) { state().setLastHistoryIndex?.(v); }
+export function setSessionSwitchInProgress(v) { state().setSessionSwitchInProgress?.(v); }
+export function setChatBatchLoading(v) { state().setChatBatchLoading?.(v); }
+export function setHostExecIsRoot(v) { state().setHostExecIsRoot?.(v); }
+export function setLogsEventHandler(v) { state().setLogsEventHandler?.(v); }
+export function setNetworkAuditEventHandler(v) { state().setNetworkAuditEventHandler?.(v); }
+export function setUnseenErrors(v) { state().setUnseenErrors?.(v); }
+export function setUnseenWarns(v) { state().setUnseenWarns?.(v); }
+export function setReconnectDelay(v) { state().setReconnectDelay?.(v); }
+export function setNodeCombo(v) { state().setNodeCombo?.(v); nodeCombo = v; }
+export function setNodeComboBtn(v) { state().setNodeComboBtn?.(v); nodeComboBtn = v; }
+export function setNodeComboLabel(v) { state().setNodeComboLabel?.(v); nodeComboLabel = v; }
+export function setNodeDropdown(v) { state().setNodeDropdown?.(v); nodeDropdown = v; }
+export function setNodeDropdownList(v) { state().setNodeDropdownList?.(v); nodeDropdownList = v; }
+export function setAutoScrollMode(v) { state().setAutoScrollMode?.(v); }
 
 // DOM shorthand
-export function $(id) { return S.$?.(id) ?? document.getElementById(id); }
+export function $(id) { return state().$?.(id) ?? document.getElementById(id); }
