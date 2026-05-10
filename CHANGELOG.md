@@ -19,6 +19,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [20260510.01] - 2026-05-10
+### Fixed
+- [release] Avoid large blob arguments
+- [ci] Stabilize qmd and chat e2e checks
+- [ci] Harden qmd and token bar tests
+- [ci] Stabilize autoscroll overflow fixture
+- [ci] Wait for chat clear before api dedupe check
+
 ## [20260508.01] - 2026-05-08
 ### Added
 - [voice] Add whisper-local STT provider, show all voice providers by default (#981)
