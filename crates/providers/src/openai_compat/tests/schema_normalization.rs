@@ -12,6 +12,33 @@ use {
     moltis_agents::model::StreamEvent,
 };
 
+#[test]
+fn null_only_property_keeps_explicit_null_type() {
+    let tools = vec![serde_json::json!({
+        "name": "serialization_probe",
+        "description": "Test null serialization",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "type": {
+                    "type": "null",
+                    "description": "Must be literal JSON null"
+                }
+            },
+            "required": ["type"]
+        }
+    })];
+
+    let converted = to_openai_tools(&tools, true);
+    let prop = &converted[0]["function"]["parameters"]["properties"]["type"];
+
+    assert_eq!(prop["type"], serde_json::json!("null"));
+    assert!(
+        prop.get("enum").is_none(),
+        "null type should not be lowered to enum: {prop:?}"
+    );
+}
+
 /// Issue #743: end-to-end through `to_responses_api_tools` with a draft-07
 /// schema containing the exact Attio pattern that OpenAI rejects.
 #[test]

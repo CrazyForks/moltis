@@ -70,17 +70,7 @@ impl OpenAiProvider {
         debug!(model = %self.model, "openai probe request");
         trace!(body = %serde_json::to_string(&body).unwrap_or_default(), "openai probe request body");
 
-        let http_resp = self
-            .client
-            .post(format!("{}/chat/completions", self.base_url))
-            .header(
-                "Authorization",
-                format!("Bearer {}", self.api_key.expose_secret()),
-            )
-            .header("content-type", "application/json")
-            .json(&body)
-            .send()
-            .await?;
+        let http_resp = self.send_chat_completions_request(&body).await?;
 
         let status = http_resp.status();
         if !status.is_success() {
@@ -343,17 +333,7 @@ impl OpenAiProvider {
         );
         trace!(body = %serde_json::to_string(&body).unwrap_or_default(), "openai request body");
 
-        let http_resp = self
-            .client
-            .post(format!("{}/chat/completions", self.base_url))
-            .header(
-                "Authorization",
-                format!("Bearer {}", self.api_key.expose_secret()),
-            )
-            .header("content-type", "application/json")
-            .json(&body)
-            .send()
-            .await?;
+        let http_resp = self.send_chat_completions_request(&body).await?;
 
         let status = http_resp.status();
         if !status.is_success() {

@@ -470,6 +470,39 @@ impl Transform for RestoreEnumTypeTransform {
     }
 }
 
+/// Preserve literal null-only schemas as `{"type":"null"}`.
+///
+/// `json_schema_ast` canonicalizes `{"type":"null"}` to `{"enum":[null]}`.
+/// Several OpenAI-compatible gateways translate that enum value through a host
+/// language sentinel such as `None`, which can leak into generated tool
+/// arguments. Restoring the explicit type keeps the schema unambiguous.
+#[derive(Debug, Clone, Default)]
+struct RestoreNullTypeTransform;
+
+impl Transform for RestoreNullTypeTransform {
+    fn transform(&mut self, schema: &mut Schema) {
+        let Some(obj) = schema.as_object_mut() else {
+            return;
+        };
+        if obj.contains_key("type") {
+            return;
+        }
+
+        let Some(values) = obj.get("enum").and_then(|v| v.as_array()) else {
+            return;
+        };
+        if values.is_empty() || !values.iter().all(serde_json::Value::is_null) {
+            return;
+        }
+
+        obj.insert(
+            "type".to_string(),
+            serde_json::Value::String("null".to_string()),
+        );
+        obj.remove("enum");
+    }
+}
+
 /// Whether an enum array is exactly `[false, true]` (in any order, ignoring
 /// nulls). This is the complete boolean domain produced by `json_schema_ast`'s
 /// `lower_boolean_and_null_types` canonicalization and adds no constraint when
@@ -682,6 +715,10 @@ pub(crate) fn sanitize_schema_for_openai_compat(schema: &mut serde_json::Value) 
     // annotations even when enum values unambiguously imply the type.
     let mut restore_enum_type = RecursiveTransform(RestoreEnumTypeTransform);
     restore_enum_type.transform(&mut transformed);
+
+    // Preserve null-only schemas as an explicit type instead of a null enum.
+    let mut restore_null_type = RecursiveTransform(RestoreNullTypeTransform);
+    restore_null_type.transform(&mut transformed);
 
     *schema = transformed.to_value();
 }

@@ -188,15 +188,7 @@ impl OpenAiProvider {
             );
             trace!(body = %serde_json::to_string(&body).unwrap_or_default(), "openai stream request body (sse)");
 
-            let resp = match self
-                .client
-                .post(format!("{}/chat/completions", self.base_url))
-                .header("Authorization", format!("Bearer {}", self.api_key.expose_secret()))
-                .header("content-type", "application/json")
-                .json(&body)
-                .send()
-                .await
-            {
+            let resp = match self.send_chat_completions_request(&body).await {
                 Ok(r) => {
                     if let Err(e) = r.error_for_status_ref() {
                         let status = e.status().map(|s| s.as_u16()).unwrap_or(0);
