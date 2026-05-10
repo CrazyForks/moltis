@@ -93,6 +93,18 @@ async function getScrollState(page) {
 	});
 }
 
+async function scrollMessagesAwayFromBottom(page) {
+	await page.evaluate(() => {
+		document.getElementById("messages").scrollTop = 0;
+	});
+	await expect
+		.poll(async () => {
+			const s = await getScrollState(page);
+			return s.scrollHeight - s.scrollTop - s.clientHeight;
+		})
+		.toBeGreaterThan(60);
+}
+
 test.describe("Smart auto-scroll", () => {
 	test.beforeEach(async ({ page }, testInfo) => {
 		testInfo.setTimeout(90_000);
@@ -117,11 +129,7 @@ test.describe("Smart auto-scroll", () => {
 		expect(afterFill.scrollHeight).toBeGreaterThan(afterFill.clientHeight);
 
 		// Scroll to the top to simulate a user reading earlier messages
-		await page.evaluate(() => {
-			document.getElementById("messages").scrollTop = 0;
-		});
-		// Let the scroll position settle before injecting a message
-		await page.waitForTimeout(200);
+		await scrollMessagesAwayFromBottom(page);
 
 		// Add a new assistant message via the smart scroll path
 		await page.evaluate(async () => {
@@ -151,11 +159,7 @@ test.describe("Smart auto-scroll", () => {
 		await injectScrollableMessages(page, 40);
 
 		// Scroll up, then add a message to trigger the indicator
-		await page.evaluate(() => {
-			document.getElementById("messages").scrollTop = 0;
-		});
-		// Let the scroll position settle before injecting a message
-		await page.waitForTimeout(200);
+		await scrollMessagesAwayFromBottom(page);
 		await page.evaluate(async () => {
 			var appScript = document.querySelector('script[type="module"][src*="js/app.js"]');
 			var appUrl = new URL(appScript.src, window.location.origin);
@@ -187,9 +191,7 @@ test.describe("Smart auto-scroll", () => {
 		await injectScrollableMessages(page, 40);
 
 		// Scroll up, add message to trigger indicator
-		await page.evaluate(() => {
-			document.getElementById("messages").scrollTop = 0;
-		});
+		await scrollMessagesAwayFromBottom(page);
 		await page.evaluate(async () => {
 			var appScript = document.querySelector('script[type="module"][src*="js/app.js"]');
 			var appUrl = new URL(appScript.src, window.location.origin);
@@ -219,9 +221,7 @@ test.describe("Smart auto-scroll", () => {
 		await injectScrollableMessages(page, 40);
 
 		// Scroll up
-		await page.evaluate(() => {
-			document.getElementById("messages").scrollTop = 0;
-		});
+		await scrollMessagesAwayFromBottom(page);
 
 		// Add a user message — should always scroll to bottom
 		await page.evaluate(async () => {
@@ -502,9 +502,7 @@ test.describe("Smart auto-scroll", () => {
 		await injectScrollableMessages(page, 40);
 
 		// Scroll up
-		await page.evaluate(() => {
-			document.getElementById("messages").scrollTop = 0;
-		});
+		await scrollMessagesAwayFromBottom(page);
 
 		// Add an assistant message — in "always" mode this should scroll to bottom
 		await page.evaluate(async () => {
