@@ -2,8 +2,8 @@ name: Provider Integration Tests
 
 on:
   schedule:
-    # Daily at 06:00 UTC (after the main CI cron at 04:00)
-    - cron: "0 6 * * *"
+    # Weekly on Monday at 06:00 UTC to conserve provider quotas.
+    - cron: "0 6 * * 1"
   workflow_dispatch:
 
 concurrency:
