@@ -95,7 +95,23 @@ async function getScrollState(page) {
 
 async function scrollMessagesAwayFromBottom(page) {
 	await page.evaluate(() => {
-		document.getElementById("messages").scrollTop = 0;
+		var box = document.getElementById("messages");
+		if (!box) return;
+
+		// A late render can replace injected fixtures after setup in CI. If the
+		// container is no longer scrollable, add enough inert fixtures to restore
+		// the intended user-scrolled-up state for this test.
+		for (let i = 0; i < 20 && box.scrollHeight - box.clientHeight <= 80; i += 1) {
+			var el = document.createElement("div");
+			el.className = "msg assistant";
+			el.style.flex = "0 0 96px";
+			el.style.minHeight = "96px";
+			el.dataset.e2eAutoscrollFixture = "true";
+			el.textContent = "M".repeat(200);
+			box.appendChild(el);
+		}
+
+		box.scrollTop = 0;
 	});
 	await expect
 		.poll(async () => {
