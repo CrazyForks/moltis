@@ -36,15 +36,9 @@
           "mode": "must_pass"
         },
         "alibaba-coding": {
-          "mode": "allow_known_mismatch",
-          "reason": "qwen3.5-plus currently serializes null as an empty string on the Alibaba coding endpoint",
-          "observed_arguments": {
-            "timeout": 0,
-            "replace_all": false,
-            "offset": 0,
-            "multiline": false,
-            "type": ""
-          }
+          "mode": "allow_known_failure",
+          "reason": "qwen3.5-plus currently rejects literal null-only tool schemas on the Alibaba coding endpoint",
+          "error_contains": "builder error"
         }
       }
     },

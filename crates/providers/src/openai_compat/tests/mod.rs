@@ -1,8 +1,9 @@
 mod schema_normalization;
 
 use super::{
-    parse_responses_completion, parse_tool_calls, sanitize_schema_for_openai_compat,
-    strict_mode::patch_schema_for_strict_mode, to_openai_tools, to_responses_api_tools,
+    normalize_tool_call_arguments_from_schemas, parse_responses_completion, parse_tool_calls,
+    sanitize_schema_for_openai_compat, strict_mode::patch_schema_for_strict_mode, to_openai_tools,
+    to_responses_api_tools,
 };
 
 /// Recursively assert that every `required` entry has a corresponding key in
@@ -132,6 +133,97 @@ fn parse_tool_calls_preserve_issue_693_examples() {
     assert_eq!(calls[2].arguments["offset"], 0);
     assert_eq!(calls[2].arguments["multiline"], false);
     assert!(calls[2].arguments["type"].is_null());
+}
+
+#[test]
+fn normalize_nullable_enum_none_sentinel_to_null() {
+    let tools = vec![serde_json::json!({
+        "name": "mcp_tavily_search",
+        "description": "Search",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": { "type": "string" },
+                "time_range": {
+                    "type": "string",
+                    "enum": ["day", "week", "month", "year"]
+                },
+                "country": {
+                    "type": "string",
+                    "enum": ["US", "UK", "FR", "DE"]
+                }
+            },
+            "required": ["query"]
+        }
+    })];
+    let mut tool_calls = vec![moltis_agents::model::ToolCall {
+        id: "call_1".to_string(),
+        name: "mcp_tavily_search".to_string(),
+        arguments: serde_json::json!({
+            "query": "rust async",
+            "time_range": "None",
+            "country": "None"
+        }),
+        argument_diagnostic: None,
+        metadata: None,
+    }];
+
+    normalize_tool_call_arguments_from_schemas(&mut tool_calls, &tools);
+
+    assert_eq!(tool_calls[0].arguments["query"], "rust async");
+    assert!(tool_calls[0].arguments["time_range"].is_null());
+    assert!(tool_calls[0].arguments["country"].is_null());
+}
+
+#[test]
+fn normalize_preserves_literal_none_enum_value() {
+    let tools = vec![serde_json::json!({
+        "name": "set_mode",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "mode": { "type": "string", "enum": ["None", "fast"] }
+            }
+        }
+    })];
+    let mut tool_calls = vec![moltis_agents::model::ToolCall {
+        id: "call_1".to_string(),
+        name: "set_mode".to_string(),
+        arguments: serde_json::json!({ "mode": "None" }),
+        argument_diagnostic: None,
+        metadata: None,
+    }];
+
+    normalize_tool_call_arguments_from_schemas(&mut tool_calls, &tools);
+
+    assert_eq!(tool_calls[0].arguments["mode"], "None");
+}
+
+#[test]
+fn normalize_null_only_empty_string_to_null() {
+    let tools = vec![serde_json::json!({
+        "name": "serialization_probe",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "kind": { "type": "null" },
+                "label": { "type": "string" }
+            },
+            "required": ["kind", "label"]
+        }
+    })];
+    let mut tool_calls = vec![moltis_agents::model::ToolCall {
+        id: "call_1".to_string(),
+        name: "serialization_probe".to_string(),
+        arguments: serde_json::json!({ "kind": "", "label": "" }),
+        argument_diagnostic: None,
+        metadata: None,
+    }];
+
+    normalize_tool_call_arguments_from_schemas(&mut tool_calls, &tools);
+
+    assert!(tool_calls[0].arguments["kind"].is_null());
+    assert_eq!(tool_calls[0].arguments["label"], "");
 }
 
 #[test]

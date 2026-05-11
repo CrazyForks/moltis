@@ -8,8 +8,9 @@ use crate::{
     http::{retry_after_ms_from_headers, with_retry_after_marker},
     ollama::normalize_ollama_api_base_url,
     openai_compat::{
-        parse_openai_compat_usage_from_payload, parse_tool_calls,
-        split_responses_instructions_and_input, strip_think_tags, to_responses_api_tools,
+        normalize_tool_call_arguments_from_schemas, parse_openai_compat_usage_from_payload,
+        parse_tool_calls, split_responses_instructions_and_input, strip_think_tags,
+        to_responses_api_tools,
     },
     raw_model_id,
 };
@@ -377,7 +378,8 @@ impl OpenAiProvider {
                 Some(visible)
             }
         });
-        let tool_calls = parse_tool_calls(message);
+        let mut tool_calls = parse_tool_calls(message);
+        normalize_tool_call_arguments_from_schemas(&mut tool_calls, tools);
 
         let usage = parse_openai_compat_usage_from_payload(&resp).unwrap_or_default();
 

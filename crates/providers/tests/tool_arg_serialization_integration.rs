@@ -39,6 +39,10 @@ enum ProviderExpectation {
         observed_arguments: serde_json::Value,
         reason: String,
     },
+    AllowKnownFailure {
+        error_contains: String,
+        reason: String,
+    },
 }
 
 #[derive(Debug)]
@@ -139,6 +143,20 @@ fn assert_provider_result(
                 scenario.id, scenario.expected_arguments, observed_arguments, actual_arguments
             );
         },
+        ProviderExpectation::AllowKnownFailure { reason, .. } => {
+            if actual_arguments == &scenario.expected_arguments {
+                eprintln!(
+                    "provider {provider_name} scenario {} now passes; previous known request failure resolved",
+                    scenario.id
+                );
+                return;
+            }
+
+            panic!(
+                "provider {provider_name} scenario {} no longer had known request failure ({reason}) but returned unexpected arguments.\nexpected: {:?}\nactual: {:?}",
+                scenario.id, scenario.expected_arguments, actual_arguments
+            );
+        },
     }
 }
 
@@ -166,11 +184,36 @@ async fn run_provider_scenarios(provider_name: &str, provider: OpenAiProvider) {
             )
             .await
             .unwrap_or_else(|error| {
+                if let Some(ProviderExpectation::AllowKnownFailure {
+                    error_contains,
+                    reason,
+                }) = scenario.providers.get(provider_name)
+                    && error.to_string().contains(error_contains)
+                {
+                    eprintln!(
+                        "provider {provider_name} scenario {} matched known request failure: {}",
+                        scenario.id, reason
+                    );
+                    return moltis_agents::model::CompletionResponse {
+                        text: None,
+                        tool_calls: Vec::new(),
+                        usage: Default::default(),
+                    };
+                }
+
                 panic!(
                     "provider {provider_name} request failed for scenario {}: {error}",
                     scenario.id
                 )
             });
+
+        if matches!(
+            scenario.providers.get(provider_name),
+            Some(ProviderExpectation::AllowKnownFailure { .. })
+        ) && response.tool_calls.is_empty()
+        {
+            continue;
+        }
 
         assert_eq!(
             response.tool_calls.len(),

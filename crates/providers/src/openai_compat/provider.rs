@@ -289,6 +289,141 @@ pub fn parse_tool_calls(message: &serde_json::Value) -> Vec<ToolCall> {
         .unwrap_or_default()
 }
 
+fn is_null_sentinel(value: &serde_json::Value) -> bool {
+    value.as_str().is_some_and(|raw| {
+        let normalized = raw.trim().to_ascii_lowercase();
+        matches!(normalized.as_str(), "none" | "null")
+    })
+}
+
+fn schema_type_includes_null(schema: &serde_json::Value) -> bool {
+    match schema.get("type") {
+        Some(serde_json::Value::String(kind)) => kind == "null",
+        Some(serde_json::Value::Array(kinds)) => {
+            kinds.iter().any(|kind| kind.as_str() == Some("null"))
+        },
+        _ => false,
+    }
+}
+
+fn schema_type_is_only_null(schema: &serde_json::Value) -> bool {
+    match schema.get("type") {
+        Some(serde_json::Value::String(kind)) => kind == "null",
+        Some(serde_json::Value::Array(kinds)) => {
+            !kinds.is_empty() && kinds.iter().all(|kind| kind.as_str() == Some("null"))
+        },
+        _ => false,
+    }
+}
+
+fn schema_enum_includes(schema: &serde_json::Value, expected: &serde_json::Value) -> bool {
+    schema
+        .get("enum")
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(|values| values.iter().any(|value| value == expected))
+}
+
+fn schema_allows_null(
+    schema: &serde_json::Value,
+    parent_required: Option<&[serde_json::Value]>,
+    property_name: Option<&str>,
+) -> bool {
+    if schema_type_includes_null(schema) || schema_enum_includes(schema, &serde_json::Value::Null) {
+        return true;
+    }
+
+    let is_optional = property_name.is_some_and(|name| {
+        !parent_required.is_some_and(|required| {
+            required
+                .iter()
+                .any(|entry| entry.as_str().is_some_and(|entry| entry == name))
+        })
+    });
+
+    // Strict-mode providers make originally-optional enum fields nullable.
+    // Some compatible backends return host-language sentinels like "None"
+    // instead of JSON null; only coerce when the schema does not explicitly
+    // allow that sentinel as an enum value.
+    is_optional
+        && schema
+            .get("enum")
+            .and_then(serde_json::Value::as_array)
+            .is_some()
+        && !schema_enum_includes(schema, &serde_json::Value::String("None".to_string()))
+        && !schema_enum_includes(schema, &serde_json::Value::String("null".to_string()))
+}
+
+fn normalize_argument_value(
+    value: &mut serde_json::Value,
+    schema: &serde_json::Value,
+    parent_required: Option<&[serde_json::Value]>,
+    property_name: Option<&str>,
+) {
+    if value.as_str() == Some("") && schema_type_is_only_null(schema) {
+        *value = serde_json::Value::Null;
+        return;
+    }
+
+    if is_null_sentinel(value) && schema_allows_null(schema, parent_required, property_name) {
+        *value = serde_json::Value::Null;
+        return;
+    }
+
+    match value {
+        serde_json::Value::Object(args) => {
+            let required = schema
+                .get("required")
+                .and_then(serde_json::Value::as_array)
+                .map(Vec::as_slice);
+            let Some(properties) = schema
+                .get("properties")
+                .and_then(serde_json::Value::as_object)
+            else {
+                return;
+            };
+
+            for (name, nested_value) in args {
+                if let Some(nested_schema) = properties.get(name) {
+                    normalize_argument_value(nested_value, nested_schema, required, Some(name));
+                }
+            }
+        },
+        serde_json::Value::Array(values) => {
+            if let Some(items) = schema.get("items") {
+                for nested_value in values {
+                    normalize_argument_value(nested_value, items, None, None);
+                }
+            }
+        },
+        _ => {},
+    }
+}
+
+/// Normalize provider-specific null sentinels in tool-call arguments.
+///
+/// Some OpenAI-compatible providers translate JSON Schema nullability through a
+/// host-language sentinel and return strings like `"None"` for nullable enum
+/// fields. The schema still tells us those fields were intended to be JSON null,
+/// so repair them at the provider boundary before tool execution.
+pub fn normalize_tool_call_arguments_from_schemas(
+    tool_calls: &mut [ToolCall],
+    tools: &[serde_json::Value],
+) {
+    for tool_call in tool_calls {
+        let Some(tool) = tools.iter().find(|tool| {
+            tool.get("name")
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|name| name == tool_call.name)
+        }) else {
+            continue;
+        };
+        let Some(parameters) = tool.get("parameters") else {
+            continue;
+        };
+        normalize_argument_value(&mut tool_call.arguments, parameters, None, None);
+    }
+}
+
 fn usage_value_at_path(usage: &serde_json::Value, path: &[&str]) -> Option<u64> {
     let mut cursor = usage;
     for key in path {
