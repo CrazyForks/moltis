@@ -1048,4 +1048,16 @@ mod tests {
         assert_eq!(meta.len(), 1);
         assert_eq!(meta["thought_signature"], "sig");
     }
+
+    #[test]
+    fn extract_tool_call_metadata_reads_gemini_extra_content() {
+        let tc = serde_json::json!({
+            "id": "call_1",
+            "extra_content": {"google": {"thought_signature": "sig_google"}},
+            "function": {"name": "exec"}
+        });
+
+        let meta = extract_tool_call_metadata(&tc).expect("should extract");
+        assert_eq!(meta["thought_signature"], "sig_google");
+    }
 }

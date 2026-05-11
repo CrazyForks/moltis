@@ -13,12 +13,16 @@ format:
 format-check:
     cargo +{{nightly_toolchain}} fmt --all -- --check
 
-# Run live provider E2E scenarios (sources .envrc when present).
+# Run the full live provider integration workflow locally (sources .envrc when present).
 provider-e2e-weekly:
+    ./scripts/run-provider-integration-weekly.sh
+
+# Run only the scenario-driven provider E2E serialization checks.
+provider-e2e-scenarios:
     ./scripts/run-provider-e2e-daily.sh
 
 # Compatibility alias for the old daily recipe name.
-provider-e2e-daily: provider-e2e-weekly
+provider-e2e-daily: provider-e2e-scenarios
 
 # Verify Cargo.lock is in sync with workspace manifests.
 lockfile-check:

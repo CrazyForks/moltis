@@ -19,9 +19,57 @@ const { test, expect } = require("../base-test");
 const VERCEL_TOKEN = process.env.VERCEL_TOKEN;
 const VERCEL_TEAM_ID = process.env.VERCEL_TEAM_ID;
 const VERCEL_PROJECT_ID = process.env.VERCEL_PROJECT_ID;
+const VERCEL_RUNTIME = process.env.MOLTIS_E2E_VERCEL_RUNTIME || "python3.13";
 const DAYTONA_API_KEY = process.env.DAYTONA_API_KEY;
 
 const VERCEL_API = "https://vercel.com/api";
+
+async function skipIfVercelSandboxUnavailable(response) {
+	if (response.status !== 402) return;
+
+	const body = await response.text();
+	test.skip(true, `Vercel sandbox unavailable for this account: ${body || "HTTP 402"}`);
+}
+
+async function createVercelSandbox() {
+	const createUrl = `${VERCEL_API}/v1/sandboxes${VERCEL_TEAM_ID ? `?teamId=${VERCEL_TEAM_ID}` : ""}`;
+	const createResp = await fetch(createUrl, {
+		method: "POST",
+		headers: {
+			Authorization: `Bearer ${VERCEL_TOKEN}`,
+			"Content-Type": "application/json",
+		},
+		body: JSON.stringify({
+			projectId: VERCEL_PROJECT_ID,
+			runtime: VERCEL_RUNTIME,
+			timeout: 30000,
+			resources: { vcpus: 1 },
+		}),
+	});
+
+	await skipIfVercelSandboxUnavailable(createResp);
+	expect(createResp.status).toBe(200);
+	return createResp.json();
+}
+
+async function waitForVercelSandboxRunning(sandboxId) {
+	const deadline = Date.now() + 60000;
+	let status = "";
+	while (Date.now() < deadline) {
+		const getUrl = `${VERCEL_API}/v1/sandboxes/${sandboxId}${VERCEL_TEAM_ID ? `?teamId=${VERCEL_TEAM_ID}` : ""}`;
+		const getResp = await fetch(getUrl, {
+			headers: { Authorization: `Bearer ${VERCEL_TOKEN}` },
+		});
+		const getData = await getResp.json();
+		status = getData.sandbox?.status;
+		if (status === "running") break;
+		if (status === "failed" || status === "stopped") {
+			throw new Error(`Sandbox entered terminal state: ${status}`);
+		}
+		await new Promise((resolve) => setTimeout(resolve, 1000));
+	}
+	expect(status).toBe("running");
+}
 
 test.describe("Vercel Sandbox live integration", () => {
 	test.skip(
@@ -41,50 +89,17 @@ test.describe("Vercel Sandbox live integration", () => {
 					Authorization: `Bearer ${VERCEL_TOKEN}`,
 					"Content-Type": "application/json",
 				},
-			}).catch(() => {});
+			}).catch(() => undefined);
 			sandboxId = null;
 		}
 	});
 
-	test("create sandbox, run command, and stop", async () => {
-		// Create a sandbox.
-		const createUrl = `${VERCEL_API}/v1/sandboxes${VERCEL_TEAM_ID ? `?teamId=${VERCEL_TEAM_ID}` : ""}`;
-		const createResp = await fetch(createUrl, {
-			method: "POST",
-			headers: {
-				Authorization: `Bearer ${VERCEL_TOKEN}`,
-				"Content-Type": "application/json",
-			},
-			body: JSON.stringify({
-				projectId: VERCEL_PROJECT_ID,
-				runtime: "node24",
-				timeout: 60000,
-				resources: { vcpus: 1 },
-			}),
-		});
-
-		expect(createResp.status).toBe(200);
-		const createData = await createResp.json();
+	test("create sandbox, run command, write file, and stop", async () => {
+		const createData = await createVercelSandbox();
 		sandboxId = createData.sandbox?.id;
 		expect(sandboxId).toBeTruthy();
 
-		// Wait for sandbox to reach running state.
-		const deadline = Date.now() + 60000;
-		let status = "";
-		while (Date.now() < deadline) {
-			const getUrl = `${VERCEL_API}/v1/sandboxes/${sandboxId}${VERCEL_TEAM_ID ? `?teamId=${VERCEL_TEAM_ID}` : ""}`;
-			const getResp = await fetch(getUrl, {
-				headers: { Authorization: `Bearer ${VERCEL_TOKEN}` },
-			});
-			const getData = await getResp.json();
-			status = getData.sandbox?.status;
-			if (status === "running") break;
-			if (status === "failed" || status === "stopped") {
-				throw new Error(`Sandbox entered terminal state: ${status}`);
-			}
-			await new Promise((r) => setTimeout(r, 1000));
-		}
-		expect(status).toBe("running");
+		await waitForVercelSandboxRunning(sandboxId);
 
 		// Execute a command.
 		const cmdUrl = `${VERCEL_API}/v1/sandboxes/${sandboxId}/cmd${VERCEL_TEAM_ID ? `?teamId=${VERCEL_TEAM_ID}` : ""}`;
@@ -95,8 +110,8 @@ test.describe("Vercel Sandbox live integration", () => {
 				"Content-Type": "application/json",
 			},
 			body: JSON.stringify({
-				command: "echo",
-				args: ["-n", "hello-moltis"],
+				command: "sh",
+				args: ["-c", "printf 'moltis-test-content' > /tmp/moltis-test-file && cat /tmp/moltis-test-file"],
 				cwd: "/vercel/sandbox",
 				wait: true,
 			}),
@@ -116,7 +131,7 @@ test.describe("Vercel Sandbox live integration", () => {
 			headers: { Authorization: `Bearer ${VERCEL_TOKEN}` },
 		});
 		const logsText = await logsResp.text();
-		expect(logsText).toContain("hello-moltis");
+		expect(logsText).toContain("moltis-test-content");
 
 		// Stop the sandbox.
 		const stopUrl = `${VERCEL_API}/v1/sandboxes/${sandboxId}/stop${VERCEL_TEAM_ID ? `?teamId=${VERCEL_TEAM_ID}` : ""}`;
@@ -129,70 +144,6 @@ test.describe("Vercel Sandbox live integration", () => {
 		});
 		expect(stopResp.status).toBe(200);
 		sandboxId = null; // already stopped
-	});
-
-	test("write and read file in sandbox", async () => {
-		// Create sandbox.
-		const createUrl = `${VERCEL_API}/v1/sandboxes${VERCEL_TEAM_ID ? `?teamId=${VERCEL_TEAM_ID}` : ""}`;
-		const createResp = await fetch(createUrl, {
-			method: "POST",
-			headers: {
-				Authorization: `Bearer ${VERCEL_TOKEN}`,
-				"Content-Type": "application/json",
-			},
-			body: JSON.stringify({
-				projectId: VERCEL_PROJECT_ID,
-				runtime: "node24",
-				timeout: 60000,
-				resources: { vcpus: 1 },
-			}),
-		});
-		const createData = await createResp.json();
-		sandboxId = createData.sandbox?.id;
-		expect(sandboxId).toBeTruthy();
-
-		// Wait for running.
-		const deadline = Date.now() + 60000;
-		while (Date.now() < deadline) {
-			const getResp = await fetch(
-				`${VERCEL_API}/v1/sandboxes/${sandboxId}${VERCEL_TEAM_ID ? `?teamId=${VERCEL_TEAM_ID}` : ""}`,
-				{ headers: { Authorization: `Bearer ${VERCEL_TOKEN}` } },
-			);
-			const getData = await getResp.json();
-			if (getData.sandbox?.status === "running") break;
-			await new Promise((r) => setTimeout(r, 1000));
-		}
-
-		// Write a file using the command API (simpler than gzipped tar for test).
-		const writeCmd = `${VERCEL_API}/v1/sandboxes/${sandboxId}/cmd${VERCEL_TEAM_ID ? `?teamId=${VERCEL_TEAM_ID}` : ""}`;
-		const writeResp = await fetch(writeCmd, {
-			method: "POST",
-			headers: {
-				Authorization: `Bearer ${VERCEL_TOKEN}`,
-				"Content-Type": "application/json",
-			},
-			body: JSON.stringify({
-				command: "sh",
-				args: ["-c", "echo 'moltis-test-content' > /tmp/test-file.txt"],
-				cwd: "/vercel/sandbox",
-				wait: true,
-			}),
-		});
-		expect(writeResp.status).toBe(200);
-
-		// Read the file back.
-		const readUrl = `${VERCEL_API}/v1/sandboxes/${sandboxId}/fs/read${VERCEL_TEAM_ID ? `?teamId=${VERCEL_TEAM_ID}` : ""}`;
-		const readResp = await fetch(readUrl, {
-			method: "POST",
-			headers: {
-				Authorization: `Bearer ${VERCEL_TOKEN}`,
-				"Content-Type": "application/json",
-			},
-			body: JSON.stringify({ path: "/tmp/test-file.txt" }),
-		});
-		expect(readResp.status).toBe(200);
-		const content = await readResp.text();
-		expect(content.trim()).toBe("moltis-test-content");
 	});
 });
 
@@ -210,7 +161,7 @@ test.describe("Daytona Sandbox live integration", () => {
 					Authorization: `Bearer ${DAYTONA_API_KEY}`,
 					"X-Daytona-Source": "moltis-e2e",
 				},
-			}).catch(() => {});
+			}).catch(() => undefined);
 			sandboxId = null;
 		}
 	});

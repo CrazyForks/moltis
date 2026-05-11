@@ -16,11 +16,16 @@ pub fn extract_tool_call_metadata(
 ) -> Option<serde_json::Map<String, serde_json::Value>> {
     let obj = tc.as_object()?;
     let nested = obj.get("metadata").and_then(serde_json::Value::as_object);
+    let gemini = obj
+        .get("extra_content")
+        .and_then(|extra| extra.get("google"))
+        .and_then(serde_json::Value::as_object);
     let meta: serde_json::Map<_, _> = TOOL_CALL_METADATA_KEYS
         .iter()
         .filter_map(|&k| {
             obj.get(k)
                 .or_else(|| nested.and_then(|metadata| metadata.get(k)))
+                .or_else(|| gemini.and_then(|metadata| metadata.get(k)))
                 .map(|v| (k.to_string(), v.clone()))
         })
         .collect();

@@ -128,6 +128,11 @@ impl OpenAiProvider {
             || self.base_url.to_ascii_lowercase().contains("minimax")
     }
 
+    fn requires_gemini_tool_call_extra_content(&self) -> bool {
+        self.provider_name.eq_ignore_ascii_case("gemini")
+            || self.base_url.contains("generativelanguage.googleapis.com")
+    }
+
     /// Whether this provider rejects `null` in JSON Schema `enum` arrays.
     ///
     /// Fireworks AI returns 400 "could not translate the enum None" when
@@ -298,6 +303,7 @@ impl OpenAiProvider {
         messages: &[ChatMessage],
     ) -> Vec<serde_json::Value> {
         let needs_reasoning_content = self.requires_reasoning_content_on_tool_messages();
+        let needs_gemini_tool_call_extra_content = self.requires_gemini_tool_call_extra_content();
         let strip_name = !self.supports_user_name;
         let mut remapped_tool_call_ids = HashMap::new();
         let mut used_tool_call_ids = HashSet::new();
@@ -331,6 +337,15 @@ impl OpenAiProvider {
                         &mut used_tool_call_ids,
                     );
                     tool_call["id"] = serde_json::Value::String(mapped_id);
+
+                    if needs_gemini_tool_call_extra_content
+                        && let Some(thought_signature) = tool_call
+                            .as_object_mut()
+                            .and_then(|obj| obj.remove("thought_signature"))
+                    {
+                        tool_call["extra_content"]["google"]["thought_signature"] =
+                            thought_signature;
+                    }
                 }
             } else if value.get("role").and_then(serde_json::Value::as_str) == Some("tool")
                 && let Some(tool_call_id) = value
@@ -694,6 +709,34 @@ mod tests {
         assert!(
             !p.rejects_null_in_enums(),
             "OpenAI should allow null in enums (issue #712)"
+        );
+    }
+
+    #[test]
+    fn gemini_serializes_thought_signature_as_extra_content() {
+        let p = provider(
+            "gemini-3.1-flash-lite-preview",
+            "gemini",
+            "https://generativelanguage.googleapis.com/v1beta/openai",
+        );
+        let mut metadata = serde_json::Map::new();
+        metadata.insert("thought_signature".to_string(), serde_json::json!("sig123"));
+        let messages =
+            p.serialize_messages_for_request(&[ChatMessage::assistant_with_tools(None, vec![
+                moltis_agents::model::ToolCall {
+                    id: "call_1".to_string(),
+                    name: "get_weather".to_string(),
+                    arguments: serde_json::json!({"location": "London"}),
+                    argument_diagnostic: None,
+                    metadata: Some(metadata),
+                },
+            ])]);
+
+        let tool_call = &messages[0]["tool_calls"][0];
+        assert!(tool_call.get("thought_signature").is_none());
+        assert_eq!(
+            tool_call["extra_content"]["google"]["thought_signature"],
+            "sig123"
         );
     }
 

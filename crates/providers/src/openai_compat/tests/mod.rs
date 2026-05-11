@@ -227,6 +227,41 @@ fn normalize_null_only_empty_string_to_null() {
 }
 
 #[test]
+fn normalize_array_schema_decodes_json_string_array() {
+    let tools = vec![serde_json::json!({
+        "name": "spawn_agent",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "task": { "type": "string" },
+                "allow_tools": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                }
+            },
+            "required": ["task"]
+        }
+    })];
+    let mut tool_calls = vec![moltis_agents::model::ToolCall {
+        id: "call_1".to_string(),
+        name: "spawn_agent".to_string(),
+        arguments: serde_json::json!({
+            "task": "list files",
+            "allow_tools": "[\"list_directory\",\"read_file\"]"
+        }),
+        argument_diagnostic: None,
+        metadata: None,
+    }];
+
+    normalize_tool_call_arguments_from_schemas(&mut tool_calls, &tools);
+
+    assert_eq!(
+        tool_calls[0].arguments["allow_tools"],
+        serde_json::json!(["list_directory", "read_file"])
+    );
+}
+
+#[test]
 fn parse_responses_completion_preserves_native_falsy_types() {
     let resp = serde_json::json!({
         "output": [{

@@ -36,9 +36,7 @@
           "mode": "must_pass"
         },
         "alibaba-coding": {
-          "mode": "allow_known_failure",
-          "reason": "qwen3.5-plus currently rejects literal null-only tool schemas on the Alibaba coding endpoint",
-          "error_contains": "builder error"
+          "mode": "must_pass"
         }
       }
     },

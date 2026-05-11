@@ -316,6 +316,16 @@ fn schema_type_is_only_null(schema: &serde_json::Value) -> bool {
     }
 }
 
+fn schema_type_includes_array(schema: &serde_json::Value) -> bool {
+    match schema.get("type") {
+        Some(serde_json::Value::String(kind)) => kind == "array",
+        Some(serde_json::Value::Array(kinds)) => {
+            kinds.iter().any(|kind| kind.as_str() == Some("array"))
+        },
+        _ => false,
+    }
+}
+
 fn schema_enum_includes(schema: &serde_json::Value, expected: &serde_json::Value) -> bool {
     schema
         .get("enum")
@@ -367,6 +377,14 @@ fn normalize_argument_value(
     if is_null_sentinel(value) && schema_allows_null(schema, parent_required, property_name) {
         *value = serde_json::Value::Null;
         return;
+    }
+
+    if schema_type_includes_array(schema)
+        && let Some(raw) = value.as_str()
+        && raw.trim_start().starts_with('[')
+        && let Ok(parsed @ serde_json::Value::Array(_)) = serde_json::from_str(raw)
+    {
+        *value = parsed;
     }
 
     match value {

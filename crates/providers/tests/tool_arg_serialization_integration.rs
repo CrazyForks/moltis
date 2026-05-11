@@ -6,7 +6,7 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, time::Duration};
 
 use {
     moltis_agents::model::{ChatMessage, LlmProvider},
@@ -35,14 +35,6 @@ struct Scenario {
 #[serde(tag = "mode", rename_all = "snake_case")]
 enum ProviderExpectation {
     MustPass,
-    AllowKnownMismatch {
-        observed_arguments: serde_json::Value,
-        reason: String,
-    },
-    AllowKnownFailure {
-        error_contains: String,
-        reason: String,
-    },
 }
 
 #[derive(Debug)]
@@ -66,25 +58,10 @@ fn optional_var(name: &str) -> Option<String> {
 }
 
 fn configured_provider(config: &ProviderConfig) -> Option<OpenAiProvider> {
-    let Some(api_key) = optional_var(config.api_key_env) else {
-        eprintln!(
-            "skipping {} serialization probe: {} is not set",
-            config.provider_name, config.api_key_env
-        );
-        return None;
-    };
+    let api_key = optional_var(config.api_key_env)?;
 
     let base_url = match config.base_url_env {
-        Some(name) => {
-            let Some(value) = optional_var(name) else {
-                eprintln!(
-                    "skipping {} serialization probe: {} is not set",
-                    config.provider_name, name
-                );
-                return None;
-            };
-            value
-        },
+        Some(name) => optional_var(name)?,
         None => config.default_base_url.to_string(),
     };
 
@@ -118,46 +95,51 @@ fn assert_provider_result(
                 scenario.id
             );
         },
-        ProviderExpectation::AllowKnownMismatch {
-            observed_arguments,
-            reason,
-        } => {
-            if actual_arguments == &scenario.expected_arguments {
-                eprintln!(
-                    "provider {provider_name} scenario {} now passes; previous known mismatch resolved",
-                    scenario.id
-                );
-                return;
-            }
-
-            if actual_arguments == observed_arguments {
-                eprintln!(
-                    "provider {provider_name} scenario {} matched known mismatch: {}",
-                    scenario.id, reason
-                );
-                return;
-            }
-
-            panic!(
-                "provider {provider_name} scenario {} had an unexpected result.\nexpected: {:?}\nknown mismatch: {:?}\nactual: {:?}",
-                scenario.id, scenario.expected_arguments, observed_arguments, actual_arguments
-            );
-        },
-        ProviderExpectation::AllowKnownFailure { reason, .. } => {
-            if actual_arguments == &scenario.expected_arguments {
-                eprintln!(
-                    "provider {provider_name} scenario {} now passes; previous known request failure resolved",
-                    scenario.id
-                );
-                return;
-            }
-
-            panic!(
-                "provider {provider_name} scenario {} no longer had known request failure ({reason}) but returned unexpected arguments.\nexpected: {:?}\nactual: {:?}",
-                scenario.id, scenario.expected_arguments, actual_arguments
-            );
-        },
     }
+}
+
+fn is_transient_provider_error(error: &anyhow::Error) -> bool {
+    let message = error.to_string().to_ascii_lowercase();
+    message.contains("http 429")
+        || message.contains("http 503")
+        || message.contains("temporarily rate-limited")
+        || message.contains("upstream connect error")
+        || message.contains("connection termination")
+}
+
+async fn complete_scenario_with_retries(
+    provider: &OpenAiProvider,
+    provider_name: &str,
+    scenario: &Scenario,
+) -> moltis_agents::model::CompletionResponse {
+    for attempt in 0..3 {
+        let result = provider
+            .complete(
+                &[
+                    ChatMessage::system(
+                        "Call the provided tool exactly once. Do not answer with prose.",
+                    ),
+                    ChatMessage::user(scenario.prompt.clone()),
+                ],
+                std::slice::from_ref(&scenario.tool),
+            )
+            .await;
+
+        match result {
+            Ok(response) => return response,
+            Err(error) if attempt < 2 && is_transient_provider_error(&error) => {
+                tokio::time::sleep(Duration::from_secs(2_u64.pow(attempt + 1))).await;
+            },
+            Err(error) => {
+                panic!(
+                    "provider {provider_name} request failed for scenario {}: {error}",
+                    scenario.id
+                );
+            },
+        }
+    }
+
+    unreachable!("bounded retry loop returns or panics")
 }
 
 async fn run_provider_scenarios(provider_name: &str, provider: OpenAiProvider) {
@@ -172,48 +154,7 @@ async fn run_provider_scenarios(provider_name: &str, provider: OpenAiProvider) {
             continue;
         }
 
-        let response = provider
-            .complete(
-                &[
-                    ChatMessage::system(
-                        "Call the provided tool exactly once. Do not answer with prose.",
-                    ),
-                    ChatMessage::user(scenario.prompt.clone()),
-                ],
-                std::slice::from_ref(&scenario.tool),
-            )
-            .await
-            .unwrap_or_else(|error| {
-                if let Some(ProviderExpectation::AllowKnownFailure {
-                    error_contains,
-                    reason,
-                }) = scenario.providers.get(provider_name)
-                    && error.to_string().contains(error_contains)
-                {
-                    eprintln!(
-                        "provider {provider_name} scenario {} matched known request failure: {}",
-                        scenario.id, reason
-                    );
-                    return moltis_agents::model::CompletionResponse {
-                        text: None,
-                        tool_calls: Vec::new(),
-                        usage: Default::default(),
-                    };
-                }
-
-                panic!(
-                    "provider {provider_name} request failed for scenario {}: {error}",
-                    scenario.id
-                )
-            });
-
-        if matches!(
-            scenario.providers.get(provider_name),
-            Some(ProviderExpectation::AllowKnownFailure { .. })
-        ) && response.tool_calls.is_empty()
-        {
-            continue;
-        }
+        let response = complete_scenario_with_retries(&provider, provider_name, scenario).await;
 
         assert_eq!(
             response.tool_calls.len(),
@@ -235,10 +176,6 @@ async fn run_provider_scenarios(provider_name: &str, provider: OpenAiProvider) {
             scenario.id
         );
 
-        eprintln!(
-            "provider {provider_name} scenario {} arguments: {:?}",
-            scenario.id, tool_call.arguments
-        );
         assert_provider_result(provider_name, scenario, &tool_call.arguments);
     }
 }
@@ -288,7 +225,7 @@ async fn openrouter_google_serialization_scenarios_non_streaming() {
         base_url_env: None,
         default_base_url: "https://openrouter.ai/api/v1",
         model_env: "SERIALIZATION_TEST_OPENROUTER_GOOGLE_MODEL",
-        default_model: "google/gemma-4-31b-it:free",
+        default_model: "google/gemini-2.5-flash",
     };
     let Some(provider) = configured_provider(&config) else {
         return;
