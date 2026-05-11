@@ -493,11 +493,22 @@ install_proxmox() {
 
     download "$PROXMOX_SCRIPT_URL" "$proxmox_script" || error "Failed to download Proxmox helper"
 
-    # The upstream community-scripts install helper currently writes a hardcoded
-    # /usr/bin/update URL. Patch the fetched helper so new Moltis LXCs update
-    # from the Moltis fork until the helper honors COMMUNITY_SCRIPTS_URL there.
+    # Patch the fetched helper at launch time for Moltis-specific fixes that live
+    # in remote community-scripts files: keep /usr/bin/update on the Moltis fork,
+    # and make the Docker prompt safe when lxc-attach has no interactive stdin.
     awk -v repo_url="$PROXMOX_REPO_URL" '
         {
+            if ($0 ~ /^source <\(curl -fsSL / && !curl_patched) {
+                print "curl() {"
+                print "  case \"${*: -1}\" in"
+                print "    */install/moltis-install.sh)"
+                print "      command curl \"$@\" | sed '\''s|^[[:space:]]*read -r -p \".*Docker for sandbox support.*\" prompt$|if [[ -t 0 ]]; then &; else prompt=\"${MOLTIS_INSTALL_DOCKER:-no}\"; fi|'\''"
+                print "      ;;"
+                print "    *) command curl \"$@\" ;;"
+                print "  esac"
+                print "}"
+                curl_patched = 1
+            }
             print
             if ($0 == "description" && !patched) {
                 q = sprintf("%c", 39)
@@ -509,6 +520,9 @@ install_proxmox() {
             }
         }
     ' "$proxmox_script" >"$patched_script"
+
+    grep -q 'curl()' "$patched_script" || error "Failed to apply Docker prompt patch to Proxmox helper"
+    grep -q 'MOLTIS_UPDATE_EOF' "$patched_script" || error "Failed to apply update URL patch to Proxmox helper"
 
     info "Launching Proxmox VE helper script..."
     bash "$patched_script"
