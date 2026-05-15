@@ -3,6 +3,27 @@ set -euo pipefail
 
 SHARDS="${MOLTIS_E2E_SHARDS:-4}"
 PIDS=()
+HEARTBEAT_PID=""
+
+start_heartbeat() {
+	(
+		while true; do
+			sleep 60
+			printf 'E2E still running at %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+		done
+	) &
+	HEARTBEAT_PID="$!"
+}
+
+stop_heartbeat() {
+	if [ -n "${HEARTBEAT_PID}" ]; then
+		kill "${HEARTBEAT_PID}" 2>/dev/null || true
+		wait "${HEARTBEAT_PID}" 2>/dev/null || true
+	fi
+}
+
+trap stop_heartbeat EXIT
+start_heartbeat
 
 for shard in $(seq 1 "${SHARDS}"); do
 	(

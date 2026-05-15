@@ -32,6 +32,19 @@ if ! command -v lipo >/dev/null 2>&1; then
   exit 1
 fi
 
+cargo_cmd() {
+  if command -v rustup >/dev/null 2>&1; then
+    active_toolchain="$(rustup show active-toolchain 2>/dev/null || true)"
+    active_toolchain="${active_toolchain%% *}"
+    if [ -n "${active_toolchain}" ]; then
+      rustup run "${active_toolchain}" cargo "$@"
+      return
+    fi
+  fi
+
+  command cargo "$@"
+}
+
 IFS=',' read -r -a RAW_TARGETS <<< "${SWIFT_BRIDGE_TARGETS_CSV}"
 TARGETS=()
 for raw_target in "${RAW_TARGETS[@]}"; do
@@ -67,11 +80,11 @@ if [ "${SKIP_WASM_BUILD}" = "1" ]; then
 else
   # Build and pre-compile embedded WASM guest components before release host builds.
   # moltis-tools includes these bytes at compile time in release-like profiles.
-  cargo build --target wasm32-wasip2 -p moltis-wasm-calc -p moltis-wasm-web-fetch -p moltis-wasm-web-search --release
+  cargo_cmd build --target wasm32-wasip2 -p moltis-wasm-calc -p moltis-wasm-web-fetch -p moltis-wasm-web-search --release
   if [ "${SKIP_WASM_PRECOMPILE}" = "1" ]; then
     echo "Skipping wasm precompile (MOLTIS_SWIFT_BRIDGE_SKIP_WASM_PRECOMPILE=1)"
   else
-    cargo run -p moltis-wasm-precompile --release
+    cargo_cmd run -p moltis-wasm-precompile --release
   fi
 fi
 
@@ -97,7 +110,7 @@ BUILD_ARGS=(build -p moltis-swift-bridge --profile "${SWIFT_BRIDGE_PROFILE}")
 for target in "${TARGETS[@]}"; do
   BUILD_ARGS+=(--target "${target}")
 done
-cargo "${BUILD_ARGS[@]}"
+cargo_cmd "${BUILD_ARGS[@]}"
 
 mkdir -p "${UNIVERSAL_DIR}" "${OUTPUT_DIR}"
 

@@ -44,6 +44,12 @@ jobs:
           shared-key: docs-validation-v1
           cache-all-crates: true
 
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: docs/package-lock.json
+
       - name: Install docs validation tools
         run: |
           cargo install mdbook-lint --version 0.14.3 --locked
