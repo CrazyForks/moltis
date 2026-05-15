@@ -611,26 +611,36 @@ test.describe("Chat input and slash commands", () => {
 	test("token bar stays visible at zero usage", async ({ page }) => {
 		const pageErrors = watchPageErrors(page);
 
-		await page.evaluate(async () => {
-			var appScript = document.querySelector('script[type="module"][src*="js/app.js"]');
-			if (!appScript) throw new Error("app module script not found");
-			var appUrl = new URL(appScript.src, window.location.origin);
-			var prefix = appUrl.href.slice(0, appUrl.href.length - "js/app.js".length);
-			var state = await import(`${prefix}js/state.js`);
-			var chatUi = await import(`${prefix}js/chat-ui.js`);
-			state.setSessionTokens({ input: 0, output: 0 });
-			state.setSessionCurrentContextTokens(0);
-			state.setSessionContextWindow(0);
-			state.setSessionToolsEnabled(true);
-			state.setSessionExecMode("host");
-			state.setSessionExecPromptSymbol("$");
-			state.setCommandModeEnabled(false);
-			chatUi.updateTokenBar();
-		});
+		async function forceZeroUsageTokenBar() {
+			return await page.evaluate(async () => {
+				var appScript = document.querySelector('script[type="module"][src*="js/app.js"]');
+				if (!appScript) throw new Error("app module script not found");
+				var appUrl = new URL(appScript.src, window.location.origin);
+				var prefix = appUrl.href.slice(0, appUrl.href.length - "js/app.js".length);
+				var state = await import(`${prefix}js/state.js`);
+				var chatUi = await import(`${prefix}js/chat-ui.js`);
+				state.setSessionTokens({ input: 0, output: 0 });
+				state.setSessionCurrentInputTokens(0);
+				state.setSessionCurrentContextTokens(0);
+				state.setSessionContextWindow(0);
+				state.setSessionToolsEnabled(true);
+				state.setSessionExecMode("host");
+				state.setSessionExecPromptSymbol("$");
+				state.setCommandModeEnabled(false);
+				chatUi.updateTokenBar();
+				var bar = document.querySelector("#tokenBar");
+				if (!bar) return { visible: false, text: "" };
+				return {
+					visible: window.getComputedStyle(bar).display !== "none",
+					text: bar.textContent || "",
+				};
+			});
+		}
 
 		const tokenBar = page.locator("#tokenBar");
+		await expect.poll(forceZeroUsageTokenBar, { timeout: 10_000 }).toEqual({ visible: true, text: "0" });
 		await expect(tokenBar).toBeVisible();
-		await expect(tokenBar).toHaveText(/^(0)?$/);
+		await expect(tokenBar).toHaveText("0");
 		await expect(tokenBar).not.toContainText("Execute:");
 		await expect(tokenBar).not.toContainText("/sh mode");
 		expect(pageErrors).toEqual([]);
