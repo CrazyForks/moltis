@@ -74,6 +74,82 @@ key_path = "/path/to/key.pem"
 }
 
 #[test]
+fn tls_public_ip_accepts_ip_address() {
+    let toml = r#"
+[tls]
+public_ip = "203.0.113.10"
+"#;
+    let result = validate_toml_str(toml);
+    assert!(
+        result.diagnostics.iter().all(|d| d.path != "tls.public_ip"),
+        "expected no public_ip diagnostics, got: {:?}",
+        result.diagnostics
+    );
+}
+
+#[test]
+fn tls_public_ip_rejects_dns_name() {
+    let toml = r#"
+[tls]
+public_ip = "chat.example.com"
+"#;
+    let result = validate_toml_str(toml);
+    let error = result
+        .diagnostics
+        .iter()
+        .find(|d| d.severity == Severity::Error && d.path == "tls.public_ip");
+    assert!(
+        error.is_some(),
+        "expected error for non-IP public_ip, got: {:?}",
+        result.diagnostics
+    );
+}
+
+#[test]
+fn tls_public_ip_warns_for_loopback_or_unspecified_address() {
+    for public_ip in ["127.0.0.1", "::1", "0.0.0.0", "::"] {
+        let toml = format!(
+            r#"
+[tls]
+public_ip = "{public_ip}"
+"#
+        );
+        let result = validate_toml_str(&toml);
+        let warning = result.diagnostics.iter().find(|d| {
+            d.severity == Severity::Warning
+                && d.path == "tls.public_ip"
+                && d.message.contains("loopback or unspecified")
+        });
+        assert!(
+            warning.is_some(),
+            "expected warning for {public_ip}, got: {:?}",
+            result.diagnostics
+        );
+    }
+}
+
+#[test]
+fn tls_public_ip_warns_with_custom_cert_paths() {
+    let toml = r#"
+[tls]
+cert_path = "/path/to/cert.pem"
+key_path = "/path/to/key.pem"
+public_ip = "203.0.113.10"
+"#;
+    let result = validate_toml_str(toml);
+    let warning = result.diagnostics.iter().find(|d| {
+        d.severity == Severity::Warning
+            && d.path == "tls.public_ip"
+            && d.message.contains("has no effect")
+    });
+    assert!(
+        warning.is_some(),
+        "expected warning for public_ip with custom certs, got: {:?}",
+        result.diagnostics
+    );
+}
+
+#[test]
 fn unknown_tailscale_mode_warned() {
     let toml = r#"
 [tailscale]
