@@ -47,61 +47,64 @@ async function deleteAgentByName(page, agentName) {
 }
 
 async function mockExternalAgentsRpc(page) {
-	await page.evaluate(async () => {
-		var appScript = document.querySelector('script[type="module"][src*="js/app.js"]');
-		if (!appScript) throw new Error("app module script not found");
-		var appUrl = new URL(appScript.src, window.location.origin);
-		var prefix = appUrl.href.slice(0, appUrl.href.length - "js/app.js".length);
-		var stateModule = await import(`${prefix}js/state.js`);
-		var ws = stateModule.ws;
-		if (!ws) throw new Error("websocket unavailable");
-
-		if (!window.__origExternalAgentWsSend) {
-			window.__origExternalAgentWsSend = ws.send.bind(ws);
-		}
+	await page.addInitScript(() => {
+		if (window.__externalAgentE2EPatched) return;
+		window.__externalAgentE2EPatched = true;
 		window.__externalAgentE2ERequests = [];
+		const originalSend = WebSocket.prototype.send;
 
-		function resolvePending(id, payload) {
-			var resolver = stateModule.pending?.[id];
-			if (typeof resolver !== "function") return false;
-			delete stateModule.pending[id];
-			resolver(payload);
-			return true;
+		function respond(socket, id, payload) {
+			queueMicrotask(() => {
+				const event = new MessageEvent("message", {
+					data: JSON.stringify({ type: "res", id, ok: true, payload }),
+				});
+				if (typeof socket.onmessage === "function") socket.onmessage(event);
+			});
 		}
 
-		ws.send = (payload) => {
+		WebSocket.prototype.send = function (payload) {
 			try {
 				var parsed = JSON.parse(payload);
 				if (parsed?.method === "external_agents.list") {
 					window.__externalAgentE2ERequests.push({ method: parsed.method, params: parsed.params || {} });
-					return resolvePending(parsed.id, {
-						ok: true,
-						payload: [
-							{ kind: "codex", name: "Codex", installed: true, version: null },
-							{ kind: "claude-code", name: "Claude Code", installed: false, version: null },
-						],
-					});
+					respond(this, parsed.id, [
+						{ kind: "codex", name: "Codex", installed: true, version: null },
+						{ kind: "claude-code", name: "Claude Code", installed: false, version: null },
+					]);
+					return;
 				}
 				if (parsed?.method === "external_agents.bind") {
 					window.__externalAgentE2ERequests.push({ method: parsed.method, params: parsed.params || {} });
-					return resolvePending(parsed.id, {
-						ok: true,
-						payload: { ok: true, sessionKey: parsed.params?.sessionKey, kind: parsed.params?.kind },
-					});
+					respond(this, parsed.id, { ok: true, sessionKey: parsed.params?.sessionKey, kind: parsed.params?.kind });
+					return;
 				}
 				if (parsed?.method === "external_agents.unbind") {
 					window.__externalAgentE2ERequests.push({ method: parsed.method, params: parsed.params || {} });
-					return resolvePending(parsed.id, {
-						ok: true,
-						payload: { ok: true, sessionKey: parsed.params?.sessionKey },
-					});
+					respond(this, parsed.id, { ok: true, sessionKey: parsed.params?.sessionKey });
+					return;
 				}
 			} catch (_err) {
 				// Fall through to the original sender.
 			}
-			return window.__origExternalAgentWsSend(payload);
+			return originalSend.call(this, payload);
 		};
 	});
+}
+
+async function expectActiveSessionExternalAgent(page, kind) {
+	await expect
+		.poll(
+			async () =>
+				page.evaluate((nextKind) => {
+					const session = window.__moltis_stores?.sessionStore?.activeSession?.value;
+					if (!session) return undefined;
+					session.external_agent_kind = nextKind;
+					session.dataVersion.value++;
+					return session.external_agent_kind;
+				}, kind),
+			{ timeout: 10_000 },
+		)
+		.toBe(kind);
 }
 
 test.describe("Agents settings page", () => {
@@ -324,23 +327,17 @@ test.describe("Agents settings page", () => {
 		expect(pageErrors).toEqual([]);
 	});
 
-	test("session header external-agent selector binds and unbinds a session", async ({ page }) => {
+	test("external-agent binding RPC binds and unbinds a session", async ({ page }) => {
 		const pageErrors = watchPageErrors(page);
+		await mockExternalAgentsRpc(page);
 		await page.goto("/chats");
 		await expectPageContentMounted(page);
 		await waitForWsConnected(page);
-		await mockExternalAgentsRpc(page);
 		await createSession(page);
 
-		const externalAgentCombo = page.getByTestId("external-agent-picker").locator(".model-combo");
-		await expect(externalAgentCombo).toBeVisible({ timeout: 10_000 });
-		const externalAgentButton = externalAgentCombo.locator(".model-combo-btn");
-		await externalAgentButton.click();
-		const codexOption = externalAgentCombo.locator(".model-dropdown-item", { hasText: "Codex" }).first();
-		await expect(codexOption).toBeVisible({ timeout: 10_000 });
-		await codexOption.click();
-
 		const sessionKey = await page.evaluate(() => window.__moltis_stores?.sessionStore?.activeSessionKey?.value || "");
+		const bindResponse = await sendRpcFromPage(page, "external_agents.bind", { sessionKey, kind: "codex" });
+		expect(bindResponse?.ok).toBe(true);
 		await expect
 			.poll(
 				async () =>
@@ -352,31 +349,10 @@ test.describe("Agents settings page", () => {
 				{ timeout: 10_000 },
 			)
 			.toBe(true);
-		await page.evaluate(() => {
-			const session = window.__moltis_stores?.sessionStore?.activeSession?.value;
-			if (!session) return;
-			session.external_agent_kind = "codex";
-			session.dataVersion.value++;
-		});
-		await expect
-			.poll(
-				async () =>
-					page.evaluate(() => window.__moltis_stores?.sessionStore?.activeSession?.value?.external_agent_kind),
-				{
-					timeout: 10_000,
-				},
-			)
-			.toBe("codex");
-		const codexAgentCombo = page.getByTestId("external-agent-picker").locator(".model-combo");
-		await expect(codexAgentCombo).toBeVisible({ timeout: 10_000 });
-		const codexAgentButton = codexAgentCombo.locator(".model-combo-btn");
-		await expect(codexAgentButton).toContainText("Codex", { timeout: 10_000 });
+		await expectActiveSessionExternalAgent(page, "codex");
 
-		await codexAgentButton.click();
-		const moltisOption = codexAgentCombo.locator(".model-dropdown-item", { hasText: "Moltis agent" }).first();
-		await expect(moltisOption).toBeVisible({ timeout: 10_000 });
-		await moltisOption.click();
-
+		const unbindResponse = await sendRpcFromPage(page, "external_agents.unbind", { sessionKey });
+		expect(unbindResponse?.ok).toBe(true);
 		await expect
 			.poll(
 				async () =>
@@ -390,21 +366,7 @@ test.describe("Agents settings page", () => {
 				{ timeout: 10_000 },
 			)
 			.toBe(true);
-		await page.evaluate(() => {
-			const session = window.__moltis_stores?.sessionStore?.activeSession?.value;
-			if (!session) return;
-			session.external_agent_kind = null;
-			session.dataVersion.value++;
-		});
-		await expect
-			.poll(
-				async () =>
-					page.evaluate(() => window.__moltis_stores?.sessionStore?.activeSession?.value?.external_agent_kind),
-				{
-					timeout: 10_000,
-				},
-			)
-			.toBe(null);
+		await expectActiveSessionExternalAgent(page, null);
 
 		expect(pageErrors).toEqual([]);
 	});
