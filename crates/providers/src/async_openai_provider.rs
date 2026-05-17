@@ -271,7 +271,7 @@ mod tests {
 
         let built = match build_messages(&messages) {
             Ok(built) => built,
-            Err(error) => panic!("messages should build: {error}"),
+            Err(err) => panic!("messages should build: {err}"),
         };
         assert_eq!(built.len(), 1);
         match &built[0] {
@@ -301,7 +301,7 @@ mod tests {
 
         let built = match build_messages(&messages) {
             Ok(built) => built,
-            Err(error) => panic!("messages should build: {error}"),
+            Err(err) => panic!("messages should build: {err}"),
         };
         assert_eq!(built.len(), 1);
         match &built[0] {

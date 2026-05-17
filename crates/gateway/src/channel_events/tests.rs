@@ -185,6 +185,8 @@ fn attachable_session_filter_skips_archived_and_cron_sessions() {
         mode_id: None,
         model: None,
         node_id: None,
+        external_agent_kind: None,
+        external_session_id: None,
         version: 0,
     };
     let cron = SessionEntry {
@@ -229,6 +231,8 @@ fn format_attachable_sessions_shows_session_keys_when_labels_are_present() {
             mode_id: None,
             model: None,
             node_id: None,
+            external_agent_kind: None,
+            external_session_id: None,
             version: 0,
         },
         SessionEntry {
@@ -254,6 +258,8 @@ fn format_attachable_sessions_shows_session_keys_when_labels_are_present() {
             mode_id: None,
             model: None,
             node_id: None,
+            external_agent_kind: None,
+            external_session_id: None,
             version: 0,
         },
     ];

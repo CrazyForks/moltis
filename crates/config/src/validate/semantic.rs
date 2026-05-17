@@ -531,6 +531,25 @@ pub(super) fn check_semantic_warnings(config: &MoltisConfig, diagnostics: &mut V
         }
     }
 
+    let valid_agent_kinds = ["claude-code", "opencode", "codex", "pi-agent", "acp"];
+    for agent_kind in config.external_agents.agents.keys() {
+        if !valid_agent_kinds.contains(&agent_kind.as_str()) {
+            let suggestion = suggest(agent_kind, &valid_agent_kinds, 3)
+                .map(|candidate| format!(" Did you mean \"{candidate}\"?"))
+                .unwrap_or_default();
+            diagnostics.push(Diagnostic {
+                severity: Severity::Warning,
+                category: "unknown-field",
+                path: format!("external_agents.agents.{agent_kind}"),
+                message: format!(
+                    "unknown external agent kind \"{agent_kind}\"; expected one of: {}.{}",
+                    valid_agent_kinds.join(", "),
+                    suggestion
+                ),
+            });
+        }
+    }
+
     // Unknown tailscale mode
     let valid_ts_modes = ["off", "serve", "funnel"];
     if !valid_ts_modes.contains(&config.tailscale.mode.as_str()) {

@@ -279,6 +279,8 @@ mod tests {
             agent_id: None,
             mode_id: None,
             node_id: None,
+            external_agent_kind: None,
+            external_session_id: None,
             version: 0,
         };
 
@@ -312,6 +314,8 @@ mod tests {
             agent_id: None,
             mode_id: None,
             node_id: None,
+            external_agent_kind: None,
+            external_session_id: None,
             version: 0,
         };
 

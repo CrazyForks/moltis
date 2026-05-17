@@ -38,6 +38,13 @@ interface AgentOption {
 	[key: string]: unknown;
 }
 
+interface ExternalAgentInfo {
+	kind: string;
+	name: string;
+	installed: boolean;
+	version?: string | null;
+}
+
 interface SelectOption {
 	value: string;
 	label: string;
@@ -148,6 +155,8 @@ export function SessionHeader({
 	const [agentOptionsLoaded, setAgentOptionsLoaded] = useState(initialAgentOptions.length > 0);
 	const [nodeOptions, setNodeOptions] = useState<NodeInfo[]>([]);
 	const [switchingNode, setSwitchingNode] = useState(false);
+	const [externalAgentOptions, setExternalAgentOptions] = useState<ExternalAgentInfo[]>([]);
+	const [switchingExternalAgent, setSwitchingExternalAgent] = useState(false);
 	const inputRef = useRef<HTMLInputElement>(null);
 
 	const fullName = session ? session.label || session.key : currentKey;
@@ -163,6 +172,10 @@ export function SessionHeader({
 	const showArchivedSessions = sessionStore.showArchivedSessions.value;
 	const currentAgentId = session?.agent_id || defaultAgentId || "main";
 	const currentNodeId = session?.node_id || "";
+	const currentExternalAgentKind = session?.external_agent_kind || "";
+	const currentExternalAgent = currentExternalAgentKind
+		? externalAgentOptions.find((agent) => agent.kind === currentExternalAgentKind) || null
+		: null;
 
 	useEffect(() => {
 		let cancelled = false;
@@ -176,6 +189,17 @@ export function SessionHeader({
 			setDefaultAgentId(parsed.defaultId);
 			setAgentOptions(parsed.agents as AgentOption[]);
 			setAgentOptionsLoaded(true);
+		});
+		return () => {
+			cancelled = true;
+		};
+	}, [currentKey]);
+
+	useEffect(() => {
+		let cancelled = false;
+		sendRpc<ExternalAgentInfo[]>("external_agents.list", {}).then((res) => {
+			if (cancelled || !res?.ok) return;
+			setExternalAgentOptions(Array.isArray(res.payload) ? res.payload : []);
 		});
 		return () => {
 			cancelled = true;
@@ -446,6 +470,32 @@ export function SessionHeader({
 		[currentKey, session, switchingNode],
 	);
 
+	const onExternalAgentChange = useCallback(
+		(nextKind: string) => {
+			if (switchingExternalAgent || nextKind === currentExternalAgentKind) return;
+			setSwitchingExternalAgent(true);
+			const request = nextKind
+				? sendRpc("external_agents.bind", { sessionKey: currentKey, kind: nextKind })
+				: sendRpc("external_agents.unbind", { sessionKey: currentKey });
+			request
+				.then((res) => {
+					if (!res?.ok) {
+						showToast((res?.error as { message?: string })?.message || "Failed to update external agent", "error");
+						return;
+					}
+					if (session) {
+						session.external_agent_kind = nextKind || null;
+						session.dataVersion.value++;
+					}
+					fetchSessions();
+				})
+				.finally(() => {
+					setSwitchingExternalAgent(false);
+				});
+		},
+		[currentExternalAgentKind, currentKey, session, switchingExternalAgent],
+	);
+
 	const agentSelectValue = currentAgentId;
 	const hasCurrentAgentOption = agentOptions.some((agent) => agent.id === agentSelectValue);
 	let agentSelectOptions: SelectOption[] = agentOptions.map((agent) => {
@@ -469,6 +519,21 @@ export function SessionHeader({
 	const shouldShowAgentPicker = !isCron && agentOptionsLoaded && (agentOptions.length > 1 || !hasCurrentAgentOption);
 
 	const shouldShowNodePicker = !isCron && (nodeOptions.length > 0 || Boolean(currentNodeId));
+	const externalAgentSelectOptions: SelectOption[] = [
+		{ value: "", label: "Moltis agent" },
+		...externalAgentOptions.map((agent) => ({
+			value: agent.kind,
+			label: `${agent.name}${agent.installed ? "" : " (unavailable)"}`,
+		})),
+	];
+	const shouldShowExternalAgentPicker = !isCron && externalAgentOptions.length > 0;
+	const externalAgentStatus = currentExternalAgentKind
+		? currentExternalAgent?.installed === false
+			? "External agent unavailable"
+			: session?.externalSessionId
+				? `External session ${session.externalSessionId}`
+				: "External agent bound"
+		: "";
 	const hasCurrentNodeOption = currentNodeId === "" || nodeOptions.some((node) => node.nodeId === currentNodeId);
 	let nodeSelectOptions: SelectOption[] = [
 		{ value: "", label: "Local" },
@@ -564,6 +629,25 @@ export function SessionHeader({
 						fullWidth={false}
 						disabled={switchingNode}
 					/>
+				)}
+				{showSelectors && shouldShowExternalAgentPicker && (
+					<div className="flex items-center gap-1.5" data-testid="external-agent-picker">
+						<ComboSelect
+							options={externalAgentSelectOptions}
+							value={currentExternalAgentKind}
+							onChange={onExternalAgentChange}
+							placeholder="External agent"
+							searchable={false}
+							allowEmpty={false}
+							fullWidth={false}
+							disabled={switchingExternalAgent}
+						/>
+						{externalAgentStatus && (
+							<span className="text-xs text-[var(--text-muted)]" title={externalAgentStatus}>
+								{externalAgentStatus}
+							</span>
+						)}
+					</div>
 				)}
 				{!nameOwnLine && showName && nameControl}
 				{!nameOwnLine && renameCta}

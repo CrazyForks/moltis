@@ -2,15 +2,15 @@ use std::sync::Arc;
 
 use crate::{
     AgentService, BrowserService, ChannelService, ChatService, ConfigService, CronService,
-    ExecApprovalService, LocalLlmService, LogsService, McpService, ModelService, NoopAgentService,
-    NoopBrowserService, NoopChannelService, NoopChatService, NoopConfigService, NoopCronService,
-    NoopExecApprovalService, NoopLocalLlmService, NoopLogsService, NoopMcpService,
-    NoopModelService, NoopOnboardingService, NoopProjectService, NoopProviderSetupService,
-    NoopSessionService, NoopSkillsStub, NoopSttService, NoopSystemInfoService, NoopTtsService,
-    NoopUpdateService, NoopUsageService, NoopVoicewakeService, NoopWebLoginService,
-    OnboardingService, ProjectService, ProviderSetupService, SessionService, SkillsService,
-    SttService, SystemInfoService, TtsService, UpdateService, UsageService, VoicewakeService,
-    WebLoginService,
+    ExecApprovalService, ExternalAgentService, LocalLlmService, LogsService, McpService,
+    ModelService, NoopAgentService, NoopBrowserService, NoopChannelService, NoopChatService,
+    NoopConfigService, NoopCronService, NoopExecApprovalService, NoopExternalAgentService,
+    NoopLocalLlmService, NoopLogsService, NoopMcpService, NoopModelService, NoopOnboardingService,
+    NoopProjectService, NoopProviderSetupService, NoopSessionService, NoopSkillsStub,
+    NoopSttService, NoopSystemInfoService, NoopTtsService, NoopUpdateService, NoopUsageService,
+    NoopVoicewakeService, NoopWebLoginService, OnboardingService, ProjectService,
+    ProviderSetupService, SessionService, SkillsService, SttService, SystemInfoService, TtsService,
+    UpdateService, UsageService, VoicewakeService, WebLoginService,
 };
 
 /// Bundle of all domain service trait objects.
@@ -41,6 +41,7 @@ pub struct Services {
     pub project: Arc<dyn ProjectService>,
     pub local_llm: Arc<dyn LocalLlmService>,
     pub system_info: Arc<dyn SystemInfoService>,
+    pub external_agent: Arc<dyn ExternalAgentService>,
 }
 
 impl Default for Services {
@@ -69,6 +70,7 @@ impl Default for Services {
             project: Arc::new(NoopProjectService),
             local_llm: Arc::new(NoopLocalLlmService),
             system_info: Arc::new(NoopSystemInfoService),
+            external_agent: Arc::new(NoopExternalAgentService),
         }
     }
 }

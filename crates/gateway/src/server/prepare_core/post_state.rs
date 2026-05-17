@@ -4,10 +4,13 @@ use std::{
 };
 
 use {
-    async_trait::async_trait,
     secrecy::{ExposeSecret, Secret},
     tracing::{debug, info, warn},
 };
+
+mod credential_env;
+
+use credential_env::{CredentialEnvVarProvider, ensure_sandbox_api_key};
 
 use {
     moltis_providers::{PendingDiscoveries, ProviderRegistry},
@@ -21,6 +24,9 @@ use crate::{
     auth,
     broadcast::{BroadcastOpts, broadcast},
     chat::{LiveChatService, LiveModelService},
+    external_agents::{
+        ExternalAgentChatService, ExternalAgentSessionService, GatewayExternalAgentService,
+    },
     methods::MethodRegistry,
     provider_setup::LiveProviderSetupService,
     services::GatewayServices,
@@ -104,80 +110,6 @@ pub(super) struct PostStateInputs {
     pub tailscale_mode_override: Option<String>,
     #[cfg(feature = "tailscale")]
     pub tailscale_reset_on_exit_override: Option<bool>,
-}
-
-struct CredentialEnvVarProvider {
-    store: Arc<auth::CredentialStore>,
-    /// Gateway URL for sandbox-to-gateway communication via `moltis-ctl`.
-    gateway_url: Option<String>,
-    /// Auto-generated API key for sandbox use (scoped to operator.read + operator.write).
-    sandbox_api_key: Option<Secret<String>>,
-}
-
-#[async_trait]
-impl moltis_tools::exec::EnvVarProvider for CredentialEnvVarProvider {
-    async fn get_env_vars(&self) -> Vec<(String, Secret<String>)> {
-        let mut vars = match self.store.get_all_env_values().await {
-            Ok(values) => values
-                .into_iter()
-                // Filter out internal keys that should not leak into sandbox env.
-                .filter(|(key, _)| !key.starts_with("__MOLTIS_"))
-                .map(|(key, value)| (key, Secret::new(value)))
-                .collect(),
-            Err(error) => {
-                warn!(error = %error, "failed to load runtime env overrides for tools");
-                Vec::new()
-            },
-        };
-
-        // Inject gateway connection details for moltis-ctl inside sandboxes.
-        // Only injected when the gateway URL is set (skipped for blocked network).
-        if let Some(ref url) = self.gateway_url {
-            vars.push(("MOLTIS_GATEWAY_URL".into(), Secret::new(url.clone())));
-        }
-        if let Some(ref key) = self.sandbox_api_key {
-            vars.push((
-                "MOLTIS_API_KEY".into(),
-                Secret::new(key.expose_secret().clone()),
-            ));
-        }
-
-        vars
-    }
-}
-
-/// Create (or reuse) a scoped API key for sandbox-to-gateway communication.
-///
-/// Looks for an existing key labelled `"sandbox-ctl"`. If none exists, creates
-/// one with `operator.read` + `operator.write` scopes. Returns the raw key.
-async fn ensure_sandbox_api_key(store: &auth::CredentialStore) -> Option<String> {
-    // Check if we already have a sandbox-ctl key stored in env vars.
-    if let Ok(vals) = store.get_all_env_values().await
-        && let Some((_, key)) = vals.iter().find(|(k, _)| k == "__MOLTIS_SANDBOX_API_KEY")
-    {
-        return Some(key.clone());
-    }
-
-    // Create a new API key scoped for sandbox use.
-    let scopes = vec!["operator.read".to_string(), "operator.write".to_string()];
-    match store.create_api_key("sandbox-ctl", Some(&scopes)).await {
-        Ok((_id, raw_key)) => {
-            // Persist the raw key so we can retrieve it on restart without
-            // creating a new one each time.
-            if let Err(e) = store
-                .set_env_var("__MOLTIS_SANDBOX_API_KEY", &raw_key)
-                .await
-            {
-                warn!(error = %e, "failed to persist sandbox API key");
-            }
-            info!("created sandbox-ctl API key for moltis-ctl");
-            Some(raw_key)
-        },
-        Err(e) => {
-            warn!(error = %e, "failed to create sandbox API key");
-            None
-        },
-    }
 }
 
 async fn build_webauthn_registry(
@@ -435,6 +367,18 @@ pub(super) async fn complete_startup(
     {
         services.telephony_plugin = Some(Arc::clone(&telephony_webhook_plugin));
     }
+
+    let external_agent_service = Arc::new(GatewayExternalAgentService::new(
+        config.external_agents.clone(),
+        Arc::clone(&session_metadata),
+        Arc::clone(&approval_manager),
+    ));
+    let session_service = Arc::clone(&services.session);
+    services = services.with_session(Arc::new(ExternalAgentSessionService::new(
+        session_service,
+        Arc::clone(&external_agent_service),
+    )));
+    services = services.with_external_agent(external_agent_service.clone());
 
     let state = GatewayState::with_options(
         resolved_auth,
@@ -1380,7 +1324,14 @@ pub(super) async fn complete_startup(
         }
 
         let live_chat = Arc::new(chat_service);
-        state.set_chat(live_chat);
+        let chat_with_external_agents = Arc::new(ExternalAgentChatService::new(
+            live_chat,
+            external_agent_service,
+            Arc::clone(&state),
+            Arc::clone(&session_store),
+            Arc::clone(&session_metadata),
+        ));
+        state.set_chat(chat_with_external_agents);
 
         live_mcp
             .set_tool_registry(Arc::clone(&shared_tool_registry))

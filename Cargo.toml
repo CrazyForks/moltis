@@ -19,6 +19,7 @@ default-members = [
   "crates/cron",
   "crates/ctl",
   "crates/discord",
+  "crates/external-agents",
   "crates/gateway",
   "crates/graphql",
   "crates/hermes-import",
@@ -88,6 +89,7 @@ members = [
   "crates/config",
   "crates/cron",
   "crates/ctl",
+  "crates/external-agents",
   "crates/gateway",
   "crates/graphql",
   "crates/hermes-import",
@@ -167,6 +169,7 @@ version      = "0.1.0"
 a2 = { default-features = false, features = ["ring"], version = "0.10" }
 # Async runtime
 tokio = { features = ["full"], version = "1" }
+agent-client-protocol = "0.10.2"
 # HTTP/WS server
 askama     = "0.15"
 axum       = { features = ["ws"], version = "0.8" }
@@ -365,6 +368,7 @@ moltis-common           = { path = "crates/common" }
 moltis-config           = { path = "crates/config" }
 moltis-cron             = { path = "crates/cron" }
 moltis-discord          = { path = "crates/discord" }
+moltis-external-agents  = { path = "crates/external-agents" }
 moltis-gateway          = { default-features = false, path = "crates/gateway" }
 moltis-graphql          = { path = "crates/graphql" }
 moltis-hermes-import    = { path = "crates/hermes-import" }
