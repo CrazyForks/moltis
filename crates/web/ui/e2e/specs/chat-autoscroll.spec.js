@@ -111,7 +111,9 @@ async function scrollMessagesAwayFromBottom(page) {
 			box.appendChild(el);
 		}
 
-		box.scrollTop = 0;
+		// Stay away from the top edge so this helper does not trigger history
+		// autoload, which temporarily disables chatAddMsg() auto-scroll handling.
+		box.scrollTop = Math.max(0, box.scrollHeight - box.clientHeight - 200);
 	});
 	await expect
 		.poll(async () => {
