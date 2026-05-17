@@ -56,7 +56,7 @@ impl ExternalAgentTransport for CodexTransport {
         &[AgentTransportKind::Codex]
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self, _spec)))]
+    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self, spec)))]
     async fn start_session(
         &self,
         spec: &ExternalAgentSpec,
