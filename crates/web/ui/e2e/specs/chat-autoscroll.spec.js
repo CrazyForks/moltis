@@ -190,8 +190,19 @@ test.describe("Smart auto-scroll", () => {
 		const indicator = page.locator(".new-content-indicator");
 		await expect(indicator).toBeVisible({ timeout: 10_000 });
 
-		// Click the indicator
-		await indicator.click();
+		// Click the current indicator node directly. Playwright's actionability
+		// checks can lose a race with the indicator being replaced during scroll
+		// recalculation in CI.
+		await expect
+			.poll(async () => {
+				return await page.evaluate(() => {
+					var current = document.querySelector(".new-content-indicator");
+					if (!current) return true;
+					current.click();
+					return !document.querySelector(".new-content-indicator");
+				});
+			})
+			.toBe(true);
 
 		// Indicator should be gone
 		await expect(indicator).toHaveCount(0, { timeout: 5_000 });

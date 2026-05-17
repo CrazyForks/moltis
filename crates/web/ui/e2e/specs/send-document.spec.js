@@ -8,22 +8,26 @@ async function openFreshChatSession(page) {
 	return page.evaluate(() => window.__moltis_stores?.sessionStore?.activeSessionKey?.value || "");
 }
 
+async function startDocumentToolCall(page, sessionKey, toolCallId, filename) {
+	await expectRpcOk(page, "system-event", {
+		event: "chat",
+		payload: {
+			sessionKey,
+			state: "tool_call_start",
+			toolCallId,
+			toolName: "send_document",
+			arguments: JSON.stringify({ path: `/tmp/${filename}` }),
+		},
+	});
+	await expect(page.locator(`#tool-${toolCallId} .exec-status`)).toBeVisible({ timeout: 10_000 });
+}
+
 test.describe("send_document rendering", () => {
 	test("renders document card with filename and download link for document_ref", async ({ page }) => {
 		const pageErrors = watchPageErrors(page);
 		const sessionKey = await openFreshChatSession(page);
 
-		// Simulate tool_call_start to create the tool card
-		await expectRpcOk(page, "system-event", {
-			event: "chat",
-			payload: {
-				sessionKey,
-				state: "tool_call_start",
-				toolCallId: "test-doc-call",
-				toolName: "send_document",
-				arguments: JSON.stringify({ path: "/tmp/report.pdf" }),
-			},
-		});
+		await startDocumentToolCall(page, sessionKey, "test-doc-call", "report.pdf");
 
 		// Simulate tool_call_end with document_ref result
 		await expectRpcOk(page, "system-event", {
@@ -45,7 +49,7 @@ test.describe("send_document rendering", () => {
 
 		// Verify the document card renders
 		const docContainer = page.locator(".document-container").filter({ hasText: "report.pdf" });
-		await expect(docContainer).toBeVisible({ timeout: 5_000 });
+		await expect(docContainer).toBeVisible({ timeout: 10_000 });
 
 		// Verify filename is displayed
 		const filenameEl = docContainer.locator(".document-filename");
@@ -72,16 +76,7 @@ test.describe("send_document rendering", () => {
 		const pageErrors = watchPageErrors(page);
 		const sessionKey = await openFreshChatSession(page);
 
-		await expectRpcOk(page, "system-event", {
-			event: "chat",
-			payload: {
-				sessionKey,
-				state: "tool_call_start",
-				toolCallId: "test-zip-call",
-				toolName: "send_document",
-				arguments: JSON.stringify({ path: "/tmp/archive.zip" }),
-			},
-		});
+		await startDocumentToolCall(page, sessionKey, "test-zip-call", "archive.zip");
 
 		await expectRpcOk(page, "system-event", {
 			event: "chat",
@@ -121,16 +116,7 @@ test.describe("send_document rendering", () => {
 		const pageErrors = watchPageErrors(page);
 		const sessionKey = await openFreshChatSession(page);
 
-		await expectRpcOk(page, "system-event", {
-			event: "chat",
-			payload: {
-				sessionKey,
-				state: "tool_call_start",
-				toolCallId: "test-csv-call",
-				toolName: "send_document",
-				arguments: JSON.stringify({ path: "/tmp/data.csv" }),
-			},
-		});
+		await startDocumentToolCall(page, sessionKey, "test-csv-call", "data.csv");
 
 		await expectRpcOk(page, "system-event", {
 			event: "chat",

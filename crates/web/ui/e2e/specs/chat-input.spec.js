@@ -694,26 +694,29 @@ test.describe("Chat input and slash commands", () => {
 	test("token bar shows current context tokens and context used", async ({ page }) => {
 		const pageErrors = watchPageErrors(page);
 
-		const tokenBarText = await page.evaluate(async () => {
-			var appScript = document.querySelector('script[type="module"][src*="js/app.js"]');
-			if (!appScript) throw new Error("app module script not found");
-			var appUrl = new URL(appScript.src, window.location.origin);
-			var prefix = appUrl.href.slice(0, appUrl.href.length - "js/app.js".length);
-			var state = await import(`${prefix}js/state.js`);
-			var chatUi = await import(`${prefix}js/chat-ui.js`);
-			state.setSessionTokens({ input: 200000, output: 0 });
-			state.setSessionCurrentInputTokens(50000);
-			state.setSessionCurrentContextTokens(62000);
-			state.setSessionContextWindow(200000);
-			state.setSessionToolsEnabled(true);
-			chatUi.updateTokenBar();
-			var tokenBar = document.getElementById("tokenBar");
-			return tokenBar ? tokenBar.textContent || "" : "";
-		});
+		await expect
+			.poll(async () => {
+				return await page.evaluate(async () => {
+					var appScript = document.querySelector('script[type="module"][src*="js/app.js"]');
+					if (!appScript) throw new Error("app module script not found");
+					var appUrl = new URL(appScript.src, window.location.origin);
+					var prefix = appUrl.href.slice(0, appUrl.href.length - "js/app.js".length);
+					var state = await import(`${prefix}js/state.js`);
+					var chatUi = await import(`${prefix}js/chat-ui.js`);
+					state.setSessionTokens({ input: 200000, output: 0 });
+					state.setSessionCurrentInputTokens(50000);
+					state.setSessionCurrentContextTokens(62000);
+					state.setSessionContextWindow(200000);
+					state.setSessionToolsEnabled(true);
+					chatUi.updateTokenBar();
+					var tokenBar = document.getElementById("tokenBar");
+					return tokenBar && tokenBar.offsetParent !== null ? tokenBar.textContent || "" : "";
+				});
+			})
+			.toBe("62.0K (31%)");
 
 		const tokenBar = page.locator("#tokenBar");
 		await expect(tokenBar).toBeVisible();
-		expect(tokenBarText).toBe("62.0K (31%)");
 		expect(pageErrors).toEqual([]);
 	});
 
