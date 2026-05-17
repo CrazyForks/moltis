@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [20260517.03] - 2026-05-17
+### Fixed
+- [ci] Stabilize external agent e2e binding
+
 ## [20260517.02] - 2026-05-17
 ### Fixed
 - [ci] Stabilize release e2e specs
