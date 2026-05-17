@@ -19,6 +19,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [20260517.01] - 2026-05-17
+### Added
+- [tls] Support public IP SAN for generated certs (#1000)
+- [mcp] Support OAuth client secrets (#1001)
+- [remote-access] Add NetBird and Cloudflare Tunnel support (#1002)
+- [external-agents] Add persistent agent sessions (#566)
+- Add NetBird and Cloudflare Tunnel to onboarding (#1008)
+
+
+### Fixed
+- [providers] Retry mistral rate limits
+- [ci] Stabilize e2e module shims
+- [ci] Wait for autoscroll test position
+- [sandbox] Update discrawl module path (#989)
+- [release] Classify plain merge titles
+- [ci] Repair autoscroll fixture overflow
+- [providers] Normalize nullable tool arguments
+- [providers] Harden live integration checks
+- [install] Avoid Proxmox Docker prompt failure (#992)
+- [ci] Stabilize token bar e2e assertion
+- [install] Tolerate missing Proxmox CA cert (#997)
+- [web] Prevent chat composer horizontal overflow (#998)
+- [ci] Restore docs and app validation
+- [ci] Stabilize chat autoscroll e2e
+- [ci] Correct codex tracing skip parameter
+
 ## [20260510.01] - 2026-05-10
 ### Fixed
 - [release] Avoid large blob arguments
