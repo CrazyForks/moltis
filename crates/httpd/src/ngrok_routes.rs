@@ -32,10 +32,24 @@ fn normalize_optional(value: Option<&str>) -> Option<String> {
         .map(ToOwned::to_owned)
 }
 
+fn env_authtoken_value_present(value: Option<std::ffi::OsString>) -> bool {
+    value
+        .and_then(|value| {
+            value
+                .to_str()
+                .and_then(|value| normalize_optional(Some(value)))
+        })
+        .is_some()
+}
+
+fn env_authtoken_present() -> bool {
+    env_authtoken_value_present(std::env::var_os("NGROK_AUTHTOKEN"))
+}
+
 fn authtoken_source(config: &moltis_config::NgrokConfig) -> Option<&'static str> {
     if config.authtoken.is_some() {
         Some("config")
-    } else if std::env::var_os("NGROK_AUTHTOKEN").is_some() {
+    } else if env_authtoken_present() {
         Some("env")
     } else {
         None
@@ -98,11 +112,9 @@ async fn save_config_handler(
     let mut updated = existing.clone();
 
     let token_will_exist = if body.clear_authtoken {
-        new_authtoken.is_some() || std::env::var_os("NGROK_AUTHTOKEN").is_some()
+        new_authtoken.is_some() || env_authtoken_present()
     } else {
-        new_authtoken.is_some()
-            || existing.ngrok.authtoken.is_some()
-            || std::env::var_os("NGROK_AUTHTOKEN").is_some()
+        new_authtoken.is_some() || existing.ngrok.authtoken.is_some() || env_authtoken_present()
     };
 
     if body.enabled && !token_will_exist {
@@ -171,7 +183,10 @@ async fn save_config_handler(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Weak};
+    use std::{
+        ffi::OsString,
+        sync::{Arc, Weak},
+    };
 
     use {
         axum::{Json, body::to_bytes, extract::State},
@@ -180,19 +195,39 @@ mod tests {
         },
     };
 
+    #[cfg(feature = "cloudflare-tunnel")]
+    use crate::server::CloudflareTunnelController;
+    #[cfg(feature = "netbird")]
+    use crate::server::NetbirdController;
     use crate::server::NgrokRuntimeStatus;
 
     use super::*;
 
+    #[test]
+    fn env_authtoken_present_ignores_blank_values() {
+        assert!(!env_authtoken_value_present(None));
+        assert!(!env_authtoken_value_present(Some(OsString::from("   "))));
+        assert!(env_authtoken_value_present(Some(OsString::from(
+            "test-token"
+        ))));
+    }
+
     #[tokio::test]
+    #[serial_test::serial(config_dir)]
     async fn save_config_returns_error_when_ngrok_controller_is_unavailable()
     -> Result<(), Box<dyn std::error::Error>> {
         let tempdir = tempfile::tempdir()?;
         moltis_config::set_config_dir(tempdir.path().to_path_buf());
         moltis_config::set_data_dir(tempdir.path().to_path_buf());
 
+        let gateway = GatewayState::new(auth::resolve_auth(None, None), GatewayServices::noop());
+        #[cfg(feature = "cloudflare-tunnel")]
+        let cloudflare_tunnel_runtime = Arc::new(tokio::sync::RwLock::new(None));
+        #[cfg(feature = "netbird")]
+        let netbird_runtime = Arc::new(tokio::sync::RwLock::new(None));
+
         let state = AppState {
-            gateway: GatewayState::new(auth::resolve_auth(None, None), GatewayServices::noop()),
+            gateway: Arc::clone(&gateway),
             methods: Arc::new(MethodRegistry::new()),
             request_throttle: Arc::new(crate::request_throttle::RequestThrottle::new()),
             webauthn_registry: None,
@@ -202,6 +237,18 @@ mod tests {
                 public_url: "https://existing.ngrok.app".to_string(),
                 passkey_warning: None,
             }))),
+            #[cfg(feature = "cloudflare-tunnel")]
+            cloudflare_tunnel_controller: Arc::new(CloudflareTunnelController::new(
+                Arc::clone(&gateway),
+                None,
+                Arc::clone(&cloudflare_tunnel_runtime),
+            )),
+            #[cfg(feature = "cloudflare-tunnel")]
+            cloudflare_tunnel_runtime,
+            #[cfg(feature = "netbird")]
+            netbird_controller: Arc::new(NetbirdController::new(Arc::clone(&netbird_runtime))),
+            #[cfg(feature = "netbird")]
+            netbird_runtime,
             #[cfg(feature = "tailscale")]
             tailscale_manager: moltis_gateway::tailscale::CachedTailscaleManager::new_with_prefetch(
             ),

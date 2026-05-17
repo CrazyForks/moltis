@@ -629,20 +629,23 @@ test.describe("Chat input and slash commands", () => {
 				state.setCommandModeEnabled(false);
 				chatUi.updateTokenBar();
 				var bar = document.querySelector("#tokenBar");
-				if (!bar) return { visible: false, text: "" };
+				if (!bar) return { visible: false, text: "", hasExec: false, hasCommandMode: false };
+				var text = bar.textContent || "";
 				return {
 					visible: window.getComputedStyle(bar).display !== "none",
-					text: bar.textContent || "",
+					text,
+					hasExec: text.includes("Execute:"),
+					hasCommandMode: text.includes("/sh mode"),
 				};
 			});
 		}
 
-		const tokenBar = page.locator("#tokenBar");
-		await expect.poll(forceZeroUsageTokenBar, { timeout: 10_000 }).toEqual({ visible: true, text: "0" });
-		await expect(tokenBar).toBeVisible();
-		await expect(tokenBar).toHaveText("0");
-		await expect(tokenBar).not.toContainText("Execute:");
-		await expect(tokenBar).not.toContainText("/sh mode");
+		await expect.poll(forceZeroUsageTokenBar, { timeout: 10_000 }).toEqual({
+			visible: true,
+			text: "0",
+			hasExec: false,
+			hasCommandMode: false,
+		});
 		expect(pageErrors).toEqual([]);
 	});
 
@@ -842,18 +845,21 @@ test.describe("Chat input and slash commands", () => {
 	test("/clear resets client chat sequence", async ({ page }) => {
 		const pageErrors = watchPageErrors(page);
 		await setChatSeq(page, 8);
-		await page.evaluate(async () => {
-			var appScript = document.querySelector('script[type="module"][src*="js/app.js"]');
-			if (!appScript) throw new Error("app module script not found");
-			var appUrl = new URL(appScript.src, window.location.origin);
-			var prefix = appUrl.href.slice(0, appUrl.href.length - "js/app.js".length);
-			var state = await import(`${prefix}js/state.js`);
-			var chatUi = await import(`${prefix}js/chat-ui.js`);
-			state.setSessionCurrentContextTokens(62000);
-			state.setSessionContextWindow(200000);
-			chatUi.updateTokenBar();
-		});
-		await expect(page.locator("#tokenBar")).toContainText("62.0K (31%)");
+		async function forceContextTokenBar() {
+			return await page.evaluate(async () => {
+				var appScript = document.querySelector('script[type="module"][src*="js/app.js"]');
+				if (!appScript) throw new Error("app module script not found");
+				var appUrl = new URL(appScript.src, window.location.origin);
+				var prefix = appUrl.href.slice(0, appUrl.href.length - "js/app.js".length);
+				var state = await import(`${prefix}js/state.js`);
+				var chatUi = await import(`${prefix}js/chat-ui.js`);
+				state.setSessionCurrentContextTokens(62000);
+				state.setSessionContextWindow(200000);
+				chatUi.updateTokenBar();
+				return document.querySelector("#tokenBar")?.textContent || "";
+			});
+		}
+		await expect.poll(forceContextTokenBar, { timeout: 10_000 }).toContain("62.0K (31%)");
 
 		const reset = await runClearSlashCommandWithRetry(page);
 		expect(reset).toBeTruthy();

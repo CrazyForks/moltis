@@ -51,6 +51,9 @@ Moltis can also expose a public HTTPS endpoint through ngrok without running
 an external `ngrok` binary. This is useful when you want a public callback
 URL or temporary team access from a local machine or private host.
 
+For a side-by-side guide to Tailscale, NetBird, ngrok, and Cloudflare Tunnel,
+see [Remote Access](remote-access.md).
+
 Configuration:
 
 ```toml
@@ -64,7 +67,7 @@ Notes:
 
 - The tunnel is feature-gated. Standard CLI builds include it by default, but
   custom minimal builds can opt out of the `ngrok` feature.
-- In the web UI, configure Tailscale and ngrok from Settings -> Remote Access.
+- In the web UI, configure Tailscale, NetBird, ngrok, and Cloudflare Tunnel from Settings -> Remote Access.
 - ngrok forwards into a loopback-only internal HTTP listener. Your normal
   local TLS and bind settings remain unchanged.
 - Keep authentication enabled. Exposing ngrok with `auth.disabled = true`
@@ -73,6 +76,47 @@ Notes:
 - Passkeys are hostname-bound. If you use ephemeral ngrok URLs, existing
   passkeys may not work on the new hostname. Use a reserved domain if you want
   stable passkey behavior.
+
+## Cloudflare Tunnel
+
+Moltis can start `cloudflared` and expose the gateway through a Cloudflare
+Tunnel. This is useful when your public DNS is already managed by Cloudflare or
+you want a stable HTTPS callback URL without opening inbound firewall ports.
+
+Configuration:
+
+```toml
+[cloudflare_tunnel]
+enabled = true
+token = "${CLOUDFLARE_TUNNEL_TOKEN}" # or set CLOUDFLARE_TUNNEL_TOKEN
+hostname = "moltis.example.com"      # optional but recommended for passkeys
+```
+
+Notes:
+
+- Install `cloudflared` on the host before enabling the connector.
+- Standard CLI builds include the feature by default; custom minimal builds can
+  opt out of `cloudflare-tunnel`.
+- Keep authentication enabled. A public tunnel with `auth.disabled = true`
+  exposes the setup-required page until authentication is configured.
+- Set `hostname` when you know the public route so Moltis can update WebAuthn
+  passkey origins consistently.
+
+## NetBird
+
+NetBird provides private mesh access similar to Tailscale Serve. Moltis detects
+the local NetBird peer address and displays the private URL from Settings ->
+Remote Access.
+
+Configuration:
+
+```toml
+[netbird]
+mode = "serve" # or "off"
+```
+
+NetBird does not provide a public Funnel equivalent. Use Cloudflare Tunnel,
+ngrok, or Tailscale Funnel when you need a public HTTPS endpoint.
 
 ## Coolify (self-hosted, e.g. Hetzner)
 

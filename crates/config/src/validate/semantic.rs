@@ -546,12 +546,44 @@ pub(super) fn check_semantic_warnings(config: &MoltisConfig, diagnostics: &mut V
         });
     }
 
+    let valid_netbird_modes = ["off", "serve"];
+    if !valid_netbird_modes.contains(&config.netbird.mode.as_str()) {
+        diagnostics.push(Diagnostic {
+            severity: Severity::Warning,
+            category: "unknown-field",
+            path: "netbird.mode".into(),
+            message: format!(
+                "unknown netbird mode \"{}\"; expected one of: {}",
+                config.netbird.mode,
+                valid_netbird_modes.join(", ")
+            ),
+        });
+    }
+
+    if config.netbird.mode == "serve" && config.auth.disabled {
+        diagnostics.push(Diagnostic {
+            severity: Severity::Warning,
+            category: "security",
+            path: "netbird.mode".into(),
+            message: "NetBird serve mode is enabled while auth.disabled is true; NetBird mesh peers will be blocked with setup required until authentication is configured".into(),
+        });
+    }
+
     if config.ngrok.enabled && config.auth.disabled {
         diagnostics.push(Diagnostic {
             severity: Severity::Warning,
             category: "security",
             path: "ngrok.enabled".into(),
             message: "ngrok is enabled while auth.disabled is true; remote visitors will be blocked with setup required until authentication is configured".into(),
+        });
+    }
+
+    if config.cloudflare_tunnel.enabled && config.auth.disabled {
+        diagnostics.push(Diagnostic {
+            severity: Severity::Warning,
+            category: "security",
+            path: "cloudflare_tunnel.enabled".into(),
+            message: "Cloudflare Tunnel is enabled while auth.disabled is true; remote visitors will be blocked with setup required until authentication is configured".into(),
         });
     }
 
