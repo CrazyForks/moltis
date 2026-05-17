@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [20260517.02] - 2026-05-17
+### Fixed
+- [ci] Stabilize release e2e specs
+
 ## [20260517.01] - 2026-05-17
 ### Added
 - [tls] Support public IP SAN for generated certs (#1000)
