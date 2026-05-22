@@ -117,6 +117,10 @@ impl VaultChannelStore {
             return Ok(StoredChannel { config, ..channel });
         }
 
+        if !crate::vault_lifecycle::is_vault_encryption_runtime_enabled() {
+            return Ok(StoredChannel { config, ..channel });
+        }
+
         let Some(vault) = self.vault.as_ref() else {
             return Ok(StoredChannel { config, ..channel });
         };
@@ -447,7 +451,9 @@ mod tests {
 
     #[cfg(feature = "vault")]
     #[tokio::test]
+    #[serial_test::serial(vault_runtime)]
     async fn vault_store_encrypts_and_decrypts_secret_fields() {
+        crate::vault_lifecycle::set_vault_encryption_runtime_enabled(true);
         let pool = test_pool().await;
         let vault = test_vault(pool.clone()).await;
         let inner: Arc<dyn ChannelStore> = Arc::new(SqliteChannelStore::new(pool.clone()));
