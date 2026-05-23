@@ -1,6 +1,6 @@
 use std::{collections::HashSet, path::PathBuf, sync::Arc};
 
-use tracing::info;
+use tracing::{info, warn};
 
 use moltis_sessions::store::SessionStore;
 
@@ -230,9 +230,10 @@ pub(crate) async fn discover_and_build_hooks(
         shell_hook::ShellHookHandler,
     };
 
+    let config = moltis_config::discover_and_load();
     let discoverer = FsHookDiscoverer::new(FsHookDiscoverer::default_paths());
     let discovered = discoverer.discover().await.unwrap_or_default();
-    let session_export_mode = moltis_config::discover_and_load().memory.session_export;
+    let session_export_mode = config.memory.session_export;
 
     let mut registry = moltis_common::hooks::HookRegistry::new();
     let mut info_list = Vec::with_capacity(discovered.len());
@@ -298,6 +299,85 @@ pub(crate) async fn discover_and_build_hooks(
         }
     }
 
+    let filesystem_hook_names = discovered
+        .iter()
+        .map(|(parsed, _source)| parsed.metadata.name.as_str())
+        .collect::<HashSet<_>>();
+    let mut config_hook_count = 0;
+    let config_path = moltis_config::config_dir()
+        .map(|path| path.join("moltis.toml").display().to_string())
+        .unwrap_or_else(|| "moltis.toml".to_string());
+    let mut config_hook_names = HashSet::new();
+
+    if let Some(hooks_config) = config.hooks.as_ref() {
+        for hook in &hooks_config.hooks {
+            if filesystem_hook_names.contains(hook.name.as_str()) {
+                warn!(
+                    hook = %hook.name,
+                    "config hook conflicts with filesystem hook; keeping filesystem hook"
+                );
+                continue;
+            }
+
+            if !config_hook_names.insert(hook.name.as_str()) {
+                warn!(
+                    hook = %hook.name,
+                    "duplicate config hook name; keeping first config hook"
+                );
+                continue;
+            }
+
+            let events = hook
+                .events
+                .iter()
+                .filter_map(|event| match event.parse::<moltis_common::hooks::HookEvent>() {
+                    Ok(event) => Some(event),
+                    Err(e) => {
+                        warn!(hook = %hook.name, event = %event, error = %e, "skipping invalid config hook event");
+                        None
+                    },
+                })
+                .collect::<Vec<_>>();
+            let event_names = events.iter().map(|event| event.to_string()).collect();
+            let is_enabled = !disabled.contains(&hook.name) && !events.is_empty();
+            config_hook_count += 1;
+
+            info_list.push(crate::state::DiscoveredHookInfo {
+                name: hook.name.clone(),
+                description: String::new(),
+                emoji: None,
+                events: event_names,
+                command: Some(hook.command.clone()),
+                timeout: hook.timeout,
+                priority: 0,
+                source: "config".to_string(),
+                source_path: config_path.clone(),
+                eligible: !events.is_empty(),
+                missing_os: false,
+                missing_bins: vec![],
+                missing_env: vec![],
+                enabled: is_enabled,
+                body: String::new(),
+                body_html: "<p><em>Shell hook declared in moltis.toml.</em></p>".to_string(),
+                call_count: 0,
+                failure_count: 0,
+                avg_latency_ms: 0,
+            });
+
+            if is_enabled {
+                let handler = ShellHookHandler::new(
+                    hook.name.clone(),
+                    hook.command.clone(),
+                    events,
+                    std::time::Duration::from_secs(hook.timeout),
+                    hook.env.clone(),
+                    None,
+                );
+                registry.register(Arc::new(handler));
+            }
+        }
+    }
+
     // ── Built-in hooks (compiled Rust, always active) ──────────────────
     {
         let data = moltis_config::data_dir();
@@ -354,10 +434,11 @@ pub(crate) async fn discover_and_build_hooks(
 
     if !info_list.is_empty() {
         info!(
-            "{} hook(s) discovered ({} shell, {} built-in), {} registered",
+            "{} hook(s) discovered ({} filesystem shell, {} config shell, {} built-in), {} registered",
             info_list.len(),
             discovered.len(),
-            info_list.len() - discovered.len(),
+            config_hook_count,
+            info_list.len() - discovered.len() - config_hook_count,
             registry.handler_names().len()
         );
     }

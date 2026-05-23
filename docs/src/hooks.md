@@ -327,12 +327,15 @@ exit 0
 
 ## Hook Discovery
 
-Hooks are discovered from `HOOK.md` files in these locations (priority order):
+Hooks are discovered from `HOOK.md` files and `moltis.toml` config entries:
 
 1. **Project-local**: `<workspace>/.moltis/hooks/<name>/HOOK.md`
 2. **User-global**: `~/.moltis/hooks/<name>/HOOK.md`
 
-Project-local hooks take precedence over global hooks with the same name.
+Project-local hooks take precedence over global hooks with the same name. If a hook declared in
+`moltis.toml` has the same name as a filesystem hook, the filesystem hook takes precedence and the
+config hook is skipped to avoid running the same hook twice. Config hooks appear with source
+`config` in the hooks UI/status output.
 
 ## Configuration in moltis.toml
 
