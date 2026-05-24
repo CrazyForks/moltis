@@ -2,6 +2,7 @@
 
 import { chatAddMsg, removeThinking, setComposerStopButton, updateCommandInputUI, updateTokenBar } from "../chat-ui";
 import { sendRpc } from "../helpers";
+import { modelDisplayLabel, modelTitle } from "../models";
 import { restoreNodeSelection } from "../nodes-selector";
 import { updateSessionProjectSelect } from "../project-combo";
 import { restoreReasoningFromModelId } from "../reasoning-toggle";
@@ -110,7 +111,11 @@ export function restoreSessionState(entry: SessionMeta, projectId?: string): voi
 		S.setSelectedModelId(baseModelId);
 		localStorage.setItem("moltis-model", baseModelId);
 		const found = modelStore.getById(baseModelId);
-		if (S.modelComboLabel) S.modelComboLabel.textContent = found ? found.displayName || found.id : baseModelId;
+		if (S.modelComboLabel) {
+			const label = found ? modelDisplayLabel(found) : baseModelId;
+			S.modelComboLabel.textContent = label;
+			S.modelComboLabel.title = found ? modelTitle(found) : label;
+		}
 	}
 	updateSandboxUI(entry.sandbox_enabled !== false);
 	updateSandboxImageUI(entry.sandbox_image || null);
