@@ -218,7 +218,9 @@ test.describe("Agents settings page", () => {
 		await expect(page.getByText("Create Sub-Agent", { exact: true })).toBeVisible();
 		await page.getByPlaceholder("e.g. researcher, reviewer, qa-helper").fill("e2e-sub-agent");
 		await page.getByPlaceholder("Research Specialist").fill("E2E Sub Agent");
-		await page.getByPlaceholder("Give this sub-agent a focused role and constraints...").fill("Answer with concise evidence.");
+		await page
+			.getByPlaceholder("Give this sub-agent a focused role and constraints...")
+			.fill("Answer with concise evidence.");
 		await page.getByPlaceholder("Read, Glob, Grep, web_search").fill("Read, Grep");
 		await page.getByRole("button", { name: "Create", exact: true }).click();
 
