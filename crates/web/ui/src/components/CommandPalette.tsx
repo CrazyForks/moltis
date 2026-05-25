@@ -136,12 +136,20 @@ export function CommandPalette(): VNode | null {
 	}, [allItems]);
 
 	useLayoutEffect(() => {
-		if (show) {
-			setQuery("");
-			setActiveIdx(0);
-			setSessionHits([]);
-			inputRef.current?.focus();
-		}
+		if (!show) return;
+		setQuery("");
+		setActiveIdx(0);
+		setSessionHits([]);
+
+		const focusInput = () => inputRef.current?.focus({ preventScroll: true });
+		focusInput();
+		queueMicrotask(focusInput);
+		const frame = requestAnimationFrame(focusInput);
+		const timeout = window.setTimeout(focusInput, 0);
+		return () => {
+			cancelAnimationFrame(frame);
+			clearTimeout(timeout);
+		};
 	}, [show]);
 
 	useEffect(() => {
