@@ -19,6 +19,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [20260526.01] - 2026-05-26
+### Added
+- [tools] Support nonblocking spawn agents (#1067)
+- [agents] Support per-turn tool controls (#1069)
+
+
+### Fixed
+- [ci] Use valid release trigger condition
+- Fix Docker build failures (#1073)
+- [web] Stabilize command palette focus
+
 ## [20260525.01] - 2026-05-25
 ### Added
 - [agents] Support per-agent runtime limits (#1066)
