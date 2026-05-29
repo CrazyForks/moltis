@@ -263,10 +263,7 @@ impl OpenAiProvider {
             let response = self
                 .client
                 .post(&url)
-                .header(
-                    "Authorization",
-                    format!("Bearer {}", self.api_key.expose_secret()),
-                )
+                .header("Authorization", self.bearer_auth_header())
                 .header("content-type", "application/json")
                 .json(body)
                 .send()
@@ -293,7 +290,14 @@ impl OpenAiProvider {
     }
 
     pub(crate) fn chat_completions_url(&self) -> String {
-        format!("{}/chat/completions", self.base_url.trim_end_matches('/'))
+        format!(
+            "{}/chat/completions",
+            self.base_url.trim().trim_end_matches('/')
+        )
+    }
+
+    pub(crate) fn bearer_auth_header(&self) -> String {
+        format!("Bearer {}", self.api_key.expose_secret().trim())
     }
 
     /// Return the reasoning effort string if configured.
@@ -363,7 +367,7 @@ impl OpenAiProvider {
     /// `/v1` is present — matching the normalization in
     /// `responses_websocket_url`.
     pub(crate) fn responses_sse_url(&self) -> String {
-        let base = self.base_url.trim_end_matches('/');
+        let base = self.base_url.trim().trim_end_matches('/');
         if base.ends_with("/responses") {
             return base.to_string();
         }

@@ -5,7 +5,6 @@ use std::{
 
 use {
     futures::{SinkExt, StreamExt},
-    secrecy::ExposeSecret,
     tokio_stream::Stream,
     tokio_tungstenite::tungstenite::{Message, client::IntoClientRequest, http::HeaderValue},
 };
@@ -33,7 +32,7 @@ impl OpenAiProvider {
     }
 
     pub(super) fn responses_websocket_url(&self) -> crate::error::Result<String> {
-        let mut base = self.base_url.trim_end_matches('/').to_string();
+        let mut base = self.base_url.trim().trim_end_matches('/').to_string();
         if !base.ends_with("/v1") {
             base.push_str("/v1");
         }
@@ -72,7 +71,7 @@ impl OpenAiProvider {
             let ws_url = self.responses_websocket_url()?;
             let pk = ws_pool::PoolKey::new(&ws_url, &self.api_key);
             let mut req = ws_url.as_str().into_client_request()?;
-            let auth = format!("Bearer {}", self.api_key.expose_secret());
+            let auth = self.bearer_auth_header();
             req.headers_mut()
                 .insert("Authorization", HeaderValue::from_str(&auth)?);
             req.headers_mut()

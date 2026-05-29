@@ -1,6 +1,6 @@
 use std::pin::Pin;
 
-use {futures::StreamExt, secrecy::ExposeSecret, tokio_stream::Stream};
+use {futures::StreamExt, tokio_stream::Stream};
 
 use tracing::{debug, trace};
 
@@ -59,7 +59,7 @@ impl OpenAiProvider {
             let resp = match self
                 .client
                 .post(&url)
-                .header("Authorization", format!("Bearer {}", self.api_key.expose_secret()))
+                .header("Authorization", self.bearer_auth_header())
                 .header("content-type", "application/json")
                 .json(&body)
                 .send()

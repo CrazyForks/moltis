@@ -108,6 +108,11 @@ impl OpenAiProvider {
 
     fn requires_gemini_tool_call_extra_content(&self) -> bool {
         self.requires_gemini_tool_call_extra_content
+            || self.provider_name.eq_ignore_ascii_case("gemini")
+            || self
+                .base_url
+                .to_ascii_lowercase()
+                .contains("generativelanguage.googleapis.com")
     }
 
     /// Whether this provider rejects `null` in JSON Schema `enum` arrays.
@@ -680,8 +685,7 @@ mod tests {
             "gemini-3.1-flash-lite",
             "gemini",
             "https://generativelanguage.googleapis.com/v1beta/openai",
-        )
-        .with_gemini_tool_call_extra_content(true);
+        );
         let mut metadata = serde_json::Map::new();
         metadata.insert("thought_signature".to_string(), serde_json::json!("sig123"));
         let messages =
@@ -944,6 +948,23 @@ mod tests {
         let messages = vec![ChatMessage::user_named("hello", "Alice")];
         let serialized = p.serialize_messages_for_request(&messages);
         assert_eq!(serialized[0]["name"], "Alice");
+    }
+
+    #[test]
+    fn openai_provider_trims_base_url_and_api_key_edges() {
+        let p = OpenAiProvider::new_with_name(
+            Secret::new(" test-key\n".to_string()),
+            "gpt-4o".to_string(),
+            " https://api.openai.com/v1/ \n".to_string(),
+            "openai".to_string(),
+        );
+
+        assert_eq!(
+            p.chat_completions_url(),
+            "https://api.openai.com/v1/chat/completions"
+        );
+        assert_eq!(p.responses_sse_url(), "https://api.openai.com/v1/responses");
+        assert_eq!(p.bearer_auth_header(), "Bearer test-key");
     }
 
     /// `with_supports_user_name(false)` overrides the default.

@@ -131,7 +131,7 @@ impl OpenAiProvider {
             .client
             .post(&url)
             .json(&serde_json::json!({ "name": self.model }));
-        let key = self.api_key.expose_secret();
+        let key = self.api_key.expose_secret().trim();
         if !key.is_empty() {
             req = req.header("Authorization", format!("Bearer {key}"));
         }
@@ -175,10 +175,7 @@ impl OpenAiProvider {
         let http_resp = self
             .client
             .post(&url)
-            .header(
-                "Authorization",
-                format!("Bearer {}", self.api_key.expose_secret()),
-            )
+            .header("Authorization", self.bearer_auth_header())
             .header("content-type", "application/json")
             .json(&body)
             .send()
@@ -214,7 +211,7 @@ impl OpenAiProvider {
     /// [`probe()`](Self::probe_chat_completions) if the models endpoint
     /// is unavailable or does not list the model.
     pub(super) async fn check_model_in_catalog(&self) -> anyhow::Result<()> {
-        let url = format!("{}/models", self.base_url.trim_end_matches('/'));
+        let url = format!("{}/models", self.base_url.trim().trim_end_matches('/'));
 
         debug!(
             model = %self.model,
@@ -227,10 +224,7 @@ impl OpenAiProvider {
             .client
             .get(&url)
             .timeout(Duration::from_secs(15))
-            .header(
-                "Authorization",
-                format!("Bearer {}", self.api_key.expose_secret()),
-            )
+            .header("Authorization", self.bearer_auth_header())
             .header("Accept", "application/json")
             .send()
             .await;
@@ -431,10 +425,7 @@ impl OpenAiProvider {
         let http_resp = self
             .client
             .post(&url)
-            .header(
-                "Authorization",
-                format!("Bearer {}", self.api_key.expose_secret()),
-            )
+            .header("Authorization", self.bearer_auth_header())
             .header("content-type", "application/json")
             .json(&body)
             .send()
