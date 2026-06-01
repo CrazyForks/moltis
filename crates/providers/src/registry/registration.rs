@@ -34,6 +34,32 @@ use crate::{
 };
 
 const CUSTOM_REASONING_CONTENT_MODEL_PREFIXES: &[&str] = &["kimi-", "deepseek-v4"];
+const OPENAI_DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
+
+fn resolve_openai_base_url(
+    config: &ProvidersConfig,
+    env_overrides: &HashMap<String, String>,
+) -> (String, bool) {
+    if let Some(base_url) = config.get("openai").and_then(|e| e.base_url.clone()) {
+        return (base_url, true);
+    }
+    if let Some(base_url) = env_value(env_overrides, "OPENAI_BASE_URL") {
+        return (base_url, true);
+    }
+    (OPENAI_DEFAULT_BASE_URL.into(), false)
+}
+
+pub(crate) fn openai_builtin_capabilities(
+    base_url_overridden: bool,
+) -> openai::OpenAiProviderCapabilities {
+    if base_url_overridden {
+        return openai::OpenAiProviderCapabilities::DEFAULT;
+    }
+    openai::OpenAiProviderCapabilities {
+        responses_websocket_policy: openai::ResponsesWebSocketPolicy::OpenAiPlatform,
+        ..openai::OpenAiProviderCapabilities::DEFAULT
+    }
+}
 
 impl ProviderRegistry {
     /// Register models from a [`RediscoveryResult`], skipping those already
@@ -89,11 +115,8 @@ impl ProviderRegistry {
             && config.is_enabled("openai")
             && let Some(key) = resolve_api_key(config, "openai", "OPENAI_API_KEY", env_overrides)
         {
-            let base_url = config
-                .get("openai")
-                .and_then(|e| e.base_url.clone())
-                .or_else(|| env_value(env_overrides, "OPENAI_BASE_URL"))
-                .unwrap_or_else(|| "https://api.openai.com/v1".into());
+            let (base_url, base_url_overridden) = resolve_openai_base_url(config, env_overrides);
+            let capabilities = openai_builtin_capabilities(base_url_overridden);
             let alias = config.get("openai").and_then(|e| e.alias.clone());
             let provider_label = alias.unwrap_or_else(|| "openai".into());
             let stream_transport = config
@@ -102,6 +125,9 @@ impl ProviderRegistry {
                 .unwrap_or(ProviderStreamTransport::Sse);
 
             for model in models {
+                let caps = model
+                    .capabilities
+                    .unwrap_or_else(|| ModelCapabilities::infer(&model.id));
                 if self.has_provider_model(&provider_label, &model.id) {
                     continue;
                 }
@@ -113,6 +139,8 @@ impl ProviderRegistry {
                         provider_label.clone(),
                     )
                     .with_stream_transport(stream_transport)
+                    .with_capabilities(capabilities)
+                    .with_model_capabilities(caps)
                     .with_context_window_overrides(
                         self.global_cw_overrides.clone(),
                         config
@@ -128,9 +156,7 @@ impl ProviderRegistry {
                         display_name: model.display_name.clone(),
                         created_at: model.created_at,
                         recommended: model.recommended,
-                        capabilities: model
-                            .capabilities
-                            .unwrap_or_else(|| ModelCapabilities::infer(&model.id)),
+                        capabilities: caps,
                     },
                     provider,
                 );
@@ -162,6 +188,9 @@ impl ProviderRegistry {
                 .unwrap_or_default();
 
             for model in models {
+                let caps = model
+                    .capabilities
+                    .unwrap_or_else(|| ModelCapabilities::infer(&model.id));
                 if self.has_provider_model(&provider_label, &model.id) {
                     continue;
                 }
@@ -179,9 +208,7 @@ impl ProviderRegistry {
                         display_name: model.display_name.clone(),
                         created_at: model.created_at,
                         recommended: model.recommended,
-                        capabilities: model
-                            .capabilities
-                            .unwrap_or_else(|| ModelCapabilities::infer(&model.id)),
+                        capabilities: caps,
                     },
                     provider,
                 );
@@ -241,6 +268,9 @@ impl ProviderRegistry {
             };
 
             for model in models {
+                let caps = model
+                    .capabilities
+                    .unwrap_or_else(|| ModelCapabilities::infer(&model.id));
                 if self.has_provider_model(&provider_label, &model.id) {
                     continue;
                 }
@@ -263,17 +293,9 @@ impl ProviderRegistry {
                     provider_label.clone(),
                 )
                 .with_stream_transport(stream_transport)
+                .with_capabilities(def.capabilities)
+                .with_model_capabilities(caps)
                 .with_cache_retention(cache_retention)
-                .with_supports_user_name(def.supports_user_name)
-                .with_default_strict_tools(def.default_strict_tools)
-                .with_default_reasoning_content(def.default_reasoning_content_on_tool_messages)
-                .with_reasoning_content_model_prefixes(def.reasoning_content_model_prefixes)
-                .with_rejects_null_in_enums(def.rejects_null_in_enums)
-                .with_gemini_tool_call_extra_content(def.requires_gemini_tool_call_extra_content)
-                .with_system_message_rewrite(def.system_message_rewrite)
-                .with_qwen_models_require_single_leading_system(
-                    def.qwen_models_require_single_leading_system,
-                )
                 .with_context_window_overrides(
                     self.global_cw_overrides.clone(),
                     config
@@ -302,9 +324,7 @@ impl ProviderRegistry {
                         display_name: model.display_name.clone(),
                         created_at: model.created_at,
                         recommended: model.recommended,
-                        capabilities: model
-                            .capabilities
-                            .unwrap_or_else(|| ModelCapabilities::infer(&model.id)),
+                        capabilities: caps,
                     },
                     Arc::new(oai),
                 );
@@ -333,6 +353,9 @@ impl ProviderRegistry {
             let custom_tool_mode = entry.tool_mode;
 
             for model in models {
+                let caps = model
+                    .capabilities
+                    .unwrap_or_else(|| ModelCapabilities::infer(&model.id));
                 if self.has_provider_model(name, &model.id) {
                     continue;
                 }
@@ -343,8 +366,13 @@ impl ProviderRegistry {
                     name.clone(),
                 )
                 .with_stream_transport(entry.stream_transport)
-                .with_reasoning_content_model_prefixes(CUSTOM_REASONING_CONTENT_MODEL_PREFIXES)
-                .with_qwen_models_require_single_leading_system(true)
+                .with_cache_retention(entry.cache_retention)
+                .with_model_capabilities(caps)
+                .with_capabilities(openai::OpenAiProviderCapabilities {
+                    reasoning_content_model_prefixes: CUSTOM_REASONING_CONTENT_MODEL_PREFIXES,
+                    qwen_models_require_single_leading_system: true,
+                    ..openai::OpenAiProviderCapabilities::DEFAULT
+                })
                 .with_context_window_overrides(
                     self.global_cw_overrides.clone(),
                     extract_cw_overrides(&entry.model_overrides),
@@ -355,6 +383,10 @@ impl ProviderRegistry {
                 if !matches!(custom_tool_mode, moltis_config::ToolMode::Auto) {
                     oai = oai.with_tool_mode(custom_tool_mode);
                 }
+                if let Some(strict) = entry.strict_tools {
+                    oai = oai.with_strict_tools(strict);
+                }
+                oai = oai.with_probe_timeout_secs(entry.probe_timeout_secs);
                 self.register(
                     ModelInfo {
                         id: model.id.clone(),
@@ -362,9 +394,7 @@ impl ProviderRegistry {
                         display_name: model.display_name.clone(),
                         created_at: model.created_at,
                         recommended: model.recommended,
-                        capabilities: model
-                            .capabilities
-                            .unwrap_or_else(|| ModelCapabilities::infer(&model.id)),
+                        capabilities: caps,
                     },
                     Arc::new(oai),
                 );
@@ -459,11 +489,7 @@ impl ProviderRegistry {
             return;
         };
 
-        let base_url = config
-            .get("openai")
-            .and_then(|e| e.base_url.clone())
-            .or_else(|| env_value(env_overrides, "OPENAI_BASE_URL"))
-            .unwrap_or_else(|| "https://api.openai.com/v1".into());
+        let (base_url, _) = resolve_openai_base_url(config, env_overrides);
 
         let model_id = configured_models_for_provider(config, "openai")
             .into_iter()
@@ -795,11 +821,8 @@ impl ProviderRegistry {
         if config.is_enabled("openai")
             && let Some(key) = resolve_api_key(config, "openai", "OPENAI_API_KEY", env_overrides)
         {
-            let base_url = config
-                .get("openai")
-                .and_then(|e| e.base_url.clone())
-                .or_else(|| env_value(env_overrides, "OPENAI_BASE_URL"))
-                .unwrap_or_else(|| "https://api.openai.com/v1".into());
+            let (base_url, base_url_overridden) = resolve_openai_base_url(config, env_overrides);
+            let capabilities = openai_builtin_capabilities(base_url_overridden);
 
             // Get alias if configured (for metrics differentiation).
             let alias = config.get("openai").and_then(|e| e.alias.clone());
@@ -846,6 +869,8 @@ impl ProviderRegistry {
                         provider_label.clone(),
                     )
                     .with_stream_transport(stream_transport)
+                    .with_capabilities(capabilities)
+                    .with_model_capabilities(caps)
                     .with_context_window_overrides(
                         self.global_cw_overrides.clone(),
                         config
@@ -1004,6 +1029,8 @@ impl ProviderRegistry {
                     provider_label.clone(),
                 )
                 .with_stream_transport(stream_transport)
+                .with_capabilities(def.capabilities)
+                .with_model_capabilities(caps)
                 .with_cache_retention(cache_retention)
                 .with_context_window_overrides(
                     self.global_cw_overrides.clone(),
@@ -1025,20 +1052,6 @@ impl ProviderRegistry {
                     .and_then(|e| e.probe_timeout_secs)
                 {
                     oai = oai.with_probe_timeout_secs(Some(timeout));
-                }
-
-                // Fireworks Fire Pass router models for Kimi route to
-                // Moonshot, which rejects strict-mode schemas and requires
-                // reasoning_content on tool-call messages (issue #810).
-                if is_fireworks_kimi_router(def, &model_id) {
-                    if config
-                        .get(def.config_name)
-                        .and_then(|e| e.strict_tools)
-                        .is_none()
-                    {
-                        oai = oai.with_strict_tools(false);
-                    }
-                    oai = oai.with_reasoning_content(true);
                 }
 
                 let provider = Arc::new(oai);
@@ -1124,8 +1137,12 @@ impl ProviderRegistry {
                 )
                 .with_stream_transport(entry.stream_transport)
                 .with_cache_retention(entry.cache_retention)
-                .with_reasoning_content_model_prefixes(CUSTOM_REASONING_CONTENT_MODEL_PREFIXES)
-                .with_qwen_models_require_single_leading_system(true)
+                .with_model_capabilities(caps)
+                .with_capabilities(openai::OpenAiProviderCapabilities {
+                    reasoning_content_model_prefixes: CUSTOM_REASONING_CONTENT_MODEL_PREFIXES,
+                    qwen_models_require_single_leading_system: true,
+                    ..openai::OpenAiProviderCapabilities::DEFAULT
+                })
                 .with_context_window_overrides(
                     self.global_cw_overrides.clone(),
                     extract_cw_overrides(&entry.model_overrides),

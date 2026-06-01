@@ -10,8 +10,7 @@ use {
 use tracing::debug;
 
 use crate::{
-    context_window_for_model_with_config, http::retry_after_ms_from_headers,
-    supports_tools_for_model, supports_vision_for_model,
+    ModelCapabilities, context_window_for_model_with_config, http::retry_after_ms_from_headers,
 };
 
 use moltis_agents::model::{
@@ -19,36 +18,18 @@ use moltis_agents::model::{
     ToolChoice,
 };
 
-use super::super::{OpenAiProvider, SystemMessageRewriteStrategy};
+use super::super::{
+    OpenAiProvider, OpenAiProviderCapabilities, RateLimitPolicy, ReasoningEffortPolicy,
+};
 
 impl OpenAiProvider {
     pub fn new(api_key: secrecy::Secret<String>, model: String, base_url: String) -> Self {
-        Self {
-            api_key,
-            model,
-            base_url,
-            provider_name: "openai".into(),
-            client: crate::shared_http_client(),
-            stream_transport: ProviderStreamTransport::Sse,
-            wire_api: WireApi::ChatCompletions,
-            metadata_cache: tokio::sync::OnceCell::new(),
-            tool_mode_override: None,
-            reasoning_effort: None,
-            cache_retention: moltis_config::CacheRetention::Short,
-            strict_tools_override: None,
-            reasoning_content_override: None,
-            default_strict_tools: true,
-            default_reasoning_content_on_tool_messages: false,
-            reasoning_content_model_prefixes: &[],
-            rejects_null_in_enums: false,
-            requires_gemini_tool_call_extra_content: false,
-            system_message_rewrite_strategy: SystemMessageRewriteStrategy::None,
-            qwen_models_require_single_leading_system: false,
-            context_window_global: std::collections::HashMap::new(),
-            context_window_provider: std::collections::HashMap::new(),
-            supports_user_name: true,
-            probe_timeout_secs: None,
-        }
+        Self::new_with_name(api_key, model, base_url, "openai".into()).with_capabilities(
+            OpenAiProviderCapabilities {
+                responses_websocket_policy: super::super::ResponsesWebSocketPolicy::OpenAiPlatform,
+                ..OpenAiProviderCapabilities::DEFAULT
+            },
+        )
     }
 
     pub fn new_with_name(
@@ -57,6 +38,7 @@ impl OpenAiProvider {
         base_url: String,
         provider_name: String,
     ) -> Self {
+        let model_capabilities = ModelCapabilities::infer(&model);
         Self {
             api_key,
             model,
@@ -71,18 +53,24 @@ impl OpenAiProvider {
             cache_retention: moltis_config::CacheRetention::Short,
             strict_tools_override: None,
             reasoning_content_override: None,
-            default_strict_tools: true,
-            default_reasoning_content_on_tool_messages: false,
-            reasoning_content_model_prefixes: &[],
-            rejects_null_in_enums: false,
-            requires_gemini_tool_call_extra_content: false,
-            system_message_rewrite_strategy: SystemMessageRewriteStrategy::None,
-            qwen_models_require_single_leading_system: false,
+            capabilities: OpenAiProviderCapabilities::DEFAULT,
+            model_capabilities,
             context_window_global: std::collections::HashMap::new(),
             context_window_provider: std::collections::HashMap::new(),
-            supports_user_name: true,
             probe_timeout_secs: None,
         }
+    }
+
+    #[must_use]
+    pub(crate) fn with_capabilities(mut self, capabilities: OpenAiProviderCapabilities) -> Self {
+        self.capabilities = capabilities;
+        self
+    }
+
+    #[must_use]
+    pub(crate) fn with_model_capabilities(mut self, capabilities: ModelCapabilities) -> Self {
+        self.model_capabilities = capabilities;
+        self
     }
 
     #[must_use]
@@ -121,68 +109,38 @@ impl OpenAiProvider {
         self
     }
 
-    /// Set whether this provider accepts the `name` field on user messages.
-    ///
-    /// Defaults to `true` for most providers; auto-set to `false` for Mistral.
-    #[must_use]
-    pub fn with_supports_user_name(mut self, supported: bool) -> Self {
-        self.supports_user_name = supported;
-        self
-    }
-
-    #[must_use]
-    pub(crate) fn with_default_strict_tools(mut self, strict: bool) -> Self {
-        self.default_strict_tools = strict;
-        self
-    }
-
-    #[must_use]
-    pub(crate) fn with_default_reasoning_content(mut self, required: bool) -> Self {
-        self.default_reasoning_content_on_tool_messages = required;
-        self
-    }
-
-    #[must_use]
-    pub(crate) fn with_reasoning_content_model_prefixes(
-        mut self,
-        prefixes: &'static [&'static str],
-    ) -> Self {
-        self.reasoning_content_model_prefixes = prefixes;
-        self
-    }
-
-    #[must_use]
-    pub(crate) fn with_rejects_null_in_enums(mut self, rejects: bool) -> Self {
-        self.rejects_null_in_enums = rejects;
-        self
-    }
-
-    #[must_use]
-    pub(crate) fn with_gemini_tool_call_extra_content(mut self, required: bool) -> Self {
-        self.requires_gemini_tool_call_extra_content = required;
-        self
-    }
-
-    #[must_use]
-    pub(crate) fn with_system_message_rewrite(
-        mut self,
-        strategy: SystemMessageRewriteStrategy,
-    ) -> Self {
-        self.system_message_rewrite_strategy = strategy;
-        self
-    }
-
-    #[must_use]
-    pub(crate) fn with_qwen_models_require_single_leading_system(mut self, required: bool) -> Self {
-        self.qwen_models_require_single_leading_system = required;
-        self
-    }
-
     /// Set the completion-based probe timeout override (seconds).
     #[must_use]
     pub fn with_probe_timeout_secs(mut self, secs: Option<u64>) -> Self {
         self.probe_timeout_secs = secs;
         self
+    }
+
+    /// Create a copy of this provider with a fresh metadata cache.
+    ///
+    /// Centralises the field-by-field copy so callers like
+    /// `with_reasoning_effort` stay in sync when new fields are added.
+    fn fork(&self) -> Self {
+        Self {
+            api_key: self.api_key.clone(),
+            model: self.model.clone(),
+            base_url: self.base_url.clone(),
+            provider_name: self.provider_name.clone(),
+            client: self.client,
+            stream_transport: self.stream_transport,
+            wire_api: self.wire_api,
+            metadata_cache: tokio::sync::OnceCell::new(),
+            tool_mode_override: self.tool_mode_override,
+            reasoning_effort: self.reasoning_effort,
+            cache_retention: self.cache_retention,
+            strict_tools_override: self.strict_tools_override,
+            reasoning_content_override: self.reasoning_content_override,
+            capabilities: self.capabilities,
+            model_capabilities: self.model_capabilities,
+            context_window_global: self.context_window_global.clone(),
+            context_window_provider: self.context_window_provider.clone(),
+            probe_timeout_secs: self.probe_timeout_secs,
+        }
     }
 
     /// Set context window override maps extracted from config.
@@ -200,38 +158,18 @@ impl OpenAiProvider {
         self
     }
 
-    fn is_deepseek_provider(&self) -> bool {
-        self.provider_name.eq_ignore_ascii_case("deepseek")
-            || self
-                .base_url
-                .to_ascii_lowercase()
-                .contains("api.deepseek.com")
-    }
-
-    pub(super) fn is_nearai_provider(&self) -> bool {
-        self.provider_name.eq_ignore_ascii_case("nearai")
-            || self
-                .base_url
-                .to_ascii_lowercase()
-                .contains("cloud-api.near.ai")
-    }
-
-    fn is_mistral_provider(&self) -> bool {
-        self.provider_name.eq_ignore_ascii_case("mistral")
-            || self.base_url.to_ascii_lowercase().contains("mistral.ai")
-    }
-
-    async fn wait_for_mistral_slot(&self) {
-        if !self.is_mistral_provider() {
-            return;
+    async fn wait_for_rate_limit_slot(&self) {
+        match self.capabilities.rate_limit_policy {
+            RateLimitPolicy::None => return,
+            RateLimitPolicy::Mistral => {},
         }
 
-        static LAST_MISTRAL_REQUEST: std::sync::OnceLock<
+        static LAST_RATE_LIMITED_REQUEST: std::sync::OnceLock<
             tokio::sync::Mutex<Option<tokio::time::Instant>>,
         > = std::sync::OnceLock::new();
         const MIN_INTERVAL: Duration = Duration::from_millis(1_250);
 
-        let mut last_request = LAST_MISTRAL_REQUEST
+        let mut last_request = LAST_RATE_LIMITED_REQUEST
             .get_or_init(|| tokio::sync::Mutex::new(None))
             .lock()
             .await;
@@ -245,13 +183,14 @@ impl OpenAiProvider {
         *last_request = Some(tokio::time::Instant::now());
     }
 
-    fn mistral_retry_delay(
+    fn rate_limit_retry_delay(
         &self,
         attempt: usize,
         headers: &reqwest::header::HeaderMap,
     ) -> Option<Duration> {
-        if !self.is_mistral_provider() || attempt >= 2 {
-            return None;
+        match self.capabilities.rate_limit_policy {
+            RateLimitPolicy::Mistral if attempt < 2 => {},
+            RateLimitPolicy::None | RateLimitPolicy::Mistral => return None,
         }
 
         let retry_after = retry_after_ms_from_headers(headers)
@@ -266,7 +205,7 @@ impl OpenAiProvider {
     ) -> reqwest::Result<reqwest::Response> {
         let url = self.chat_completions_url();
         for attempt in 0..3 {
-            self.wait_for_mistral_slot().await;
+            self.wait_for_rate_limit_slot().await;
 
             let response = self
                 .client
@@ -278,14 +217,14 @@ impl OpenAiProvider {
                 .await?;
 
             if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS
-                && let Some(delay) = self.mistral_retry_delay(attempt, response.headers())
+                && let Some(delay) = self.rate_limit_retry_delay(attempt, response.headers())
             {
                 tracing::debug!(
                     provider = %self.provider_name,
                     model = %self.model,
                     attempt = attempt + 1,
                     delay_ms = delay.as_millis(),
-                    "retrying Mistral request after rate limit"
+                    "retrying request after rate limit"
                 );
                 tokio::time::sleep(delay).await;
                 continue;
@@ -314,38 +253,35 @@ impl OpenAiProvider {
     /// are clamped to the nearest supported value.
     pub(crate) fn reasoning_effort_str(&self) -> Option<&'static str> {
         use moltis_agents::model::ReasoningEffort;
-        if self.is_nearai_provider() {
-            return None;
-        }
-        if self.is_deepseek_provider() {
-            return self.reasoning_effort.map(|e| match e {
+        match self.capabilities.reasoning_effort_policy {
+            ReasoningEffortPolicy::Unsupported => None,
+            ReasoningEffortPolicy::DeepSeek => self.reasoning_effort.map(|e| match e {
                 ReasoningEffort::Minimal
                 | ReasoningEffort::Low
                 | ReasoningEffort::Medium
                 | ReasoningEffort::High => "high",
                 ReasoningEffort::ExtraHigh => "max",
-            });
+            }),
+            ReasoningEffortPolicy::OpenAi => self.reasoning_effort.map(|e| match e {
+                ReasoningEffort::Minimal => {
+                    tracing::debug!(
+                        model = %self.model,
+                        "reasoning effort Minimal clamped to \"low\" (OpenAI minimum)"
+                    );
+                    "low"
+                },
+                ReasoningEffort::Low => "low",
+                ReasoningEffort::Medium => "medium",
+                ReasoningEffort::High => "high",
+                ReasoningEffort::ExtraHigh => {
+                    tracing::debug!(
+                        model = %self.model,
+                        "reasoning effort ExtraHigh clamped to \"high\" (OpenAI maximum)"
+                    );
+                    "high"
+                },
+            }),
         }
-
-        self.reasoning_effort.map(|e| match e {
-            ReasoningEffort::Minimal => {
-                tracing::debug!(
-                    model = %self.model,
-                    "reasoning effort Minimal clamped to \"low\" (OpenAI minimum)"
-                );
-                "low"
-            },
-            ReasoningEffort::Low => "low",
-            ReasoningEffort::Medium => "medium",
-            ReasoningEffort::High => "high",
-            ReasoningEffort::ExtraHigh => {
-                tracing::debug!(
-                    model = %self.model,
-                    "reasoning effort ExtraHigh clamped to \"high\" (OpenAI maximum)"
-                );
-                "high"
-            },
-        })
     }
 
     /// Apply `reasoning_effort` for the **Chat Completions** API (used by
@@ -355,7 +291,10 @@ impl OpenAiProvider {
     pub(crate) fn apply_reasoning_effort_chat(&self, body: &mut serde_json::Value) {
         if let Some(effort) = self.reasoning_effort_str() {
             body["reasoning_effort"] = serde_json::json!(effort);
-            if self.is_deepseek_provider() {
+            if matches!(
+                self.capabilities.reasoning_effort_policy,
+                ReasoningEffortPolicy::DeepSeek
+            ) {
                 body["thinking"] = serde_json::json!({ "type": "enabled" });
             }
         }
@@ -408,37 +347,15 @@ impl LlmProvider for OpenAiProvider {
         self: std::sync::Arc<Self>,
         effort: moltis_agents::model::ReasoningEffort,
     ) -> Option<std::sync::Arc<dyn LlmProvider>> {
-        if self.is_nearai_provider() {
+        if matches!(
+            self.capabilities.reasoning_effort_policy,
+            ReasoningEffortPolicy::Unsupported
+        ) {
             return None;
         }
-        Some(std::sync::Arc::new(Self {
-            api_key: self.api_key.clone(),
-            model: self.model.clone(),
-            base_url: self.base_url.clone(),
-            provider_name: self.provider_name.clone(),
-            client: self.client,
-            stream_transport: self.stream_transport,
-            metadata_cache: tokio::sync::OnceCell::new(),
-            tool_mode_override: self.tool_mode_override,
-            reasoning_effort: Some(effort),
-            wire_api: self.wire_api,
-            cache_retention: self.cache_retention,
-            context_window_global: self.context_window_global.clone(),
-            context_window_provider: self.context_window_provider.clone(),
-            strict_tools_override: self.strict_tools_override,
-            reasoning_content_override: self.reasoning_content_override,
-            default_strict_tools: self.default_strict_tools,
-            default_reasoning_content_on_tool_messages: self
-                .default_reasoning_content_on_tool_messages,
-            reasoning_content_model_prefixes: self.reasoning_content_model_prefixes,
-            rejects_null_in_enums: self.rejects_null_in_enums,
-            requires_gemini_tool_call_extra_content: self.requires_gemini_tool_call_extra_content,
-            system_message_rewrite_strategy: self.system_message_rewrite_strategy,
-            qwen_models_require_single_leading_system: self
-                .qwen_models_require_single_leading_system,
-            supports_user_name: self.supports_user_name,
-            probe_timeout_secs: self.probe_timeout_secs,
-        }))
+        let mut forked = self.fork();
+        forked.reasoning_effort = Some(effort);
+        Some(std::sync::Arc::new(forked))
     }
 
     fn id(&self) -> &str {
@@ -449,7 +366,7 @@ impl LlmProvider for OpenAiProvider {
         match self.tool_mode_override {
             Some(moltis_config::ToolMode::Native) => true,
             Some(moltis_config::ToolMode::Text | moltis_config::ToolMode::Off) => false,
-            Some(moltis_config::ToolMode::Auto) | None => supports_tools_for_model(&self.model),
+            Some(moltis_config::ToolMode::Auto) | None => self.model_capabilities.tools,
         }
     }
 
@@ -466,7 +383,7 @@ impl LlmProvider for OpenAiProvider {
     }
 
     fn supports_vision(&self) -> bool {
-        supports_vision_for_model(&self.model)
+        self.model_capabilities.vision
     }
 
     async fn model_metadata(&self) -> anyhow::Result<ModelMetadata> {
@@ -686,18 +603,41 @@ mod tests {
 
     #[test]
     fn nearai_does_not_accept_reasoning_effort_suffixes() {
-        let provider = Arc::new(OpenAiProvider::new_with_name(
-            secrecy::Secret::new("test-key".to_string()),
-            "openai/gpt-oss-120b".to_string(),
-            "https://cloud-api.near.ai/v1".to_string(),
-            "nearai".to_string(),
-        ));
+        let provider = Arc::new(
+            OpenAiProvider::new_with_name(
+                secrecy::Secret::new("test-key".to_string()),
+                "openai/gpt-oss-120b".to_string(),
+                "https://cloud-api.near.ai/v1".to_string(),
+                "nearai".to_string(),
+            )
+            .with_capabilities(OpenAiProviderCapabilities {
+                reasoning_effort_policy: ReasoningEffortPolicy::Unsupported,
+                ..OpenAiProviderCapabilities::DEFAULT
+            }),
+        );
 
         assert!(
             provider
                 .with_reasoning_effort(ReasoningEffort::High)
                 .is_none(),
             "NEAR AI Cloud does not support the OpenAI reasoning_effort field"
+        );
+    }
+
+    #[test]
+    fn custom_provider_with_nearai_url_keeps_default_reasoning_effort_support() {
+        let provider = Arc::new(OpenAiProvider::new_with_name(
+            secrecy::Secret::new("test-key".to_string()),
+            "openai/gpt-oss-120b".to_string(),
+            "https://cloud-api.near.ai/v1".to_string(),
+            "custom-nearai".to_string(),
+        ));
+
+        assert!(
+            provider
+                .with_reasoning_effort(ReasoningEffort::High)
+                .is_some(),
+            "provider URLs must not enable provider-specific reasoning behavior"
         );
     }
 }

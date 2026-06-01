@@ -1,12 +1,31 @@
 //! NEAR AI Cloud model discovery helpers.
 
 use {
-    crate::{DiscoveredModel, ModelCapabilities, is_chat_capable_model, supports_vision_for_model},
+    crate::{DiscoveredModel, ModelCapabilities},
+    reqwest::StatusCode,
     serde::Deserialize,
     std::{collections::HashSet, sync::mpsc, time::Duration},
+    thiserror::Error,
 };
 
 const MODEL_LIST_PATH: &str = "/model/list";
+
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error("NEAR AI model list request failed: {0}")]
+    Request(#[from] reqwest::Error),
+    #[error("NEAR AI model list API at {endpoint} returned HTTP {status}")]
+    HttpStatus {
+        endpoint: String,
+        status: StatusCode,
+    },
+    #[error("failed to parse NEAR AI model list JSON: {0}")]
+    Parse(#[from] serde_json::Error),
+    #[error("NEAR AI model list API returned no chat models")]
+    NoChatModels,
+    #[error("failed to create NEAR AI model discovery runtime: {0}")]
+    Runtime(#[from] std::io::Error),
+}
 
 #[derive(Debug, Deserialize)]
 struct NearAiModelList {
@@ -79,26 +98,43 @@ fn is_tee_model(metadata: &NearAiModelMetadata) -> bool {
     metadata.verifiable || metadata.attestation_supported
 }
 
-fn is_text_generation_model(model_id: &str, metadata: &NearAiModelMetadata) -> bool {
+fn is_known_non_chat_model(model_id: &str) -> bool {
     let lower_id = model_id.to_ascii_lowercase();
-    if lower_id == "openai/privacy-filter" || lower_id.contains("reranker") {
-        return false;
-    }
-    if !is_chat_capable_model(model_id) {
-        return false;
+    lower_id == "openai/privacy-filter" || lower_id.contains("reranker")
+}
+
+fn catalog_capabilities_for(model_id: &str, metadata: &NearAiModelMetadata) -> ModelCapabilities {
+    let mut capabilities = ModelCapabilities::infer(model_id);
+    capabilities.tools = false;
+    capabilities.reasoning = false;
+
+    if !capabilities.text_generation {
+        return ModelCapabilities {
+            text_generation: false,
+            vision: false,
+            ..capabilities
+        };
     }
 
     let Some(architecture) = metadata.architecture.as_ref() else {
-        return true;
+        return capabilities;
     };
+
+    capabilities.vision = has_modality(&architecture.input_modalities, "image");
     if architecture.input_modalities.is_empty() && architecture.output_modalities.is_empty() {
-        return false;
+        capabilities.text_generation = false;
+        return capabilities;
     }
-    if has_modality(&architecture.input_modalities, "audio") {
-        return false;
-    }
-    architecture.output_modalities.is_empty()
-        || has_modality(&architecture.output_modalities, "text")
+    capabilities.text_generation = !has_modality(&architecture.input_modalities, "audio")
+        && (architecture.output_modalities.is_empty()
+            || has_modality(&architecture.output_modalities, "text"));
+
+    capabilities
+}
+
+fn is_text_generation_model(model_id: &str, metadata: &NearAiModelMetadata) -> bool {
+    !is_known_non_chat_model(model_id)
+        && catalog_capabilities_for(model_id, metadata).text_generation
 }
 
 fn display_name_for(model: &NearAiModel) -> String {
@@ -112,22 +148,7 @@ fn display_name_for(model: &NearAiModel) -> String {
         .to_string()
 }
 
-fn capabilities_for(model: &NearAiModel) -> ModelCapabilities {
-    let vision = model
-        .metadata
-        .architecture
-        .as_ref()
-        .map(|architecture| has_modality(&architecture.input_modalities, "image"))
-        .unwrap_or_else(|| supports_vision_for_model(&model.model_id));
-
-    ModelCapabilities {
-        tools: false,
-        vision,
-        reasoning: false,
-    }
-}
-
-fn parse_models_payload(payload: &str) -> anyhow::Result<Vec<DiscoveredModel>> {
+fn parse_models_payload(payload: &str) -> Result<Vec<DiscoveredModel>, Error> {
     let parsed: NearAiModelList = serde_json::from_str(payload)?;
     let mut seen = HashSet::new();
     let mut models: Vec<DiscoveredModel> = parsed
@@ -139,7 +160,7 @@ fn parse_models_payload(payload: &str) -> anyhow::Result<Vec<DiscoveredModel>> {
             let recommended = is_tee_model(&model.metadata);
             DiscoveredModel::new(model.model_id.clone(), display_name_for(&model))
                 .with_recommended(recommended)
-                .with_capabilities(capabilities_for(&model))
+                .with_capabilities(catalog_capabilities_for(&model.model_id, &model.metadata))
         })
         .collect();
 
@@ -153,10 +174,11 @@ fn parse_models_payload(payload: &str) -> anyhow::Result<Vec<DiscoveredModel>> {
 }
 
 /// Fetch available chat models from NEAR AI Cloud's public model catalog.
-pub async fn fetch_models_from_api(base_url: String) -> anyhow::Result<Vec<DiscoveredModel>> {
+pub async fn fetch_models_from_api(base_url: String) -> Result<Vec<DiscoveredModel>, Error> {
     let client = crate::shared_http_client();
+    let endpoint = model_list_endpoint(&base_url);
     let response = client
-        .get(model_list_endpoint(&base_url))
+        .get(&endpoint)
         .timeout(Duration::from_secs(15))
         .header("Accept", "application/json")
         .send()
@@ -164,11 +186,11 @@ pub async fn fetch_models_from_api(base_url: String) -> anyhow::Result<Vec<Disco
     let status = response.status();
     let body = response.text().await?;
     if !status.is_success() {
-        anyhow::bail!("NEAR AI model list API error HTTP {status}");
+        return Err(Error::HttpStatus { endpoint, status });
     }
     let models = parse_models_payload(&body)?;
     if models.is_empty() {
-        anyhow::bail!("NEAR AI model list API returned no chat models");
+        return Err(Error::NoChatModels);
     }
     Ok(models)
 }
@@ -176,14 +198,15 @@ pub async fn fetch_models_from_api(base_url: String) -> anyhow::Result<Vec<Disco
 /// Spawn NEAR AI model discovery in a background thread and return immediately.
 pub fn start_model_discovery(
     base_url: String,
-) -> mpsc::Receiver<anyhow::Result<Vec<DiscoveredModel>>> {
+) -> mpsc::Receiver<Result<Vec<DiscoveredModel>, Error>> {
     let (tx, rx) = mpsc::sync_channel(1);
     std::thread::spawn(move || {
-        let result = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .map_err(anyhow::Error::from)
-            .and_then(|rt| rt.block_on(fetch_models_from_api(base_url)));
+        let result = (|| {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()?;
+            rt.block_on(fetch_models_from_api(base_url))
+        })();
         let _ = tx.send(result);
     });
     rx
