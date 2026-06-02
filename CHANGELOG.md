@@ -19,6 +19,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [20260602.01] - 2026-06-02
+### Added
+- Add NEAR AI Cloud provider (#1031)
+
+
+### Changed
+- [providers] Split OpenAI Codex catalog
+- [providers] Use explicit OpenAI capabilities (#1090)
+
+
+### Fixed
+- [providers] Propagate registry test errors
+
 ## [20260529.02] - 2026-05-29
 ### Fixed
 - [providers] Harden OpenAI-compatible request metadata
