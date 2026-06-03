@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [20260603.01] - 2026-06-03
+
 ## [20260602.05] - 2026-06-02
 ### Fixed
 - [providers] Restore Gemini tool signature replay
