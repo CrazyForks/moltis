@@ -615,12 +615,15 @@ exit 0"><code><span class="line"><span style="color:#C2C3C5;--shiki-dark:#6A737D
 <span class="line"></span>
 <span class="line"><span style="color:#6F42C1;--shiki-dark:#79B8FF">exit</span><span style="color:#1976D2;--shiki-dark:#79B8FF"> 0</span></span></code></pre>
 <h2 id="hook-discovery">Hook Discovery</h2>
-<p>Hooks are discovered from <code>HOOK.md</code> files in these locations (priority order):</p>
+<p>Hooks are discovered from <code>HOOK.md</code> files and <code>moltis.toml</code> config entries:</p>
 <ol>
 <li><strong>Project-local</strong>: <code>&#x3C;workspace>/.moltis/hooks/&#x3C;name>/HOOK.md</code></li>
 <li><strong>User-global</strong>: <code>~/.moltis/hooks/&#x3C;name>/HOOK.md</code></li>
 </ol>
-<p>Project-local hooks take precedence over global hooks with the same name.</p>
+<p>Project-local hooks take precedence over global hooks with the same name. If a hook declared in
+<code>moltis.toml</code> has the same name as a filesystem hook, the filesystem hook takes precedence and the
+config hook is skipped to avoid running the same hook twice. Config hooks appear with source
+<code>config</code> in the hooks UI/status output.</p>
 <h2 id="configuration-in-moltistoml">Configuration in moltis.toml</h2>
 <p>You can also define hooks directly in the config file:</p>
 <pre class="astro-code astro-code-themes min-light github-dark" style="background-color:#ffffff;--shiki-dark-bg:#24292e;color:#24292eff;--shiki-dark:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="toml" data-code="[hooks]

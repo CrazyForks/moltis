@@ -105,7 +105,13 @@ Configure providers through the web UI or directly in configuration files.</p>
 
 
 
-<table><thead><tr><th>Provider</th><th>Config Name</th><th>Env Variable</th><th>Features</th></tr></thead><tbody><tr><td><strong>Anthropic</strong></td><td><code>anthropic</code></td><td><code>ANTHROPIC_API_KEY</code></td><td>Streaming, tools, vision</td></tr><tr><td><strong>OpenAI</strong></td><td><code>openai</code></td><td><code>OPENAI_API_KEY</code></td><td>Streaming, tools, vision, model discovery</td></tr><tr><td><strong>Google Gemini</strong></td><td><code>gemini</code></td><td><code>GEMINI_API_KEY</code></td><td>Streaming, tools, vision, model discovery</td></tr><tr><td><strong>DeepSeek</strong></td><td><code>deepseek</code></td><td><code>DEEPSEEK_API_KEY</code></td><td>Streaming, tools, model discovery</td></tr><tr><td><strong>Mistral</strong></td><td><code>mistral</code></td><td><code>MISTRAL_API_KEY</code></td><td>Streaming, tools, model discovery</td></tr><tr><td><strong>Groq</strong></td><td><code>groq</code></td><td><code>GROQ_API_KEY</code></td><td>Streaming</td></tr><tr><td><strong>xAI (Grok)</strong></td><td><code>xai</code></td><td><code>XAI_API_KEY</code></td><td>Streaming</td></tr><tr><td><strong>OpenRouter</strong></td><td><code>openrouter</code></td><td><code>OPENROUTER_API_KEY</code></td><td>Streaming, tools, model discovery</td></tr><tr><td><strong>Cerebras</strong></td><td><code>cerebras</code></td><td><code>CEREBRAS_API_KEY</code></td><td>Streaming, tools, model discovery</td></tr><tr><td><strong>MiniMax</strong></td><td><code>minimax</code></td><td><code>MINIMAX_API_KEY</code></td><td>Streaming, tools</td></tr><tr><td><strong>Moonshot (Kimi)</strong></td><td><code>moonshot</code></td><td><code>MOONSHOT_API_KEY</code></td><td>Streaming, tools, model discovery</td></tr><tr><td><strong>Venice</strong></td><td><code>venice</code></td><td><code>VENICE_API_KEY</code></td><td>Streaming, tools, model discovery</td></tr><tr><td><strong>Z.AI (Zhipu)</strong></td><td><code>zai</code></td><td><code>Z_API_KEY</code></td><td>Streaming, tools, model discovery</td></tr><tr><td><strong>Z.AI Coding Plan</strong></td><td><code>zai-code</code></td><td><code>Z_CODE_API_KEY</code></td><td>Streaming, tools, model discovery (Coding plan billing endpoint)</td></tr></tbody></table>
+
+
+
+
+
+
+<table><thead><tr><th>Provider</th><th>Config Name</th><th>Env Variable</th><th>Features</th></tr></thead><tbody><tr><td><strong>Anthropic</strong></td><td><code>anthropic</code></td><td><code>ANTHROPIC_API_KEY</code></td><td>Streaming, tools, vision</td></tr><tr><td><strong>OpenAI</strong></td><td><code>openai</code></td><td><code>OPENAI_API_KEY</code></td><td>Streaming, tools, vision, model discovery</td></tr><tr><td><strong>Google Gemini</strong></td><td><code>gemini</code></td><td><code>GEMINI_API_KEY</code></td><td>Streaming, tools, vision, model discovery</td></tr><tr><td><strong>DeepSeek</strong></td><td><code>deepseek</code></td><td><code>DEEPSEEK_API_KEY</code></td><td>Streaming, tools, model discovery</td></tr><tr><td><strong>Mistral</strong></td><td><code>mistral</code></td><td><code>MISTRAL_API_KEY</code></td><td>Streaming, tools, model discovery</td></tr><tr><td><strong>Groq</strong></td><td><code>groq</code></td><td><code>GROQ_API_KEY</code></td><td>Streaming</td></tr><tr><td><strong>xAI (Grok)</strong></td><td><code>xai</code></td><td><code>XAI_API_KEY</code></td><td>Streaming</td></tr><tr><td><strong>OpenRouter</strong></td><td><code>openrouter</code></td><td><code>OPENROUTER_API_KEY</code></td><td>Streaming, tools, model discovery</td></tr><tr><td><strong>Cerebras</strong></td><td><code>cerebras</code></td><td><code>CEREBRAS_API_KEY</code></td><td>Streaming, tools, model discovery</td></tr><tr><td><strong>MiniMax</strong></td><td><code>minimax</code></td><td><code>MINIMAX_API_KEY</code></td><td>Streaming, tools</td></tr><tr><td><strong>Moonshot (Kimi)</strong></td><td><code>moonshot</code></td><td><code>MOONSHOT_API_KEY</code></td><td>Streaming, tools, model discovery</td></tr><tr><td><strong>Venice</strong></td><td><code>venice</code></td><td><code>VENICE_API_KEY</code></td><td>Streaming, tools, model discovery</td></tr><tr><td><strong>NEAR AI Cloud</strong></td><td><code>nearai</code></td><td><code>NEARAI_API_KEY</code></td><td>Streaming, TEE-aware model discovery</td></tr><tr><td><strong>Z.AI (Zhipu)</strong></td><td><code>zai</code></td><td><code>Z_API_KEY</code></td><td>Streaming, tools, model discovery</td></tr><tr><td><strong>Z.AI Coding Plan</strong></td><td><code>zai-code</code></td><td><code>Z_CODE_API_KEY</code></td><td>Streaming, tools, model discovery (Coding plan billing endpoint)</td></tr></tbody></table>
 <h3 id="oauth-providers">OAuth Providers</h3>
 
 
@@ -190,7 +196,7 @@ stream_transport = &#x22;sse&#x22;              # &#x22;sse&#x22;, &#x22;websock
 
 [providers.gemini]
 enabled = true
-models = [&#x22;gemini-2.5-flash-preview-05-20&#x22;, &#x22;gemini-2.0-flash&#x22;]
+models = [&#x22;gemini-2.5-flash&#x22;, &#x22;gemini-2.5-pro&#x22;]
 # api_key = &#x22;...&#x22;                     # Or set GEMINI_API_KEY / GOOGLE_API_KEY env var
 # fetch_models = true                 # Discover models from the API
 # base_url = &#x22;https://generativelanguage.googleapis.com/v1beta/openai&#x22;
@@ -209,7 +215,7 @@ priority_models = [&#x22;gpt-5.2&#x22;]"><code><span class="line"><span style="c
 <span class="line"></span>
 <span class="line"><span style="color:#24292EFF;--shiki-dark:#E1E4E8">[</span><span style="color:#24292EFF;--shiki-dark:#B392F0">providers</span><span style="color:#24292EFF;--shiki-dark:#E1E4E8">.</span><span style="color:#24292EFF;--shiki-dark:#B392F0">gemini</span><span style="color:#24292EFF;--shiki-dark:#E1E4E8">]</span></span>
 <span class="line"><span style="color:#24292EFF;--shiki-dark:#E1E4E8">enabled </span><span style="color:#D32F2F;--shiki-dark:#E1E4E8">=</span><span style="color:#1976D2;--shiki-dark:#79B8FF"> true</span></span>
-<span class="line"><span style="color:#24292EFF;--shiki-dark:#E1E4E8">models </span><span style="color:#D32F2F;--shiki-dark:#E1E4E8">=</span><span style="color:#24292EFF;--shiki-dark:#E1E4E8"> [</span><span style="color:#22863A;--shiki-dark:#9ECBFF">"gemini-2.5-flash-preview-05-20"</span><span style="color:#212121;--shiki-dark:#E1E4E8">,</span><span style="color:#22863A;--shiki-dark:#9ECBFF"> "gemini-2.0-flash"</span><span style="color:#24292EFF;--shiki-dark:#E1E4E8">]</span></span>
+<span class="line"><span style="color:#24292EFF;--shiki-dark:#E1E4E8">models </span><span style="color:#D32F2F;--shiki-dark:#E1E4E8">=</span><span style="color:#24292EFF;--shiki-dark:#E1E4E8"> [</span><span style="color:#22863A;--shiki-dark:#9ECBFF">"gemini-2.5-flash"</span><span style="color:#212121;--shiki-dark:#E1E4E8">,</span><span style="color:#22863A;--shiki-dark:#9ECBFF"> "gemini-2.5-pro"</span><span style="color:#24292EFF;--shiki-dark:#E1E4E8">]</span></span>
 <span class="line"><span style="color:#C2C3C5;--shiki-dark:#6A737D"># api_key = "..."                     # Or set GEMINI_API_KEY / GOOGLE_API_KEY env var</span></span>
 <span class="line"><span style="color:#C2C3C5;--shiki-dark:#6A737D"># fetch_models = true                 # Discover models from the API</span></span>
 <span class="line"><span style="color:#C2C3C5;--shiki-dark:#6A737D"># base_url = "https://generativelanguage.googleapis.com/v1beta/openai"</span></span>
@@ -279,9 +285,9 @@ priority_models = [&#x22;gpt-5.2&#x22;]"><code><span class="line"><span style="c
 </ol>
 <pre class="astro-code astro-code-themes min-light github-dark" style="background-color:#ffffff;--shiki-dark-bg:#24292e;color:#24292eff;--shiki-dark:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="toml" data-code="[providers.gemini]
 enabled = true
-models = [&#x22;gemini-2.5-flash-preview-05-20&#x22;, &#x22;gemini-2.0-flash&#x22;]"><code><span class="line"><span style="color:#24292EFF;--shiki-dark:#E1E4E8">[</span><span style="color:#24292EFF;--shiki-dark:#B392F0">providers</span><span style="color:#24292EFF;--shiki-dark:#E1E4E8">.</span><span style="color:#24292EFF;--shiki-dark:#B392F0">gemini</span><span style="color:#24292EFF;--shiki-dark:#E1E4E8">]</span></span>
+models = [&#x22;gemini-2.5-flash&#x22;, &#x22;gemini-2.5-pro&#x22;]"><code><span class="line"><span style="color:#24292EFF;--shiki-dark:#E1E4E8">[</span><span style="color:#24292EFF;--shiki-dark:#B392F0">providers</span><span style="color:#24292EFF;--shiki-dark:#E1E4E8">.</span><span style="color:#24292EFF;--shiki-dark:#B392F0">gemini</span><span style="color:#24292EFF;--shiki-dark:#E1E4E8">]</span></span>
 <span class="line"><span style="color:#24292EFF;--shiki-dark:#E1E4E8">enabled </span><span style="color:#D32F2F;--shiki-dark:#E1E4E8">=</span><span style="color:#1976D2;--shiki-dark:#79B8FF"> true</span></span>
-<span class="line"><span style="color:#24292EFF;--shiki-dark:#E1E4E8">models </span><span style="color:#D32F2F;--shiki-dark:#E1E4E8">=</span><span style="color:#24292EFF;--shiki-dark:#E1E4E8"> [</span><span style="color:#22863A;--shiki-dark:#9ECBFF">"gemini-2.5-flash-preview-05-20"</span><span style="color:#212121;--shiki-dark:#E1E4E8">,</span><span style="color:#22863A;--shiki-dark:#9ECBFF"> "gemini-2.0-flash"</span><span style="color:#24292EFF;--shiki-dark:#E1E4E8">]</span></span></code></pre>
+<span class="line"><span style="color:#24292EFF;--shiki-dark:#E1E4E8">models </span><span style="color:#D32F2F;--shiki-dark:#E1E4E8">=</span><span style="color:#24292EFF;--shiki-dark:#E1E4E8"> [</span><span style="color:#22863A;--shiki-dark:#9ECBFF">"gemini-2.5-flash"</span><span style="color:#212121;--shiki-dark:#E1E4E8">,</span><span style="color:#22863A;--shiki-dark:#9ECBFF"> "gemini-2.5-pro"</span><span style="color:#24292EFF;--shiki-dark:#E1E4E8">]</span></span></code></pre>
 <p>Gemini supports native tool calling, vision/multimodal inputs, streaming, and automatic model discovery.</p>
 <h3 id="anthropic">Anthropic</h3>
 <ol>
@@ -293,6 +299,26 @@ models = [&#x22;gemini-2.5-flash-preview-05-20&#x22;, &#x22;gemini-2.0-flash&#x2
 <li>Get an API key from <a href="https://platform.openai.com/">platform.openai.com</a>.</li>
 <li>Set <code>OPENAI_API_KEY</code> in your environment.</li>
 </ol>
+<h3 id="near-ai-cloud">NEAR AI Cloud</h3>
+<p>NEAR AI Cloud exposes an OpenAI-compatible chat completions API with a public
+model catalog that includes TEE and attestation metadata.
+The API accepts OpenAI-compatible tool schemas, but the public model catalog does
+not currently expose per-model tool capability metadata. Moltis therefore does
+not mark auto-discovered NEAR AI Cloud models as tool-capable.</p>
+<ol>
+<li>Get an API key from <a href="https://cloud.near.ai/">cloud.near.ai</a>.</li>
+<li>Set <code>NEARAI_API_KEY</code> in your environment.</li>
+<li>Models are discovered from <code>https://cloud-api.near.ai/v1/model/list</code>.</li>
+</ol>
+<pre class="astro-code astro-code-themes min-light github-dark" style="background-color:#ffffff;--shiki-dark-bg:#24292e;color:#24292eff;--shiki-dark:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="toml" data-code="[providers.nearai]
+enabled = true
+models = [&#x22;zai-org/GLM-5.1-FP8&#x22;]
+# api_key = &#x22;...&#x22;                    # Or set NEARAI_API_KEY
+# base_url = &#x22;https://cloud-api.near.ai/v1&#x22;"><code><span class="line"><span style="color:#24292EFF;--shiki-dark:#E1E4E8">[</span><span style="color:#24292EFF;--shiki-dark:#B392F0">providers</span><span style="color:#24292EFF;--shiki-dark:#E1E4E8">.</span><span style="color:#24292EFF;--shiki-dark:#B392F0">nearai</span><span style="color:#24292EFF;--shiki-dark:#E1E4E8">]</span></span>
+<span class="line"><span style="color:#24292EFF;--shiki-dark:#E1E4E8">enabled </span><span style="color:#D32F2F;--shiki-dark:#E1E4E8">=</span><span style="color:#1976D2;--shiki-dark:#79B8FF"> true</span></span>
+<span class="line"><span style="color:#24292EFF;--shiki-dark:#E1E4E8">models </span><span style="color:#D32F2F;--shiki-dark:#E1E4E8">=</span><span style="color:#24292EFF;--shiki-dark:#E1E4E8"> [</span><span style="color:#22863A;--shiki-dark:#9ECBFF">"zai-org/GLM-5.1-FP8"</span><span style="color:#24292EFF;--shiki-dark:#E1E4E8">]</span></span>
+<span class="line"><span style="color:#C2C3C5;--shiki-dark:#6A737D"># api_key = "..."                    # Or set NEARAI_API_KEY</span></span>
+<span class="line"><span style="color:#C2C3C5;--shiki-dark:#6A737D"># base_url = "https://cloud-api.near.ai/v1"</span></span></code></pre>
 <h3 id="openai-codex">OpenAI Codex</h3>
 <p>OpenAI Codex uses OAuth-based access.</p>
 <ol>

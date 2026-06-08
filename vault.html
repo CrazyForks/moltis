@@ -352,6 +352,11 @@ easy selection</li>
 also returns a <code>recovery_key</code>. The page keeps the user on Settings long
 enough to copy it, then shows a <strong>Continue to sign in</strong> action when the
 new password makes authentication mandatory.</p>
+<p>If password authentication already exists but the vault is still
+uninitialized, <strong>Settings > Encryption</strong> shows an <strong>Initialize vault</strong> form
+instead of sending the user back to Authentication. Submitting the current
+password initializes the vault, migrates plaintext secrets into encrypted
+storage, and returns the one-time recovery key.</p>
 <p>Passkey-only setup does not trigger vault initialization (no password to
 derive a KEK from), so the recovery key screen is never shown in that flow.</p>
 <h3 id="vault-status-in-settings--encryption">Vault status in Settings > Encryption</h3>
@@ -384,7 +389,7 @@ on restart and unlocks on login.</p>
 
 
 
-<table><thead><tr><th>Vault state</th><th>Badge</th><th>What it means</th></tr></thead><tbody><tr><td><strong>Unsealed</strong></td><td>Green (“Unlocked”)</td><td>Your API keys and secrets are encrypted in the database. Everything is working.</td></tr><tr><td><strong>Sealed</strong></td><td>Amber (“Locked”)</td><td>Log in or unlock below to access your encrypted keys.</td></tr><tr><td><strong>Uninitialized</strong></td><td>Gray (“Off”)</td><td>Set a password in Authentication settings to start encrypting your stored keys.</td></tr></tbody></table>
+<table><thead><tr><th>Vault state</th><th>Badge</th><th>What it means</th></tr></thead><tbody><tr><td><strong>Unsealed</strong></td><td>Green (“Unlocked”)</td><td>Your API keys and secrets are encrypted in the database. Everything is working.</td></tr><tr><td><strong>Sealed</strong></td><td>Amber (“Locked”)</td><td>Log in or unlock below to access your encrypted keys.</td></tr><tr><td><strong>Uninitialized</strong></td><td>Gray (“Off”)</td><td>Set a password, or initialize the vault if password authentication already exists.</td></tr></tbody></table>
 <p>When the vault is <strong>sealed</strong>, both unlock forms are shown in the same
 panel (password and recovery key, separated by an “or” divider). Submitting
 calls <code>POST /api/auth/vault/unlock</code> or <code>POST /api/auth/vault/recovery</code>,

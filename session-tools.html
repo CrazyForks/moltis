@@ -81,7 +81,79 @@ sessions.can_send = false"><code><span class="line"><span style="color:#24292EFF
 </ul>
 <p>When no policy is configured, all sessions are visible and sendable.</p>
 <h2 id="coordination-patterns">Coordination Patterns</h2>
-<p>Use <code>spawn_agent</code> when work is short-lived and synchronous.</p>
+<p>Use <code>spawn_agent</code> when work is short-lived and synchronous. For longer delegated
+work, call <code>spawn_agent</code> with <code>nonblocking: true</code>; it returns a <code>task_id</code> while
+the sub-agent continues in the background. Use <code>spawn_status</code> to check progress,
+<code>spawn_result</code> to fetch the final output, <code>spawn_list</code> to recover task IDs after
+context loss, and <code>cancel_spawn</code> to stop work that is no longer needed.</p>
+<p>Use <code>active_tools</code> and <code>tool_choice</code> to prevent model drift on small/cheap
+LLMs. These controls apply <strong>per agent run</strong> (not per iteration within a run)
+and are available on agent presets, <code>spawn_agent</code>, and <code>cron</code> <code>agentTurn</code>
+payloads.</p>
+<ul>
+<li><code>active_tools</code> filters the tool schemas visible to the agent.</li>
+<li><code>tool_choice</code> controls provider-level tool selection:
+<ul>
+<li><code>auto</code> — model decides (default).</li>
+<li><code>any</code> — model must call some tool but chooses which one.</li>
+<li><code>none</code> — no tools sent; forces text-only output.</li>
+<li><code>tool</code> + <code>name</code> — model must call the named tool.</li>
+</ul>
+</li>
+</ul>
+<p>Supported on Anthropic, OpenAI (Responses and Chat Completions), and
+OpenAI-compatible providers.</p>
+<p><strong>Classify-then-generate pattern</strong> — use two <code>spawn_agent</code> calls, each with
+its own tool controls:</p>
+<pre class="astro-code astro-code-themes min-light github-dark" style="background-color:#ffffff;--shiki-dark-bg:#24292e;color:#24292eff;--shiki-dark:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="json" data-code="// Turn 1: forced classifier
+{
+  &#x22;task&#x22;: &#x22;Classify whether the reply should be inline, file, or PR.&#x22;,
+  &#x22;active_tools&#x22;: [&#x22;classify_destination&#x22;],
+  &#x22;tool_choice&#x22;: { &#x22;type&#x22;: &#x22;tool&#x22;, &#x22;name&#x22;: &#x22;classify_destination&#x22; },
+  &#x22;nonblocking&#x22;: true
+}
+// Turn 2: scoped generation (parent reads classifier result, spawns again)
+{
+  &#x22;task&#x22;: &#x22;Generate the report and send it as a document.&#x22;,
+  &#x22;active_tools&#x22;: [&#x22;write_file&#x22;, &#x22;send_document&#x22;],
+  &#x22;tool_choice&#x22;: { &#x22;type&#x22;: &#x22;auto&#x22; }
+}"><code><span class="line"><span style="color:#C2C3C5;--shiki-dark:#6A737D">// Turn 1: forced classifier</span></span>
+<span class="line"><span style="color:#24292EFF;--shiki-dark:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#D32F2F;--shiki-dark:#79B8FF">  "task"</span><span style="color:#212121;--shiki-dark:#E1E4E8">:</span><span style="color:#22863A;--shiki-dark:#9ECBFF"> "Classify whether the reply should be inline, file, or PR."</span><span style="color:#212121;--shiki-dark:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#D32F2F;--shiki-dark:#79B8FF">  "active_tools"</span><span style="color:#212121;--shiki-dark:#E1E4E8">:</span><span style="color:#24292EFF;--shiki-dark:#E1E4E8"> [</span><span style="color:#22863A;--shiki-dark:#9ECBFF">"classify_destination"</span><span style="color:#24292EFF;--shiki-dark:#E1E4E8">]</span><span style="color:#212121;--shiki-dark:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#D32F2F;--shiki-dark:#79B8FF">  "tool_choice"</span><span style="color:#212121;--shiki-dark:#E1E4E8">:</span><span style="color:#24292EFF;--shiki-dark:#E1E4E8"> { </span><span style="color:#D32F2F;--shiki-dark:#79B8FF">"type"</span><span style="color:#212121;--shiki-dark:#E1E4E8">:</span><span style="color:#22863A;--shiki-dark:#9ECBFF"> "tool"</span><span style="color:#212121;--shiki-dark:#E1E4E8">,</span><span style="color:#D32F2F;--shiki-dark:#79B8FF"> "name"</span><span style="color:#212121;--shiki-dark:#E1E4E8">:</span><span style="color:#22863A;--shiki-dark:#9ECBFF"> "classify_destination"</span><span style="color:#24292EFF;--shiki-dark:#E1E4E8"> }</span><span style="color:#212121;--shiki-dark:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#D32F2F;--shiki-dark:#79B8FF">  "nonblocking"</span><span style="color:#212121;--shiki-dark:#E1E4E8">:</span><span style="color:#1976D2;--shiki-dark:#79B8FF"> true</span></span>
+<span class="line"><span style="color:#24292EFF;--shiki-dark:#E1E4E8">}</span></span>
+<span class="line"><span style="color:#C2C3C5;--shiki-dark:#6A737D">// Turn 2: scoped generation (parent reads classifier result, spawns again)</span></span>
+<span class="line"><span style="color:#24292EFF;--shiki-dark:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#D32F2F;--shiki-dark:#79B8FF">  "task"</span><span style="color:#212121;--shiki-dark:#E1E4E8">:</span><span style="color:#22863A;--shiki-dark:#9ECBFF"> "Generate the report and send it as a document."</span><span style="color:#212121;--shiki-dark:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#D32F2F;--shiki-dark:#79B8FF">  "active_tools"</span><span style="color:#212121;--shiki-dark:#E1E4E8">:</span><span style="color:#24292EFF;--shiki-dark:#E1E4E8"> [</span><span style="color:#22863A;--shiki-dark:#9ECBFF">"write_file"</span><span style="color:#212121;--shiki-dark:#E1E4E8">,</span><span style="color:#22863A;--shiki-dark:#9ECBFF"> "send_document"</span><span style="color:#24292EFF;--shiki-dark:#E1E4E8">]</span><span style="color:#212121;--shiki-dark:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#D32F2F;--shiki-dark:#79B8FF">  "tool_choice"</span><span style="color:#212121;--shiki-dark:#E1E4E8">:</span><span style="color:#24292EFF;--shiki-dark:#E1E4E8"> { </span><span style="color:#D32F2F;--shiki-dark:#79B8FF">"type"</span><span style="color:#212121;--shiki-dark:#E1E4E8">:</span><span style="color:#22863A;--shiki-dark:#9ECBFF"> "auto"</span><span style="color:#24292EFF;--shiki-dark:#E1E4E8"> }</span></span>
+<span class="line"><span style="color:#24292EFF;--shiki-dark:#E1E4E8">}</span></span></code></pre>
+<p>Example preset defaults:</p>
+<pre class="astro-code astro-code-themes min-light github-dark" style="background-color:#ffffff;--shiki-dark-bg:#24292e;color:#24292eff;--shiki-dark:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="toml" data-code="[agents.presets.destination-router.tool_controls]
+active_tools = [&#x22;classify_destination&#x22;]
+
+[agents.presets.destination-router.tool_controls.tool_choice]
+type = &#x22;tool&#x22;
+name = &#x22;classify_destination&#x22;"><code><span class="line"><span style="color:#24292EFF;--shiki-dark:#E1E4E8">[</span><span style="color:#24292EFF;--shiki-dark:#B392F0">agents</span><span style="color:#24292EFF;--shiki-dark:#E1E4E8">.</span><span style="color:#24292EFF;--shiki-dark:#B392F0">presets</span><span style="color:#24292EFF;--shiki-dark:#E1E4E8">.</span><span style="color:#24292EFF;--shiki-dark:#B392F0">destination-router</span><span style="color:#24292EFF;--shiki-dark:#E1E4E8">.</span><span style="color:#24292EFF;--shiki-dark:#B392F0">tool_controls</span><span style="color:#24292EFF;--shiki-dark:#E1E4E8">]</span></span>
+<span class="line"><span style="color:#24292EFF;--shiki-dark:#E1E4E8">active_tools </span><span style="color:#D32F2F;--shiki-dark:#E1E4E8">=</span><span style="color:#24292EFF;--shiki-dark:#E1E4E8"> [</span><span style="color:#22863A;--shiki-dark:#9ECBFF">"classify_destination"</span><span style="color:#24292EFF;--shiki-dark:#E1E4E8">]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#24292EFF;--shiki-dark:#E1E4E8">[</span><span style="color:#24292EFF;--shiki-dark:#B392F0">agents</span><span style="color:#24292EFF;--shiki-dark:#E1E4E8">.</span><span style="color:#24292EFF;--shiki-dark:#B392F0">presets</span><span style="color:#24292EFF;--shiki-dark:#E1E4E8">.</span><span style="color:#24292EFF;--shiki-dark:#B392F0">destination-router</span><span style="color:#24292EFF;--shiki-dark:#E1E4E8">.</span><span style="color:#24292EFF;--shiki-dark:#B392F0">tool_controls</span><span style="color:#24292EFF;--shiki-dark:#E1E4E8">.</span><span style="color:#24292EFF;--shiki-dark:#B392F0">tool_choice</span><span style="color:#24292EFF;--shiki-dark:#E1E4E8">]</span></span>
+<span class="line"><span style="color:#24292EFF;--shiki-dark:#E1E4E8">type </span><span style="color:#D32F2F;--shiki-dark:#E1E4E8">=</span><span style="color:#22863A;--shiki-dark:#9ECBFF"> "tool"</span></span>
+<span class="line"><span style="color:#24292EFF;--shiki-dark:#E1E4E8">name </span><span style="color:#D32F2F;--shiki-dark:#E1E4E8">=</span><span style="color:#22863A;--shiki-dark:#9ECBFF"> "classify_destination"</span></span></code></pre>
+<p>Example scheduled agent turn:</p>
+<pre class="astro-code astro-code-themes min-light github-dark" style="background-color:#ffffff;--shiki-dark-bg:#24292e;color:#24292eff;--shiki-dark:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="json" data-code="{
+  &#x22;kind&#x22;: &#x22;agentTurn&#x22;,
+  &#x22;message&#x22;: &#x22;Generate the report and send it as a document.&#x22;,
+  &#x22;active_tools&#x22;: [&#x22;write_file&#x22;, &#x22;send_document&#x22;],
+  &#x22;tool_choice&#x22;: { &#x22;type&#x22;: &#x22;any&#x22; }
+}"><code><span class="line"><span style="color:#24292EFF;--shiki-dark:#E1E4E8">{</span></span>
+<span class="line"><span style="color:#D32F2F;--shiki-dark:#79B8FF">  "kind"</span><span style="color:#212121;--shiki-dark:#E1E4E8">:</span><span style="color:#22863A;--shiki-dark:#9ECBFF"> "agentTurn"</span><span style="color:#212121;--shiki-dark:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#D32F2F;--shiki-dark:#79B8FF">  "message"</span><span style="color:#212121;--shiki-dark:#E1E4E8">:</span><span style="color:#22863A;--shiki-dark:#9ECBFF"> "Generate the report and send it as a document."</span><span style="color:#212121;--shiki-dark:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#D32F2F;--shiki-dark:#79B8FF">  "active_tools"</span><span style="color:#212121;--shiki-dark:#E1E4E8">:</span><span style="color:#24292EFF;--shiki-dark:#E1E4E8"> [</span><span style="color:#22863A;--shiki-dark:#9ECBFF">"write_file"</span><span style="color:#212121;--shiki-dark:#E1E4E8">,</span><span style="color:#22863A;--shiki-dark:#9ECBFF"> "send_document"</span><span style="color:#24292EFF;--shiki-dark:#E1E4E8">]</span><span style="color:#212121;--shiki-dark:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#D32F2F;--shiki-dark:#79B8FF">  "tool_choice"</span><span style="color:#212121;--shiki-dark:#E1E4E8">:</span><span style="color:#24292EFF;--shiki-dark:#E1E4E8"> { </span><span style="color:#D32F2F;--shiki-dark:#79B8FF">"type"</span><span style="color:#212121;--shiki-dark:#E1E4E8">:</span><span style="color:#22863A;--shiki-dark:#9ECBFF"> "any"</span><span style="color:#24292EFF;--shiki-dark:#E1E4E8"> }</span></span>
+<span class="line"><span style="color:#24292EFF;--shiki-dark:#E1E4E8">}</span></span></code></pre>
 <p>Use session tools when you need:</p>
 <ul>
 <li>long-lived specialist sessions</li>
