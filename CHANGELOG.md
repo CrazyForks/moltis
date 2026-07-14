@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [20260714.08] - 2026-07-14
+### Fixed
+- [ci] Run required jobs on hosted runners
+
 ## [20260714.07] - 2026-07-14
 ### Fixed
 - [copilot] Satisfy provider lint gates
