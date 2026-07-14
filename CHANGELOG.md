@@ -19,6 +19,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [20260714.02] - 2026-07-14
+### Added
+- Add GPT-5.6 model support (#1146)
+
+
+### Fixed
+- [mcp] Use direct fetch for resource_metadata URL from WWW-Authenticate (#1120)
+- [caldav] Avoid panic on non-ASCII datetime in normalise_datetime (#1145)
+- [gateway] Don't force-enable matrix-sdk via the metrics feature (#1139)
+- [agents] Coerce stringified scalar tool args before validation (#1136)
+- [browser] Tolerate null optional params in browser tool calls (#1098)
+- [validation] Restore local release checks
+
 ## [20260714.01] - 2026-07-14
 ### Added
 - [whatsapp] Bump whatsapp-rust 0.5 -> 0.6 with LID-native addressing (#1144)
