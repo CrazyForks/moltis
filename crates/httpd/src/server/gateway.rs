@@ -1,7 +1,7 @@
 //! Full gateway preparation: config loading, migration, service wiring,
 //! background task spawning, and the composed axum application.
 
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use std::{path::PathBuf, sync::Arc};
 
 #[cfg(any(feature = "msteams", feature = "telephony"))]
 use moltis_channels::ChannelPlugin;
@@ -241,7 +241,7 @@ pub async fn prepare_gateway(
             "/api/channels/msteams/{account_id}/webhook",
             axum::routing::post(
                 move |axum::extract::Path(account_id): axum::extract::Path<String>,
-                      axum::extract::Query(query): axum::extract::Query<HashMap<String, String>>,
+                      axum::extract::Query(query): axum::extract::Query<std::collections::HashMap<String, String>>,
                       headers: axum::http::HeaderMap,
                       body: axum::body::Bytes| {
                     let teams_plugin = Arc::clone(&teams_plugin_for_webhook);
@@ -825,7 +825,7 @@ pub async fn prepare_gateway(
                                 return (StatusCode::BAD_REQUEST, "invalid webhook body").into_response();
                             },
                         };
-                        let params: HashMap<String, String> =
+                        let params: std::collections::HashMap<String, String> =
                             url::form_urlencoded::parse(body_str.as_bytes())
                                 .map(|(k, v)| (k.to_string(), v.to_string()))
                                 .collect();
