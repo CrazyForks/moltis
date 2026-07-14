@@ -137,7 +137,9 @@ jobs:
 
   clippy:
     needs: [fmt, biome]
-    runs-on: [self-hosted, Linux, X64]
+    # Temporarily use GitHub-hosted runners while self-hosted runners are offline.
+    # Restore to [self-hosted, Linux, X64] when they are connected again.
+    runs-on: ubuntu-latest
     container:
       image: nvidia/cuda:12.4.1-devel-ubuntu22.04
     env:
@@ -200,7 +202,9 @@ jobs:
 
   test:
     needs: [fmt, biome]
-    runs-on: [self-hosted, Linux, X64]
+    # Temporarily use GitHub-hosted runners while self-hosted runners are offline.
+    # Restore to [self-hosted, Linux, X64] when they are connected again.
+    runs-on: ubuntu-latest
     container:
       image: nvidia/cuda:12.4.1-devel-ubuntu22.04
     env:

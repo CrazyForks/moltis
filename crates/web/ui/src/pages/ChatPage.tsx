@@ -433,7 +433,7 @@ function wireFullContextCopyButton(
 	copyBtn: HTMLElement,
 	messages: ContextMessage[],
 	llmOutputs: any[],
-	llmOutputPanel: HTMLElement,
+	isLlmOutputVisible: () => boolean,
 ): void {
 	copyBtn.addEventListener("click", () => {
 		const lines = messages.map((m) => {
@@ -445,8 +445,8 @@ function wireFullContextCopyButton(
 		});
 		const contextText = lines.join("\n");
 		let copyText = contextText;
-		const llmOutputVisible = llmOutputPanel && !llmOutputPanel.classList.contains("hidden");
-		if (llmOutputVisible) copyText = `LLM output:\n${JSON.stringify(llmOutputs, null, 2)}\n\nContext:\n${contextText}`;
+		if (isLlmOutputVisible())
+			copyText = `LLM output:\n${JSON.stringify(llmOutputs, null, 2)}\n\nContext:\n${contextText}`;
 		copyToClipboard(copyText, "", "").then((ok) => {
 			if (!ok) return;
 			copyBtn.textContent = "Copied!";
@@ -489,12 +489,14 @@ function buildFullContextLlmOutputPanel(llmOutputs: any[]): HTMLElement {
 	return panel;
 }
 
-function wireFullContextLlmOutputToggle(button: HTMLElement, panel: HTMLElement): void {
+function wireFullContextLlmOutputToggle(button: HTMLElement, panel: HTMLElement): () => boolean {
+	let visible = false;
 	button.addEventListener("click", () => {
-		const hidden = panel.classList.contains("hidden");
-		panel.classList.toggle("hidden", !hidden);
-		button.textContent = hidden ? "Hide LLM output" : "LLM output";
+		visible = !visible;
+		panel.classList.toggle("hidden", !visible);
+		button.textContent = visible ? "Hide LLM output" : "LLM output";
 	});
+	return () => visible;
 }
 
 function refreshFullContextMemory(refreshBtn: HTMLButtonElement): void {
@@ -526,9 +528,9 @@ function refreshFullContextPanel(): void {
 		const llmOutputs = res.payload.llmOutputs || [];
 		const llmOutputPanel = buildFullContextLlmOutputPanel(llmOutputs);
 		const header = buildFullContextHeaderRow(res.payload, refreshFullContextMemory);
-		wireFullContextCopyButton(header.copyBtn, messages, llmOutputs, llmOutputPanel);
+		const isLlmOutputVisible = wireFullContextLlmOutputToggle(header.llmOutputBtn, llmOutputPanel);
+		wireFullContextCopyButton(header.copyBtn, messages, llmOutputs, isLlmOutputVisible);
 		wireFullContextDownloadButton(header.downloadBtn, messages);
-		wireFullContextLlmOutputToggle(header.llmOutputBtn, llmOutputPanel);
 		panel.appendChild(header.headerRow);
 		panel.appendChild(llmOutputPanel);
 		for (let i = 0; i < messages.length; i++) panel.appendChild(renderContextMessage(messages[i], i));

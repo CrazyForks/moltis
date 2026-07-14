@@ -137,7 +137,9 @@ jobs:
     name: Rust CI (clippy + test)
     if: ${{ github.event_name != 'pull_request' }}
     needs: [fmt, biome]
-    runs-on: [self-hosted, Linux, X64]
+    # Temporarily use GitHub-hosted runners while self-hosted runners are offline.
+    # Restore to [self-hosted, Linux, X64] when they are connected again.
+    runs-on: ubuntu-latest
     permissions:
       contents: read
     container:
@@ -496,7 +498,9 @@ jobs:
     if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     continue-on-error: true
     needs: [fmt, biome]
-    runs-on: [self-hosted, Linux, X64]
+    # Temporarily use GitHub-hosted runners while self-hosted runners are offline.
+    # Restore to [self-hosted, Linux, X64] when they are connected again.
+    runs-on: ubuntu-latest
     permissions:
       contents: read
     container:
