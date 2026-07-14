@@ -317,6 +317,10 @@ jobs:
         timeout-minutes: 20
         run: cargo build --bin moltis
 
+      - name: Reclaim Rust build disk for E2E
+        if: ${{ env.RELEASE_DRY_RUN != 'true' }}
+        run: bash ./scripts/cleanup-e2e-build-artifacts.sh
+
       - name: Install Playwright browsers
         if: ${{ env.RELEASE_DRY_RUN != 'true' }}
         timeout-minutes: 2
@@ -328,6 +332,7 @@ jobs:
         working-directory: crates/web/ui
         env:
           CI: "true"
+          MOLTIS_BINARY: ${{ github.workspace }}/target/e2e-bin/moltis
         run: npx playwright test
 
       - name: Upload test results

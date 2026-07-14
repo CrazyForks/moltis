@@ -354,6 +354,9 @@ jobs:
         timeout-minutes: 20
         run: cargo build --bin moltis
 
+      - name: Reclaim Rust build disk for E2E
+        run: bash ./scripts/cleanup-e2e-build-artifacts.sh
+
       - name: Cache Playwright browsers
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
@@ -369,6 +372,7 @@ jobs:
         working-directory: crates/web/ui
         env:
           CI: "true"
+          MOLTIS_BINARY: ${{ github.workspace }}/target/e2e-bin/moltis
         run: ./e2e/run-ci.sh
 
       - name: Upload test results
