@@ -171,6 +171,7 @@ full = [
   "nostr",
   "openclaw-import",
   "prometheus",
+  "provider-github-copilot",
   "provider-openai-codex",
   "push-notifications",
   "qmd",

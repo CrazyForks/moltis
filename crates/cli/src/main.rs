@@ -618,6 +618,16 @@ async fn handle_skills(action: SkillAction) -> anyhow::Result<()> {
 mod tests {
     use crate::default_telemetry_filter;
 
+    fn manifest_includes_feature(manifest: &str, feature: &str, dependency: &str) -> bool {
+        let Some(start) = manifest.find(&format!("{feature} = [")) else {
+            return false;
+        };
+        let Some(end) = manifest[start..].find("]\n") else {
+            return false;
+        };
+        manifest[start..start + end].contains(&format!("\"{dependency}\""))
+    }
+
     #[test]
     fn default_telemetry_filter_quiets_noisy_targets() {
         let filter = default_telemetry_filter("info").to_string();
@@ -626,5 +636,28 @@ mod tests {
         assert!(filter.contains("matrix_sdk=warn"));
         assert!(filter.contains("matrix_sdk_base=warn"));
         assert!(filter.contains("matrix_sdk_crypto=error"));
+    }
+
+    #[test]
+    fn full_build_includes_github_copilot_provider() {
+        let cli_manifest =
+            std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml"))
+                .unwrap_or_default();
+        assert!(manifest_includes_feature(
+            &cli_manifest,
+            "full",
+            "provider-github-copilot"
+        ));
+
+        let gateway_manifest = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../gateway/Cargo.toml"
+        ))
+        .unwrap_or_default();
+        assert!(manifest_includes_feature(
+            &gateway_manifest,
+            "default",
+            "provider-github-copilot"
+        ));
     }
 }
