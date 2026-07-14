@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [20260714.03] - 2026-07-14
+### Fixed
+- [ci] Restore macos and fireworks release jobs
+
 ## [20260714.02] - 2026-07-14
 ### Added
 - Add GPT-5.6 model support (#1146)
