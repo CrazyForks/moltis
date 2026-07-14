@@ -117,7 +117,11 @@ configure_macos_openssl
 # created before OpenSSL flags were present. Force reconfiguration here.
 if [ -n "${OPENSSL_CFLAGS}" ]; then
   shopt -s nullglob
-  for dir in "${REPO_ROOT}"/target/*/build/llama-cpp-sys-2-* "${REPO_ROOT}"/target/*/build/llama-cpp-2-*; do
+  for dir in \
+    "${REPO_ROOT}"/target/*/build/llama-cpp-sys-2-* \
+    "${REPO_ROOT}"/target/*/build/llama-cpp-2-* \
+    "${REPO_ROOT}"/target/*/*/build/llama-cpp-sys-2-* \
+    "${REPO_ROOT}"/target/*/*/build/llama-cpp-2-*; do
     rm -rf "${dir}"
   done
   shopt -u nullglob
