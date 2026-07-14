@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [20260714.06] - 2026-07-14
+### Fixed
+- [providers] Enable provider features by default
+
 ## [20260714.05] - 2026-07-14
 ### Fixed
 - [copilot] Keep OAuth provider enabled for registry rebuild
