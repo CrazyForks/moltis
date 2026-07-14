@@ -31,6 +31,17 @@ async function getModulePrefix(page) {
 	});
 }
 
+async function setAutoScrollMode(page, mode) {
+	await page.evaluate(async (nextMode) => {
+		var appScript = document.querySelector('script[type="module"][src*="js/app.js"]');
+		if (!appScript) throw new Error("app module script not found");
+		var appUrl = new URL(appScript.src, window.location.origin);
+		var prefix = appUrl.href.slice(0, appUrl.href.length - "js/app.js".length);
+		var state = await import(`${prefix}js/state.js`);
+		state.setAutoScrollMode(nextMode);
+	}, mode);
+}
+
 async function injectScrollableMessages(page, count) {
 	await expect
 		.poll(
@@ -133,6 +144,7 @@ test.describe("Smart auto-scroll", () => {
 		// overwrite injected DOM elements during the test.
 		await createSession(page);
 		await waitForSessionReady(page);
+		await setAutoScrollMode(page, "smart");
 		// Extra settle time for CI — the session switch may trigger
 		// deferred renders that overwrite injected DOM.
 		await page.waitForTimeout(500);
@@ -520,13 +532,7 @@ test.describe("Smart auto-scroll", () => {
 		const pageErrors = watchPageErrors(page);
 
 		// Set the mode to "always"
-		await page.evaluate(async () => {
-			var appScript = document.querySelector('script[type="module"][src*="js/app.js"]');
-			var appUrl = new URL(appScript.src, window.location.origin);
-			var prefix = appUrl.href.slice(0, appUrl.href.length - "js/app.js".length);
-			var state = await import(`${prefix}js/state.js`);
-			state.setAutoScrollMode("always");
-		});
+		await setAutoScrollMode(page, "always");
 
 		await injectScrollableMessages(page, 40);
 
@@ -557,13 +563,7 @@ test.describe("Smart auto-scroll", () => {
 		await expect(indicator).toHaveCount(0);
 
 		// Reset to default so other tests aren't affected
-		await page.evaluate(async () => {
-			var appScript = document.querySelector('script[type="module"][src*="js/app.js"]');
-			var appUrl = new URL(appScript.src, window.location.origin);
-			var prefix = appUrl.href.slice(0, appUrl.href.length - "js/app.js".length);
-			var state = await import(`${prefix}js/state.js`);
-			state.setAutoScrollMode("smart");
-		});
+		await setAutoScrollMode(page, "smart");
 
 		expect(pageErrors).toEqual([]);
 	});
