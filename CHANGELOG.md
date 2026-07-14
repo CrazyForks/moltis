@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [20260714.09] - 2026-07-14
+### Fixed
+- [ci] Reclaim disk before e2e tests
+
 ## [20260714.08] - 2026-07-14
 ### Fixed
 - [ci] Run required jobs on hosted runners
