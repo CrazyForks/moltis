@@ -109,8 +109,10 @@ mod tests {
         let endpoint = endpoint_from_metadata(
             Some("https://api.enterprise.githubcopilot.com/"),
             Some("proxy.enterprise.githubcopilot.com"),
-        )
-        .expect("endpoint should parse");
+        );
+        let Some(endpoint) = endpoint else {
+            panic!("endpoint should parse");
+        };
 
         assert_eq!(
             endpoint.base_url,
@@ -122,8 +124,10 @@ mod tests {
 
     #[test]
     fn individual_api_base_is_not_enterprise() {
-        let endpoint = endpoint_from_metadata(Some("https://api.githubcopilot.com"), None)
-            .expect("endpoint should parse");
+        let endpoint = endpoint_from_metadata(Some("https://api.githubcopilot.com"), None);
+        let Some(endpoint) = endpoint else {
+            panic!("endpoint should parse");
+        };
 
         assert_eq!(endpoint.base_url, "https://api.githubcopilot.com");
         assert!(!endpoint.is_enterprise);
@@ -134,8 +138,10 @@ mod tests {
         let endpoint = endpoint_from_metadata(
             Some("https://example.com"),
             Some("proxy.enterprise.githubcopilot.com"),
-        )
-        .expect("proxy endpoint should parse");
+        );
+        let Some(endpoint) = endpoint else {
+            panic!("proxy endpoint should parse");
+        };
 
         assert_eq!(
             endpoint.base_url,
@@ -152,11 +158,15 @@ mod tests {
     #[test]
     fn cached_metadata_supports_api_base_and_legacy_proxy_ep() {
         let api_endpoint =
-            endpoint_from_cached_metadata(Some("https://api.enterprise.githubcopilot.com"))
-                .expect("api endpoint should parse");
+            endpoint_from_cached_metadata(Some("https://api.enterprise.githubcopilot.com"));
+        let Some(api_endpoint) = api_endpoint else {
+            panic!("api endpoint should parse");
+        };
         let proxy_endpoint =
-            endpoint_from_cached_metadata(Some("proxy.enterprise.githubcopilot.com"))
-                .expect("proxy endpoint should parse");
+            endpoint_from_cached_metadata(Some("proxy.enterprise.githubcopilot.com"));
+        let Some(proxy_endpoint) = proxy_endpoint else {
+            panic!("proxy endpoint should parse");
+        };
 
         assert_eq!(
             api_endpoint.base_url,

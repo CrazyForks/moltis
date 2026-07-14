@@ -184,7 +184,7 @@ mod tests {
             "proxy-ep": "proxy.enterprise.githubcopilot.com",
             "sku": "copilot_enterprise_seat_multi_quota"
         }))
-        .expect("token response should deserialize");
+        .unwrap_or_else(|err| panic!("token response should deserialize: {err}"));
 
         assert_eq!(
             response.proxy_ep.as_deref(),

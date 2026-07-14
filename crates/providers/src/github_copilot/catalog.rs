@@ -102,18 +102,20 @@ mod tests {
     #[test]
     fn catalog_marks_responses_api_models_as_capability() {
         let catalog = default_model_catalog();
-        let by_id = |id: &str| catalog.iter().find(|model| model.id == id).unwrap();
-        assert!(
-            by_id("gpt-5.6-luna")
-                .capabilities
-                .unwrap()
-                .requires_responses_api
-        );
-        assert!(
-            !by_id("gpt-5-mini")
-                .capabilities
-                .unwrap()
-                .requires_responses_api
-        );
+        let Some(luna) = catalog.iter().find(|model| model.id == "gpt-5.6-luna") else {
+            panic!("missing gpt-5.6-luna model");
+        };
+        let Some(luna_capabilities) = luna.capabilities else {
+            panic!("missing gpt-5.6-luna capabilities");
+        };
+        assert!(luna_capabilities.requires_responses_api);
+
+        let Some(mini) = catalog.iter().find(|model| model.id == "gpt-5-mini") else {
+            panic!("missing gpt-5-mini model");
+        };
+        let Some(mini_capabilities) = mini.capabilities else {
+            panic!("missing gpt-5-mini capabilities");
+        };
+        assert!(!mini_capabilities.requires_responses_api);
     }
 }
