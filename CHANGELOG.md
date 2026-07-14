@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [20260714.11] - 2026-07-14
+### Fixed
+- [ci] Align workflow rust nightly pin
+
 ## [20260714.10] - 2026-07-14
 ### Fixed
 - [e2e] Reset autoscroll mode per test
