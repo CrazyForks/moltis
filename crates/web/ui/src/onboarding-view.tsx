@@ -424,7 +424,7 @@ function SummaryStep({ onBack, onFinish }: { onBack: () => void; onFinish: () =>
 				</SummaryRow>
 
 				{/* Tailscale (hidden if feature not compiled) */}
-				{data.tailscale !== null ? (
+				{data.tailscale === null ? null : (
 					<SummaryRow
 						icon={
 							data.tailscale?.tailscale_up ? <CheckIcon /> : data.tailscale?.installed ? <WarnIcon /> : <InfoIcon />
@@ -444,7 +444,7 @@ function SummaryStep({ onBack, onFinish }: { onBack: () => void; onFinish: () =>
 							<>Not installed. Install Tailscale for secure remote access.</>
 						)}
 					</SummaryRow>
-				) : null}
+				)}
 
 				{/* Voice (hidden if not enabled) */}
 				{data.voiceEnabled ? (

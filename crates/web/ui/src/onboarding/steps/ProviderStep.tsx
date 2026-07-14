@@ -491,7 +491,7 @@ export function OnboardingProviderRow(props: OnboardingProviderRowProps): VNode 
 					{oauthInfo?.status === "device" ? (
 						<div className="text-sm text-[var(--text)]">
 							Open{" "}
-							<a href={oauthInfo.uri} target="_blank" className="text-[var(--accent)] underline">
+							<a href={oauthInfo.uri} target="_blank" className="text-[var(--accent)] underline" rel="noopener">
 								{oauthInfo.uri}
 							</a>{" "}
 							and enter code:<strong className="font-mono ml-1">{oauthInfo.code}</strong>

@@ -639,7 +639,7 @@ test.describe("Onboarding wizard", () => {
 			if (markerIdx < 0) throw new Error("onboarding-app.js marker not found in script URL");
 			const prefix = appUrl.slice(0, markerIdx);
 			const state = await import(`${prefix}js/state.js`);
-			const wsOpen = typeof WebSocket !== "undefined" ? WebSocket.OPEN : 1;
+			const wsOpen = typeof WebSocket === "undefined" ? 1 : WebSocket.OPEN;
 			state.setConnected(true);
 			state.setWs({
 				readyState: wsOpen,
@@ -729,7 +729,7 @@ test.describe("Onboarding wizard", () => {
 				const marker = "js/onboarding-app.js";
 				const prefix = appUrl.slice(0, appUrl.indexOf(marker));
 				const state = await import(`${prefix}js/state.js`);
-				const wsOpen = typeof WebSocket !== "undefined" ? WebSocket.OPEN : 1;
+				const wsOpen = typeof WebSocket === "undefined" ? 1 : WebSocket.OPEN;
 				state.setConnected(true);
 				state.setWs({
 					readyState: wsOpen,
@@ -834,7 +834,7 @@ test.describe("Onboarding wizard", () => {
 				const marker = "js/onboarding-app.js";
 				const prefix = appUrl.slice(0, appUrl.indexOf(marker));
 				const state = await import(`${prefix}js/state.js`);
-				const wsOpen = typeof WebSocket !== "undefined" ? WebSocket.OPEN : 1;
+				const wsOpen = typeof WebSocket === "undefined" ? 1 : WebSocket.OPEN;
 				state.setConnected(true);
 				state.setWs({
 					readyState: wsOpen,
@@ -1000,7 +1000,7 @@ test.describe("Onboarding wizard", () => {
 			if (markerIdx < 0) throw new Error("onboarding-app.js marker not found in script URL");
 			const prefix = appUrl.slice(0, markerIdx);
 			const state = await import(`${prefix}js/state.js`);
-			const wsOpen = typeof WebSocket !== "undefined" ? WebSocket.OPEN : 1;
+			const wsOpen = typeof WebSocket === "undefined" ? 1 : WebSocket.OPEN;
 			window.__matrixOnboardingAddRequest = null;
 			state.setConnected(true);
 			state.setWs({
@@ -1257,7 +1257,7 @@ test.describe("Onboarding wizard", () => {
 			if (markerIdx < 0) throw new Error("onboarding-app.js marker not found in script URL");
 			const prefix = appUrl.slice(0, markerIdx);
 			const state = await import(`${prefix}js/state.js`);
-			const wsOpen = typeof WebSocket !== "undefined" ? WebSocket.OPEN : 1;
+			const wsOpen = typeof WebSocket === "undefined" ? 1 : WebSocket.OPEN;
 			window.__voiceOnboardingSaveSettingsRequest = null;
 			state.setConnected(true);
 			state.setWs({
