@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [20260714.04] - 2026-07-14
+### Fixed
+- [ci] Clear profiled llama build caches
+
 ## [20260714.03] - 2026-07-14
 ### Fixed
 - [ci] Restore macos and fireworks release jobs
