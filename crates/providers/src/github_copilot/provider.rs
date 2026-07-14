@@ -8,21 +8,28 @@
 
 use std::{collections::HashSet, pin::Pin, sync::mpsc, time::Duration};
 
+use super::catalog::default_model_catalog;
+
 use {
     async_trait::async_trait,
     futures::StreamExt,
     moltis_oauth::{OAuthTokens, TokenStore},
     secrecy::{ExposeSecret, Secret},
     tokio_stream::Stream,
-    tracing::{debug, trace, warn},
+    tracing::{debug, info, trace, warn},
 };
 
 use {
-    super::super::openai_compat::{
-        ResponsesStreamState, SseLineResult, StreamingToolState, finalize_responses_stream,
-        finalize_stream, parse_openai_compat_usage_from_payload, parse_responses_completion,
-        parse_tool_calls, process_openai_sse_line, process_responses_sse_line,
-        split_responses_instructions_and_input, to_openai_tools, to_responses_api_tools,
+    super::{
+        super::openai_compat::{
+            ResponsesStreamState, SseLineResult, StreamingToolState, finalize_responses_stream,
+            finalize_stream, parse_openai_compat_usage_from_payload, parse_responses_completion,
+            parse_tool_calls, process_openai_sse_line, process_responses_sse_line,
+            split_responses_instructions_and_input, to_openai_tools, to_responses_api_tools,
+        },
+        diagnostics::{
+            CopilotTokenResponse, log_copilot_chat_error, log_copilot_request, log_copilot_response,
+        },
     },
     moltis_agents::model::{
         ChatMessage, CompletionResponse, LlmProvider, StreamEvent, ToolCall, Usage,
@@ -44,8 +51,8 @@ const PROVIDER_NAME: &str = "github-copilot";
 
 /// Required headers for the Copilot chat completions API.
 /// The API rejects requests without `Editor-Version`.
-const EDITOR_VERSION: &str = "vscode/1.96.2";
-const COPILOT_USER_AGENT: &str = "GitHubCopilotChat/0.26.7";
+pub(super) const EDITOR_VERSION: &str = "vscode/1.96.2";
+pub(super) const COPILOT_USER_AGENT: &str = "GitHubCopilotChat/0.26.7";
 
 // ── Device flow types ────────────────────────────────────────────────────────
 
@@ -61,28 +68,6 @@ pub struct DeviceCodeResponse {
 struct GithubTokenResponse {
     access_token: Option<String>,
     error: Option<String>,
-}
-
-#[derive(serde::Deserialize)]
-struct CopilotTokenResponse {
-    token: Secret<String>,
-    expires_at: u64,
-    /// Enterprise accounts return a proxy endpoint hostname (e.g.
-    /// `proxy.enterprise.githubcopilot.com`). When present, all API
-    /// requests must be routed through `https://{proxy_ep}/…` and chat
-    /// completions must use `stream: true`.
-    #[serde(rename = "proxy-ep")]
-    proxy_ep: Option<String>,
-}
-
-impl std::fmt::Debug for CopilotTokenResponse {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("CopilotTokenResponse")
-            .field("token", &"[REDACTED]")
-            .field("expires_at", &self.expires_at)
-            .field("proxy_ep", &self.proxy_ep)
-            .finish()
-    }
 }
 
 /// Resolved authentication: a valid Copilot API token plus the base URL to
@@ -208,24 +193,6 @@ pub fn has_stored_tokens() -> bool {
     found
 }
 
-/// Known Copilot models.
-/// The list is intentionally broad; if a model isn't available for the user's
-/// plan Copilot will return an error.
-pub const COPILOT_MODELS: &[(&str, &str)] = &[
-    ("gpt-4o", "GPT-4o (Copilot)"),
-    ("gpt-4.1", "GPT-4.1 (Copilot)"),
-    ("gpt-4.1-mini", "GPT-4.1 Mini (Copilot)"),
-    ("gpt-4.1-nano", "GPT-4.1 Nano (Copilot)"),
-    ("gpt-5.4", "GPT-5.4 (Copilot)"),
-    ("gpt-5.4-pro", "GPT-5.4 Pro (Copilot)"),
-    ("gpt-5.2-pro", "GPT-5.2 Pro (Copilot)"),
-    ("o1", "o1 (Copilot)"),
-    ("o1-mini", "o1-mini (Copilot)"),
-    ("o3-mini", "o3-mini (Copilot)"),
-    ("claude-sonnet-4", "Claude Sonnet 4 (Copilot)"),
-    ("gemini-2.0-flash", "Gemini 2.0 Flash (Copilot)"),
-];
-
 /// Build a [`CopilotAuth`] from an `account_id` value that may contain a
 /// proxy-ep hostname persisted from a previous token exchange.
 fn copilot_auth_from_parts(token: Secret<String>, proxy_ep: Option<&str>) -> CopilotAuth {
@@ -291,8 +258,35 @@ async fn fetch_copilot_auth(
         if now + 60 < expires_at {
             let token = copilot_tokens.access_token.clone();
             let proxy_ep = copilot_tokens.account_id.as_deref();
-            return Ok(copilot_auth_from_parts(token, proxy_ep));
+            debug!(
+                token_source = "cache",
+                cached_token_expires_at = expires_at,
+                cached_proxy_ep = ?proxy_ep,
+                cached_proxy_ep_present = proxy_ep.is_some_and(|ep| !ep.is_empty()),
+                "using cached github-copilot API token"
+            );
+            let auth = copilot_auth_from_parts(token, proxy_ep);
+            info!(
+                token_source = "cache",
+                endpoint = %auth.base_url,
+                enterprise = auth.is_enterprise,
+                proxy_ep_present = proxy_ep.is_some_and(|ep| !ep.is_empty()),
+                "github-copilot authentication resolved"
+            );
+            return Ok(auth);
         }
+
+        debug!(
+            token_source = "exchange",
+            cached_token_expires_at = expires_at,
+            cached_proxy_ep = ?copilot_tokens.account_id,
+            "cached github-copilot API token is expired or near expiry"
+        );
+    } else {
+        debug!(
+            token_source = "exchange",
+            "no cached github-copilot API token"
+        );
     }
 
     let resp = client
@@ -309,12 +303,28 @@ async fn fetch_copilot_auth(
         .send()
         .await?;
 
+    log_copilot_response(&resp, "token_exchange", Some(COPILOT_TOKEN_URL), None);
     if !resp.status().is_success() {
         let body = resp.text().await.unwrap_or_default();
         anyhow::bail!("Copilot token exchange failed: {body}");
     }
 
-    let copilot_resp: CopilotTokenResponse = resp.json().await?;
+    let response_body = resp.text().await?;
+    let copilot_resp: CopilotTokenResponse =
+        serde_json::from_str(&response_body).map_err(|error| {
+            anyhow::anyhow!(
+                "failed to parse Copilot token exchange response: {error} (response_bytes={})",
+                response_body.len()
+            )
+        })?;
+    debug!(
+        token_source = "exchange",
+        proxy_ep = ?copilot_resp.proxy_ep,
+        proxy_ep_present = copilot_resp.proxy_ep.as_deref().is_some_and(|ep| !ep.is_empty()),
+        expires_at = copilot_resp.expires_at,
+        sku = ?copilot_resp.sku,
+        "received github-copilot API token metadata"
+    );
     let _ = token_store.save("github-copilot-api", &OAuthTokens {
         access_token: copilot_resp.token.clone(),
         refresh_token: None,
@@ -325,10 +335,15 @@ async fn fetch_copilot_auth(
         expires_at: Some(copilot_resp.expires_at),
     });
 
-    Ok(copilot_auth_from_parts(
-        copilot_resp.token,
-        copilot_resp.proxy_ep.as_deref(),
-    ))
+    let auth = copilot_auth_from_parts(copilot_resp.token, copilot_resp.proxy_ep.as_deref());
+    info!(
+        token_source = "exchange",
+        endpoint = %auth.base_url,
+        enterprise = auth.is_enterprise,
+        proxy_ep_present = copilot_resp.proxy_ep.is_some(),
+        "github-copilot authentication resolved"
+    );
+    Ok(auth)
 }
 
 async fn fetch_copilot_auth_with_fallback(
@@ -339,10 +354,6 @@ async fn fetch_copilot_auth_with_fallback(
         anyhow::bail!("not logged in to github-copilot — run OAuth device flow first");
     };
     fetch_copilot_auth(client, &token_store).await
-}
-
-pub fn default_model_catalog() -> Vec<super::super::DiscoveredModel> {
-    super::super::catalog_to_discovered(COPILOT_MODELS, 3)
 }
 
 fn normalize_display_name(model_id: &str, display_name: Option<&str>) -> String {
@@ -430,8 +441,6 @@ fn parse_models_payload(value: &serde_json::Value) -> Vec<super::super::Discover
         }
     }
 
-    // Sort by created_at descending (newest first). Models without a
-    // timestamp are placed after those with one, preserving relative order.
     models.sort_by(|a, b| match (a.created_at, b.created_at) {
         (Some(a_ts), Some(b_ts)) => b_ts.cmp(&a_ts), // newest first
         (Some(_), None) => std::cmp::Ordering::Less, // timestamp before no-timestamp
@@ -446,6 +455,15 @@ async fn fetch_models_from_api(
     client: &reqwest::Client,
     auth: &CopilotAuth,
 ) -> anyhow::Result<Vec<super::super::DiscoveredModel>> {
+    log_copilot_request(
+        "models",
+        &auth.base_url,
+        None,
+        Some(auth.is_enterprise),
+        false,
+        None,
+        None,
+    );
     let response = client
         .get(format!("{}/models", auth.base_url))
         .header(
@@ -457,6 +475,12 @@ async fn fetch_models_from_api(
         .header("User-Agent", COPILOT_USER_AGENT)
         .send()
         .await?;
+    log_copilot_response(
+        &response,
+        "models",
+        Some(&auth.base_url),
+        Some(auth.is_enterprise),
+    );
     let status = response.status();
     let body = response.text().await?;
     if !status.is_success() {
@@ -553,8 +577,19 @@ async fn collect_streamed_completion(
         body["tools"] = serde_json::Value::Array(to_openai_tools(tools, true));
     }
 
+    log_copilot_request(
+        "enterprise_chat_completions",
+        &auth.base_url,
+        Some(model),
+        Some(auth.is_enterprise),
+        true,
+        Some(messages.len()),
+        Some(tools.len()),
+    );
     debug!(
         model = %model,
+        endpoint = %auth.base_url,
+        enterprise = auth.is_enterprise,
         messages_count = messages.len(),
         tools_count = tools.len(),
         "github-copilot enterprise complete (streaming) request"
@@ -574,6 +609,12 @@ async fn collect_streamed_completion(
         .send()
         .await?;
 
+    log_copilot_response(
+        &http_resp,
+        "enterprise_chat_completions",
+        Some(&auth.base_url),
+        Some(auth.is_enterprise),
+    );
     let status = http_resp.status();
     if !status.is_success() {
         let retry_after_ms = super::super::retry_after_ms_from_headers(http_resp.headers());
@@ -588,7 +629,6 @@ async fn collect_streamed_completion(
         );
     }
 
-    // Parse the SSE stream into events, then assemble a CompletionResponse.
     let mut byte_stream = http_resp.bytes_stream();
     let mut buf = String::new();
     let mut state = StreamingToolState::default();
@@ -630,7 +670,6 @@ async fn collect_streamed_completion(
         }
     }
 
-    // Process any trailing data in the buffer.
     let line = buf.trim();
     if !line.is_empty()
         && let Some(data) = line
@@ -687,6 +726,15 @@ async fn collect_streamed_responses_completion(
         body["tool_choice"] = serde_json::json!("auto");
     }
 
+    log_copilot_request(
+        "enterprise_responses",
+        &auth.base_url,
+        Some(model),
+        Some(auth.is_enterprise),
+        true,
+        Some(messages.len()),
+        Some(tools.len()),
+    );
     let http_resp = client
         .post(format!("{}/responses", auth.base_url))
         .header(
@@ -700,6 +748,12 @@ async fn collect_streamed_responses_completion(
         .send()
         .await?;
 
+    log_copilot_response(
+        &http_resp,
+        "enterprise_responses",
+        Some(&auth.base_url),
+        Some(auth.is_enterprise),
+    );
     let status = http_resp.status();
     if !status.is_success() {
         let retry_after_ms = super::super::retry_after_ms_from_headers(http_resp.headers());
@@ -756,7 +810,6 @@ async fn collect_streamed_responses_completion(
         }
     }
 
-    // Process any trailing data in the buffer.
     let line = buf.trim();
     if !line.is_empty()
         && let Some(data) = line
@@ -843,7 +896,7 @@ fn stream_events_to_completion(events: Vec<StreamEvent>) -> CompletionResponse {
 /// (`/responses`) instead of Chat Completions (`/chat/completions`).
 fn needs_responses_api(model: &str) -> bool {
     let m = model.to_ascii_lowercase();
-    m.starts_with("gpt-5.4") || m == "gpt-5.2-pro" || m.starts_with("codex-")
+    (m.starts_with("gpt-5") && m != "gpt-5-mini") || m.starts_with("codex-") || m == "gpt-5.2-pro"
 }
 
 /// Returns `true` if an error body from the Chat Completions API indicates
@@ -899,8 +952,19 @@ impl LlmProvider for GitHubCopilotProvider {
             body["tools"] = serde_json::Value::Array(to_openai_tools(tools, true));
         }
 
+        log_copilot_request(
+            "chat_completions",
+            &auth.base_url,
+            Some(&self.model),
+            Some(auth.is_enterprise),
+            false,
+            Some(messages.len()),
+            Some(tools.len()),
+        );
         debug!(
             model = %self.model,
+            endpoint = %auth.base_url,
+            enterprise = auth.is_enterprise,
             messages_count = messages.len(),
             tools_count = tools.len(),
             "github-copilot complete request"
@@ -921,6 +985,12 @@ impl LlmProvider for GitHubCopilotProvider {
             .send()
             .await?;
 
+        log_copilot_response(
+            &http_resp,
+            "chat_completions",
+            Some(&auth.base_url),
+            Some(auth.is_enterprise),
+        );
         let status = http_resp.status();
         if !status.is_success() {
             let retry_after_ms = super::super::retry_after_ms_from_headers(http_resp.headers());
@@ -1019,8 +1089,19 @@ impl GitHubCopilotProvider {
             body["tool_choice"] = serde_json::json!("auto");
         }
 
+        log_copilot_request(
+            "responses",
+            &auth.base_url,
+            Some(&self.model),
+            Some(auth.is_enterprise),
+            false,
+            Some(messages.len()),
+            Some(tools.len()),
+        );
         debug!(
             model = %self.model,
+            endpoint = %auth.base_url,
+            enterprise = auth.is_enterprise,
             messages_count = messages.len(),
             tools_count = tools.len(),
             "github-copilot complete_responses request"
@@ -1092,8 +1173,19 @@ impl GitHubCopilotProvider {
                 body["tool_choice"] = serde_json::json!("auto");
             }
 
+            log_copilot_request(
+                "stream_responses_api",
+                &auth.base_url,
+                Some(&self.model),
+                Some(auth.is_enterprise),
+                true,
+                Some(input.len()),
+                Some(tools.len()),
+            );
             debug!(
                 model = %self.model,
+                endpoint = %auth.base_url,
+                enterprise = auth.is_enterprise,
                 tools_count = tools.len(),
                 "github-copilot stream_responses_api request"
             );
@@ -1111,6 +1203,12 @@ impl GitHubCopilotProvider {
                 .await
             {
                 Ok(r) => {
+                    log_copilot_response(
+                        &r,
+                        "responses",
+                        Some(&auth.base_url),
+                        Some(auth.is_enterprise),
+                    );
                     if let Err(e) = r.error_for_status_ref() {
                         let status = e.status().map(|s| s.as_u16()).unwrap_or(0);
                         let retry_after_ms = super::super::retry_after_ms_from_headers(r.headers());
@@ -1233,8 +1331,19 @@ impl GitHubCopilotProvider {
                 body["tools"] = serde_json::Value::Array(to_openai_tools(&tools, true));
             }
 
+            log_copilot_request(
+                "stream_chat_completions",
+                &auth.base_url,
+                Some(&self.model),
+                Some(auth.is_enterprise),
+                true,
+                Some(openai_messages.len()),
+                Some(tools.len()),
+            );
             debug!(
                 model = %self.model,
+                endpoint = %auth.base_url,
+                enterprise = auth.is_enterprise,
                 messages_count = openai_messages.len(),
                 tools_count = tools.len(),
                 "github-copilot stream_with_tools request"
@@ -1253,10 +1362,28 @@ impl GitHubCopilotProvider {
                 .await
             {
                 Ok(r) => {
+                    log_copilot_response(
+                        &r,
+                        "stream_chat_completions",
+                        Some(&auth.base_url),
+                        Some(auth.is_enterprise),
+                    );
                     if let Err(e) = r.error_for_status_ref() {
                         let status = e.status().map(|s| s.as_u16()).unwrap_or(0);
                         let retry_after_ms = super::super::retry_after_ms_from_headers(r.headers());
+                        let response_url = r.url().to_string();
                         let body_text = r.text().await.unwrap_or_default();
+
+                        log_copilot_chat_error(
+                            "stream_chat_completions",
+                            &auth.base_url,
+                            &response_url,
+                            &self.model,
+                            auth.is_enterprise,
+                            true,
+                            status,
+                            &body_text,
+                        );
 
                         // Fallback: if this is an unsupported API error,
                         // switch to Responses API streaming.
