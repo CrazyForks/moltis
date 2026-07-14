@@ -581,9 +581,7 @@ mod tests {
             server.url()
         ))
         .unwrap();
-        let meta = fetch_resource_metadata_direct(&client, &url)
-            .await
-            .unwrap();
+        let meta = fetch_resource_metadata_direct(&client, &url).await.unwrap();
 
         assert_eq!(meta.resource, format!("{}/mcp", server.url()));
         assert_eq!(meta.authorization_servers, vec!["https://auth.example.com"]);
