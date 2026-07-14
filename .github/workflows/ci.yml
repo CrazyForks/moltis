@@ -310,6 +310,7 @@ jobs:
           files: lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: true
+          use_pypi: true
 
   e2e:
     name: E2E Tests
