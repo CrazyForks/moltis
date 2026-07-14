@@ -1,46 +1,78 @@
 /// Current GitHub Copilot model IDs. Live `/models` discovery is preferred;
 /// this catalog is used when discovery is unavailable.
-pub(super) const COPILOT_MODELS: &[(&str, &str)] = &[
-    ("gpt-4o", "GPT-4o (Copilot)"),
-    ("gpt-4.1", "GPT-4.1 (Copilot)"),
-    ("gpt-4.1-mini", "GPT-4.1 Mini (Copilot)"),
-    ("gpt-4.1-nano", "GPT-4.1 Nano (Copilot)"),
-    ("gpt-5-mini", "GPT-5 mini (Copilot)"),
-    ("gpt-5.3-codex", "GPT-5.3-Codex (Copilot)"),
-    ("gpt-5.4", "GPT-5.4 (Copilot)"),
-    ("gpt-5.4-mini", "GPT-5.4 mini (Copilot)"),
-    ("gpt-5.4-nano", "GPT-5.4 nano (Copilot)"),
-    ("gpt-5.4-pro", "GPT-5.4 Pro (Copilot)"),
-    ("gpt-5.5", "GPT-5.5 (Copilot)"),
-    ("gpt-5.6-luna", "GPT-5.6 Luna (Copilot)"),
-    ("gpt-5.6-sol", "GPT-5.6 Sol (Copilot)"),
-    ("gpt-5.6-terra", "GPT-5.6 Terra (Copilot)"),
-    ("gpt-5.2-pro", "GPT-5.2 Pro (Copilot)"),
-    ("o1", "o1 (Copilot)"),
-    ("o1-mini", "o1-mini (Copilot)"),
-    ("o3-mini", "o3-mini (Copilot)"),
-    ("claude-fable-5", "Claude Fable 5 (Copilot)"),
-    ("claude-haiku-4.5", "Claude Haiku 4.5 (Copilot)"),
-    ("claude-opus-4.5", "Claude Opus 4.5 (Copilot)"),
-    ("claude-opus-4.6", "Claude Opus 4.6 (Copilot)"),
-    ("claude-opus-4.7", "Claude Opus 4.7 (Copilot)"),
-    ("claude-opus-4.8", "Claude Opus 4.8 (Copilot)"),
-    ("claude-sonnet-4", "Claude Sonnet 4 (Copilot)"),
-    ("claude-sonnet-4.5", "Claude Sonnet 4.5 (Copilot)"),
-    ("claude-sonnet-4.6", "Claude Sonnet 4.6 (Copilot)"),
-    ("claude-sonnet-5", "Claude Sonnet 5 (Copilot)"),
-    ("gemini-2.0-flash", "Gemini 2.0 Flash (Copilot)"),
-    ("gemini-2.5-pro", "Gemini 2.5 Pro (Copilot)"),
-    ("gemini-3-flash-preview", "Gemini 3 Flash (Copilot)"),
-    ("gemini-3.1-pro-preview", "Gemini 3.1 Pro (Copilot)"),
-    ("gemini-3.5-flash", "Gemini 3.5 Flash (Copilot)"),
-    ("mai-code-1-flash-picker", "MAI-Code-1-Flash (Copilot)"),
-    ("raptor-mini", "Raptor mini (Copilot)"),
-    ("kimi-k2.7-code", "Kimi K2.7 Code (Copilot)"),
+pub(super) const COPILOT_MODELS: &[CopilotCatalogModel] = &[
+    chat("gpt-4o", "GPT-4o (Copilot)"),
+    chat("gpt-4.1", "GPT-4.1 (Copilot)"),
+    chat("gpt-4.1-mini", "GPT-4.1 Mini (Copilot)"),
+    chat("gpt-4.1-nano", "GPT-4.1 Nano (Copilot)"),
+    chat("gpt-5-mini", "GPT-5 mini (Copilot)"),
+    responses("gpt-5.3-codex", "GPT-5.3-Codex (Copilot)"),
+    responses("gpt-5.4", "GPT-5.4 (Copilot)"),
+    responses("gpt-5.4-mini", "GPT-5.4 mini (Copilot)"),
+    responses("gpt-5.4-nano", "GPT-5.4 nano (Copilot)"),
+    responses("gpt-5.4-pro", "GPT-5.4 Pro (Copilot)"),
+    responses("gpt-5.5", "GPT-5.5 (Copilot)"),
+    responses("gpt-5.6-luna", "GPT-5.6 Luna (Copilot)"),
+    responses("gpt-5.6-sol", "GPT-5.6 Sol (Copilot)"),
+    responses("gpt-5.6-terra", "GPT-5.6 Terra (Copilot)"),
+    responses("gpt-5.2-pro", "GPT-5.2 Pro (Copilot)"),
+    chat("o1", "o1 (Copilot)"),
+    chat("o1-mini", "o1-mini (Copilot)"),
+    chat("o3-mini", "o3-mini (Copilot)"),
+    chat("claude-fable-5", "Claude Fable 5 (Copilot)"),
+    chat("claude-haiku-4.5", "Claude Haiku 4.5 (Copilot)"),
+    chat("claude-opus-4.5", "Claude Opus 4.5 (Copilot)"),
+    chat("claude-opus-4.6", "Claude Opus 4.6 (Copilot)"),
+    chat("claude-opus-4.7", "Claude Opus 4.7 (Copilot)"),
+    chat("claude-opus-4.8", "Claude Opus 4.8 (Copilot)"),
+    chat("claude-sonnet-4", "Claude Sonnet 4 (Copilot)"),
+    chat("claude-sonnet-4.5", "Claude Sonnet 4.5 (Copilot)"),
+    chat("claude-sonnet-4.6", "Claude Sonnet 4.6 (Copilot)"),
+    chat("claude-sonnet-5", "Claude Sonnet 5 (Copilot)"),
+    chat("gemini-2.0-flash", "Gemini 2.0 Flash (Copilot)"),
+    chat("gemini-2.5-pro", "Gemini 2.5 Pro (Copilot)"),
+    chat("gemini-3-flash-preview", "Gemini 3 Flash (Copilot)"),
+    chat("gemini-3.1-pro-preview", "Gemini 3.1 Pro (Copilot)"),
+    chat("gemini-3.5-flash", "Gemini 3.5 Flash (Copilot)"),
+    chat("mai-code-1-flash-picker", "MAI-Code-1-Flash (Copilot)"),
+    chat("raptor-mini", "Raptor mini (Copilot)"),
+    chat("kimi-k2.7-code", "Kimi K2.7 Code (Copilot)"),
 ];
 
+pub(super) struct CopilotCatalogModel {
+    id: &'static str,
+    display_name: &'static str,
+    requires_responses_api: bool,
+}
+
+const fn chat(id: &'static str, display_name: &'static str) -> CopilotCatalogModel {
+    CopilotCatalogModel {
+        id,
+        display_name,
+        requires_responses_api: false,
+    }
+}
+
+const fn responses(id: &'static str, display_name: &'static str) -> CopilotCatalogModel {
+    CopilotCatalogModel {
+        id,
+        display_name,
+        requires_responses_api: true,
+    }
+}
+
 pub fn default_model_catalog() -> Vec<super::super::DiscoveredModel> {
-    super::super::catalog_to_discovered(COPILOT_MODELS, 3)
+    COPILOT_MODELS
+        .iter()
+        .enumerate()
+        .map(|(index, model)| {
+            let mut capabilities = super::super::ModelCapabilities::infer(model.id);
+            capabilities.requires_responses_api = model.requires_responses_api;
+            super::super::DiscoveredModel::new(model.id, model.display_name)
+                .with_recommended(index < 3)
+                .with_capabilities(capabilities)
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -61,9 +93,27 @@ mod tests {
             "kimi-k2.7-code",
         ] {
             assert!(
-                COPILOT_MODELS.iter().any(|(id, _)| *id == expected),
+                COPILOT_MODELS.iter().any(|model| model.id == expected),
                 "missing current Copilot model ID: {expected}"
             );
         }
+    }
+
+    #[test]
+    fn catalog_marks_responses_api_models_as_capability() {
+        let catalog = default_model_catalog();
+        let by_id = |id: &str| catalog.iter().find(|model| model.id == id).unwrap();
+        assert!(
+            by_id("gpt-5.6-luna")
+                .capabilities
+                .unwrap()
+                .requires_responses_api
+        );
+        assert!(
+            !by_id("gpt-5-mini")
+                .capabilities
+                .unwrap()
+                .requires_responses_api
+        );
     }
 }

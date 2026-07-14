@@ -113,6 +113,7 @@ pub(crate) fn merge_discovered_with_fallback_catalog(
     discovered
         .into_iter()
         .map(|m| {
+            let fallback_capabilities = fallback_by_id.get(&m.id).and_then(|fb| fb.capabilities);
             let display_name = if m.display_name.trim().is_empty() {
                 fallback_by_id
                     .get(&m.id)
@@ -126,7 +127,7 @@ pub(crate) fn merge_discovered_with_fallback_catalog(
                 display_name,
                 created_at: m.created_at,
                 recommended: m.recommended,
-                capabilities: m.capabilities,
+                capabilities: m.capabilities.or(fallback_capabilities),
             }
         })
         .collect()

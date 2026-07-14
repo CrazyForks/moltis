@@ -1,7 +1,36 @@
 use {
+    moltis_agents::model::{CompletionResponse, StreamEvent},
     secrecy::Secret,
     tracing::{debug, info, warn},
 };
+
+pub(super) fn is_responses_api_required_error(body: &str) -> bool {
+    let lower = body.to_ascii_lowercase();
+    lower.contains("unsupported_api_for_model")
+        || lower.contains("not accessible via the /chat/completions")
+}
+
+pub(super) fn completion_to_stream_events(completion: CompletionResponse) -> Vec<StreamEvent> {
+    let mut events = Vec::new();
+    if let Some(text) = completion.text {
+        events.push(StreamEvent::Delta(text));
+    }
+    for (index, tool_call) in completion.tool_calls.into_iter().enumerate() {
+        events.push(StreamEvent::ToolCallStart {
+            id: tool_call.id,
+            name: tool_call.name,
+            index,
+            metadata: tool_call.metadata,
+        });
+        events.push(StreamEvent::ToolCallArgumentsDelta {
+            index,
+            delta: tool_call.arguments.to_string(),
+        });
+        events.push(StreamEvent::ToolCallComplete { index });
+    }
+    events.push(StreamEvent::Done(completion.usage));
+    events
+}
 
 #[derive(serde::Deserialize)]
 pub(super) struct CopilotTokenResponse {
@@ -173,5 +202,17 @@ mod tests {
             421,
             &body,
         );
+    }
+
+    #[test]
+    fn completion_to_stream_events_preserves_terminal_usage() {
+        let completion = CompletionResponse {
+            text: Some("hello".to_string()),
+            tool_calls: Vec::new(),
+            usage: Default::default(),
+        };
+        let events = completion_to_stream_events(completion);
+        assert!(matches!(events.first(), Some(StreamEvent::Delta(text)) if text == "hello"));
+        assert!(matches!(events.last(), Some(StreamEvent::Done(_))));
     }
 }

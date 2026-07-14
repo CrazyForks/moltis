@@ -387,6 +387,14 @@ pub(crate) trait DynamicModelDiscovery {
     fn should_fetch_models(&self, config: &ProvidersConfig) -> bool;
     fn live_models(&self) -> anyhow::Result<Vec<DiscoveredModel>>;
     fn build_provider(&self, model_id: String, config: &ProvidersConfig) -> Arc<dyn LlmProvider>;
+    fn build_provider_with_capabilities(
+        &self,
+        model_id: String,
+        config: &ProvidersConfig,
+        _capabilities: ModelCapabilities,
+    ) -> Arc<dyn LlmProvider> {
+        self.build_provider(model_id, config)
+    }
     fn display_name(&self, model_id: &str, discovered: &str) -> String;
 }
 
@@ -464,6 +472,18 @@ impl DynamicModelDiscovery for GitHubCopilotDiscovery {
     fn build_provider(&self, model_id: String, _config: &ProvidersConfig) -> Arc<dyn LlmProvider> {
         use crate::github_copilot;
         Arc::new(github_copilot::GitHubCopilotProvider::new(model_id))
+    }
+
+    fn build_provider_with_capabilities(
+        &self,
+        model_id: String,
+        _config: &ProvidersConfig,
+        capabilities: ModelCapabilities,
+    ) -> Arc<dyn LlmProvider> {
+        use crate::github_copilot;
+        Arc::new(
+            github_copilot::GitHubCopilotProvider::new_with_capabilities(model_id, capabilities),
+        )
     }
 
     fn display_name(&self, _model_id: &str, discovered: &str) -> String {
@@ -584,7 +604,11 @@ impl ProviderRegistry {
             if self.has_provider_model(source.provider_name(), &model.id) {
                 continue;
             }
-            let provider = source.build_provider(model.id.clone(), config);
+            let capabilities = model
+                .capabilities
+                .unwrap_or_else(|| ModelCapabilities::infer(&model.id));
+            let provider =
+                source.build_provider_with_capabilities(model.id.clone(), config, capabilities);
             self.register(
                 ModelInfo {
                     id: model.id.clone(),
@@ -592,9 +616,7 @@ impl ProviderRegistry {
                     display_name: source.display_name(&model.id, &model.display_name),
                     created_at: model.created_at,
                     recommended: model.recommended,
-                    capabilities: model
-                        .capabilities
-                        .unwrap_or_else(|| ModelCapabilities::infer(&model.id)),
+                    capabilities,
                 },
                 provider,
             );

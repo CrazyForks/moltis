@@ -294,6 +294,8 @@ pub struct ModelCapabilities {
     pub vision: bool,
     /// Supports extended thinking / reasoning effort.
     pub reasoning: bool,
+    /// Must be called through the OpenAI Responses API instead of Chat Completions.
+    pub requires_responses_api: bool,
 }
 
 impl ModelCapabilities {
@@ -305,6 +307,7 @@ impl ModelCapabilities {
             tools: supports_tools_for_model(model_id),
             vision: supports_vision_for_model(model_id),
             reasoning: supports_reasoning_for_model(model_id),
+            requires_responses_api: false,
         }
     }
 }

@@ -1,11 +1,3 @@
-//! GitHub Copilot provider.
-//!
-//! Authentication uses the GitHub device-flow OAuth to obtain a GitHub token,
-//! then exchanges it for a short-lived Copilot API token via
-//! `https://api.github.com/copilot_internal/v2/token`.
-//!
-//! The Copilot API itself is OpenAI-compatible (`/chat/completions`).
-
 use std::{collections::HashSet, pin::Pin, sync::mpsc, time::Duration};
 
 use super::catalog::default_model_catalog;
@@ -28,7 +20,8 @@ use {
             split_responses_instructions_and_input, to_openai_tools, to_responses_api_tools,
         },
         diagnostics::{
-            CopilotTokenResponse, log_copilot_chat_error, log_copilot_request, log_copilot_response,
+            CopilotTokenResponse, completion_to_stream_events, is_responses_api_required_error,
+            log_copilot_chat_error, log_copilot_request, log_copilot_response,
         },
     },
     moltis_agents::model::{
@@ -37,9 +30,6 @@ use {
     },
 };
 
-// ── Constants ────────────────────────────────────────────────────────────────
-
-/// GitHub OAuth app client ID for Copilot (VS Code's public client ID).
 const GITHUB_CLIENT_ID: &str = "Iv1.b507a08c87ecfe98";
 
 const GITHUB_DEVICE_CODE_URL: &str = "https://github.com/login/device/code";
@@ -49,12 +39,8 @@ const COPILOT_API_BASE: &str = "https://api.individual.githubcopilot.com";
 
 const PROVIDER_NAME: &str = "github-copilot";
 
-/// Required headers for the Copilot chat completions API.
-/// The API rejects requests without `Editor-Version`.
 pub(super) const EDITOR_VERSION: &str = "vscode/1.96.2";
 pub(super) const COPILOT_USER_AGENT: &str = "GitHubCopilotChat/0.26.7";
-
-// ── Device flow types ────────────────────────────────────────────────────────
 
 #[derive(Debug, serde::Deserialize)]
 pub struct DeviceCodeResponse {
@@ -70,20 +56,15 @@ struct GithubTokenResponse {
     error: Option<String>,
 }
 
-/// Resolved authentication: a valid Copilot API token plus the base URL to
-/// use for API requests (may differ for enterprise vs individual accounts).
 struct CopilotAuth {
     token: Secret<String>,
     base_url: String,
-    /// `true` when the endpoint is an enterprise proxy that only supports
-    /// streaming chat completions.
     is_enterprise: bool,
 }
 
-// ── Provider ─────────────────────────────────────────────────────────────────
-
 pub struct GitHubCopilotProvider {
     model: String,
+    requires_responses_api: bool,
     client: &'static reqwest::Client,
     token_store: TokenStore,
 }
@@ -92,8 +73,19 @@ impl GitHubCopilotProvider {
     pub fn new(model: String) -> Self {
         Self {
             model,
+            requires_responses_api: false,
             client: crate::shared_http_client(),
             token_store: TokenStore::new(),
+        }
+    }
+
+    pub fn new_with_capabilities(
+        model: String,
+        capabilities: super::super::ModelCapabilities,
+    ) -> Self {
+        Self {
+            requires_responses_api: capabilities.requires_responses_api,
+            ..Self::new(model)
         }
     }
 
@@ -154,9 +146,22 @@ impl GitHubCopilotProvider {
         }
     }
 
-    /// Get a valid Copilot API token and resolved base URL.
     async fn get_copilot_auth(&self) -> anyhow::Result<CopilotAuth> {
         fetch_copilot_auth_with_fallback(self.client, &self.token_store).await
+    }
+
+    async fn refresh_copilot_auth_after_misdirected(&self) -> anyhow::Result<Option<CopilotAuth>> {
+        let Some(token_store) = token_store_with_provider_tokens(&self.token_store) else {
+            return Ok(None);
+        };
+        warn!(
+            "github-copilot individual endpoint returned 421; refreshing cached API token metadata"
+        );
+        if let Err(error) = token_store.delete("github-copilot-api") {
+            warn!(%error, "failed to delete cached github-copilot API token before refresh");
+        }
+        let auth = fetch_copilot_auth(self.client, &token_store).await?;
+        Ok(auth.is_enterprise.then_some(auth))
     }
 }
 
@@ -193,14 +198,10 @@ pub fn has_stored_tokens() -> bool {
     found
 }
 
-/// Build a [`CopilotAuth`] from an `account_id` value that may contain a
-/// proxy-ep hostname persisted from a previous token exchange.
 fn copilot_auth_from_parts(token: Secret<String>, proxy_ep: Option<&str>) -> CopilotAuth {
     match proxy_ep.filter(|s| !s.is_empty()) {
         Some(ep) => {
             let ep = ep.trim();
-            // Reject anything that isn't a plain hostname to prevent SSRF via
-            // crafted proxy-ep values (e.g. internal IPs, @-redirects).
             if !ep
                 .chars()
                 .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-'))
@@ -586,16 +587,6 @@ async fn collect_streamed_completion(
         Some(messages.len()),
         Some(tools.len()),
     );
-    debug!(
-        model = %model,
-        endpoint = %auth.base_url,
-        enterprise = auth.is_enterprise,
-        messages_count = messages.len(),
-        tools_count = tools.len(),
-        "github-copilot enterprise complete (streaming) request"
-    );
-    trace!(body = %serde_json::to_string(&body).unwrap_or_default(), "github-copilot enterprise request body");
-
     let http_resp = client
         .post(format!("{}/chat/completions", auth.base_url))
         .header(
@@ -890,23 +881,6 @@ fn stream_events_to_completion(events: Vec<StreamEvent>) -> CompletionResponse {
     }
 }
 
-// ── Responses API helpers ────────────────────────────────────────────────────
-
-/// Returns `true` if the given model is known to require the Responses API
-/// (`/responses`) instead of Chat Completions (`/chat/completions`).
-fn needs_responses_api(model: &str) -> bool {
-    let m = model.to_ascii_lowercase();
-    (m.starts_with("gpt-5") && m != "gpt-5-mini") || m.starts_with("codex-") || m == "gpt-5.2-pro"
-}
-
-/// Returns `true` if an error body from the Chat Completions API indicates
-/// that the model only supports the Responses API.
-fn is_responses_api_required_error(body: &str) -> bool {
-    let lower = body.to_ascii_lowercase();
-    lower.contains("unsupported_api_for_model")
-        || lower.contains("not accessible via the /chat/completions")
-}
-
 // ── LlmProvider impl ────────────────────────────────────────────────────────
 
 #[async_trait]
@@ -928,7 +902,7 @@ impl LlmProvider for GitHubCopilotProvider {
         messages: &[ChatMessage],
         tools: &[serde_json::Value],
     ) -> anyhow::Result<CompletionResponse> {
-        if needs_responses_api(&self.model) {
+        if self.requires_responses_api {
             return self.complete_responses(messages, tools).await;
         }
 
@@ -961,16 +935,6 @@ impl LlmProvider for GitHubCopilotProvider {
             Some(messages.len()),
             Some(tools.len()),
         );
-        debug!(
-            model = %self.model,
-            endpoint = %auth.base_url,
-            enterprise = auth.is_enterprise,
-            messages_count = messages.len(),
-            tools_count = tools.len(),
-            "github-copilot complete request"
-        );
-        trace!(body = %serde_json::to_string(&body).unwrap_or_default(), "github-copilot request body");
-
         let http_resp = self
             .client
             .post(format!("{}/chat/completions", auth.base_url))
@@ -995,6 +959,20 @@ impl LlmProvider for GitHubCopilotProvider {
         if !status.is_success() {
             let retry_after_ms = super::super::retry_after_ms_from_headers(http_resp.headers());
             let body_text = http_resp.text().await.unwrap_or_default();
+
+            if status == reqwest::StatusCode::MISDIRECTED_REQUEST
+                && !auth.is_enterprise
+                && let Some(refreshed_auth) = self.refresh_copilot_auth_after_misdirected().await?
+            {
+                return collect_streamed_completion(
+                    self.client,
+                    &refreshed_auth,
+                    &self.model,
+                    messages,
+                    tools,
+                )
+                .await;
+            }
 
             // Fallback: if the model requires Responses API, retry with it.
             if status == reqwest::StatusCode::BAD_REQUEST
@@ -1048,7 +1026,7 @@ impl LlmProvider for GitHubCopilotProvider {
         messages: Vec<ChatMessage>,
         tools: Vec<serde_json::Value>,
     ) -> Pin<Box<dyn Stream<Item = StreamEvent> + Send + '_>> {
-        if needs_responses_api(&self.model) {
+        if self.requires_responses_api {
             return self.stream_responses_api(messages, tools);
         }
         self.stream_chat_completions(messages, tools)
@@ -1098,16 +1076,6 @@ impl GitHubCopilotProvider {
             Some(messages.len()),
             Some(tools.len()),
         );
-        debug!(
-            model = %self.model,
-            endpoint = %auth.base_url,
-            enterprise = auth.is_enterprise,
-            messages_count = messages.len(),
-            tools_count = tools.len(),
-            "github-copilot complete_responses request"
-        );
-        trace!(body = %serde_json::to_string(&body).unwrap_or_default(), "github-copilot responses request body");
-
         let http_resp = self
             .client
             .post(format!("{}/responses", auth.base_url))
@@ -1122,10 +1090,29 @@ impl GitHubCopilotProvider {
             .send()
             .await?;
 
+        log_copilot_response(
+            &http_resp,
+            "responses",
+            Some(&auth.base_url),
+            Some(auth.is_enterprise),
+        );
         let status = http_resp.status();
         if !status.is_success() {
             let retry_after_ms = super::super::retry_after_ms_from_headers(http_resp.headers());
             let body_text = http_resp.text().await.unwrap_or_default();
+            if status == reqwest::StatusCode::MISDIRECTED_REQUEST
+                && !auth.is_enterprise
+                && let Some(refreshed_auth) = self.refresh_copilot_auth_after_misdirected().await?
+            {
+                return collect_streamed_responses_completion(
+                    self.client,
+                    &refreshed_auth,
+                    &self.model,
+                    messages,
+                    tools,
+                )
+                .await;
+            }
             warn!(status = %status, body = %body_text, "github-copilot responses API error");
             anyhow::bail!(
                 "{}",
@@ -1157,8 +1144,8 @@ impl GitHubCopilotProvider {
                 }
             };
 
-            let (instructions, input) =
-                split_responses_instructions_and_input(messages);
+            let original_messages = messages.clone();
+            let (instructions, input) = split_responses_instructions_and_input(messages);
 
             let mut body = serde_json::json!({
                 "model": self.model,
@@ -1182,15 +1169,6 @@ impl GitHubCopilotProvider {
                 Some(input.len()),
                 Some(tools.len()),
             );
-            debug!(
-                model = %self.model,
-                endpoint = %auth.base_url,
-                enterprise = auth.is_enterprise,
-                tools_count = tools.len(),
-                "github-copilot stream_responses_api request"
-            );
-            trace!(body = %serde_json::to_string(&body).unwrap_or_default(), "github-copilot responses stream request body");
-
             let resp = match self
                 .client
                 .post(format!("{}/responses", auth.base_url))
@@ -1213,6 +1191,34 @@ impl GitHubCopilotProvider {
                         let status = e.status().map(|s| s.as_u16()).unwrap_or(0);
                         let retry_after_ms = super::super::retry_after_ms_from_headers(r.headers());
                         let body_text = r.text().await.unwrap_or_default();
+                        if status == reqwest::StatusCode::MISDIRECTED_REQUEST.as_u16()
+                            && !auth.is_enterprise
+                        {
+                            match self.refresh_copilot_auth_after_misdirected().await {
+                                Ok(Some(refreshed_auth)) => {
+                                    match collect_streamed_responses_completion(
+                                        self.client,
+                                        &refreshed_auth,
+                                        &self.model,
+                                        &original_messages,
+                                        &tools,
+                                    )
+                                    .await
+                                    {
+                                        Ok(completion) => for event in completion_to_stream_events(completion) {
+                                            yield event;
+                                        },
+                                        Err(error) => yield StreamEvent::Error(error.to_string()),
+                                    }
+                                    return;
+                                },
+                                Ok(None) => {},
+                                Err(error) => {
+                                    yield StreamEvent::Error(error.to_string());
+                                    return;
+                                },
+                            }
+                        }
                         yield StreamEvent::Error(super::super::with_retry_after_marker(
                             format!("HTTP {status}: {body_text}"),
                             retry_after_ms,
@@ -1340,16 +1346,6 @@ impl GitHubCopilotProvider {
                 Some(openai_messages.len()),
                 Some(tools.len()),
             );
-            debug!(
-                model = %self.model,
-                endpoint = %auth.base_url,
-                enterprise = auth.is_enterprise,
-                messages_count = openai_messages.len(),
-                tools_count = tools.len(),
-                "github-copilot stream_with_tools request"
-            );
-            trace!(body = %serde_json::to_string(&body).unwrap_or_default(), "github-copilot stream request body");
-
             let resp = match self
                 .client
                 .post(format!("{}/chat/completions", auth.base_url))
