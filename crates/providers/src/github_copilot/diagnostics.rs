@@ -37,8 +37,14 @@ pub(super) struct CopilotTokenResponse {
     pub(super) token: Secret<String>,
     pub(super) expires_at: u64,
     pub(super) sku: Option<String>,
+    pub(super) endpoints: Option<CopilotTokenEndpoints>,
     #[serde(rename = "proxy-ep")]
     pub(super) proxy_ep: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub(super) struct CopilotTokenEndpoints {
+    pub(super) api: Option<String>,
 }
 
 impl std::fmt::Debug for CopilotTokenResponse {
@@ -47,6 +53,7 @@ impl std::fmt::Debug for CopilotTokenResponse {
             .field("token", &"[REDACTED]")
             .field("expires_at", &self.expires_at)
             .field("sku", &self.sku)
+            .field("endpoints", &self.endpoints)
             .field("proxy_ep", &self.proxy_ep)
             .finish()
     }
@@ -173,6 +180,7 @@ mod tests {
         let response: CopilotTokenResponse = serde_json::from_value(serde_json::json!({
             "token": "secret-token",
             "expires_at": 1_800_000_000_u64,
+            "endpoints": { "api": "https://api.enterprise.githubcopilot.com" },
             "proxy-ep": "proxy.enterprise.githubcopilot.com",
             "sku": "copilot_enterprise_seat_multi_quota"
         }))
@@ -185,6 +193,13 @@ mod tests {
         assert_eq!(
             response.sku.as_deref(),
             Some("copilot_enterprise_seat_multi_quota")
+        );
+        assert_eq!(
+            response
+                .endpoints
+                .as_ref()
+                .and_then(|endpoints| endpoints.api.as_deref()),
+            Some("https://api.enterprise.githubcopilot.com")
         );
         assert!(!format!("{response:?}").contains("secret-token"));
     }

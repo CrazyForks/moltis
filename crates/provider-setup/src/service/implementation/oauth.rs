@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use {serde_json::Value, tracing::info};
+use {moltis_oauth::TokenStore, serde_json::Value, tracing::info};
 
 use {
     moltis_oauth::{
@@ -81,6 +81,7 @@ impl LiveProviderSetupService {
                         );
                         return;
                     }
+                    prefetch_provider_api_metadata(&provider_name, &client, &token_store).await;
                     let new_registry = ProviderRegistry::from_env_with_config_and_overrides(
                         &config,
                         &env_overrides,
@@ -141,6 +142,8 @@ impl LiveProviderSetupService {
 
         // If tokens already exist, skip launching a fresh OAuth flow.
         if has_oauth_tokens(&provider_name, &self.token_store) {
+            let client = reqwest::Client::new();
+            prefetch_provider_api_metadata(&provider_name, &client, &self.token_store).await;
             let effective = self.effective_config();
             let new_registry = self.build_registry(&effective);
             let provider_summary = new_registry.provider_summary();
@@ -378,4 +381,35 @@ impl LiveProviderSetupService {
             "authenticated": has_tokens,
         }))
     }
+}
+
+async fn prefetch_provider_api_metadata(
+    provider_name: &str,
+    client: &reqwest::Client,
+    token_store: &TokenStore,
+) {
+    #[cfg(feature = "provider-github-copilot")]
+    {
+        if !is_github_copilot_provider(provider_name) {
+            return;
+        }
+        if let Err(error) =
+            moltis_providers::github_copilot::prefetch_api_token_metadata(client, token_store).await
+        {
+            tracing::warn!(
+                provider = %provider_name,
+                error = %error,
+                "failed to prefetch provider API token metadata after OAuth"
+            );
+        }
+    }
+    #[cfg(not(feature = "provider-github-copilot"))]
+    {
+        let _ = (provider_name, client, token_store);
+    }
+}
+
+#[cfg(feature = "provider-github-copilot")]
+fn is_github_copilot_provider(provider_name: &str) -> bool {
+    provider_name == "github-copilot"
 }

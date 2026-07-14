@@ -23,6 +23,7 @@ use {
             CopilotTokenResponse, completion_to_stream_events, is_responses_api_required_error,
             log_copilot_chat_error, log_copilot_request, log_copilot_response,
         },
+        endpoints::{CopilotEndpoint, endpoint_from_cached_metadata, endpoint_from_metadata},
     },
     moltis_agents::model::{
         ChatMessage, CompletionResponse, LlmProvider, StreamEvent, ToolCall, Usage,
@@ -56,7 +57,7 @@ struct GithubTokenResponse {
     error: Option<String>,
 }
 
-struct CopilotAuth {
+pub(super) struct CopilotAuth {
     token: Secret<String>,
     base_url: String,
     is_enterprise: bool,
@@ -198,47 +199,26 @@ pub fn has_stored_tokens() -> bool {
     found
 }
 
-fn copilot_auth_from_parts(token: Secret<String>, proxy_ep: Option<&str>) -> CopilotAuth {
-    match proxy_ep.filter(|s| !s.is_empty()) {
-        Some(ep) => {
-            let ep = ep.trim();
-            if !ep
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-'))
-            {
-                warn!(proxy_ep = %ep, "ignoring malformed proxy-ep, falling back to individual endpoint");
-                return CopilotAuth {
-                    token,
-                    base_url: COPILOT_API_BASE.to_string(),
-                    is_enterprise: false,
-                };
-            }
-            // Reject bare IP addresses (v4/v6) to prevent SSRF against cloud
-            // metadata services, loopback, and RFC-1918 ranges.
-            if ep.parse::<std::net::IpAddr>().is_ok() {
-                warn!(proxy_ep = %ep, "ignoring IP-address proxy-ep, falling back to individual endpoint");
-                return CopilotAuth {
-                    token,
-                    base_url: COPILOT_API_BASE.to_string(),
-                    is_enterprise: false,
-                };
-            }
-            debug!(proxy_ep = %ep, "using enterprise proxy endpoint");
-            CopilotAuth {
-                token,
-                base_url: format!("https://{ep}"),
-                is_enterprise: true,
-            }
-        },
-        None => CopilotAuth {
+fn copilot_auth_from_parts(
+    token: Secret<String>,
+    endpoint: Option<CopilotEndpoint>,
+) -> CopilotAuth {
+    if let Some(endpoint) = endpoint {
+        return CopilotAuth {
             token,
-            base_url: COPILOT_API_BASE.to_string(),
-            is_enterprise: false,
-        },
+            base_url: endpoint.base_url,
+            is_enterprise: endpoint.is_enterprise,
+        };
+    }
+
+    CopilotAuth {
+        token,
+        base_url: COPILOT_API_BASE.to_string(),
+        is_enterprise: false,
     }
 }
 
-async fn fetch_copilot_auth(
+pub(super) async fn fetch_copilot_auth(
     client: &reqwest::Client,
     token_store: &TokenStore,
 ) -> anyhow::Result<CopilotAuth> {
@@ -248,7 +228,7 @@ async fn fetch_copilot_auth(
 
     // The `access_token` stored is the GitHub user token.
     // We exchange it for a short-lived Copilot API token and cache it.
-    // The proxy-ep (if any) is persisted in the `account_id` field.
+    // Endpoint metadata is persisted in the `account_id` field.
     if let Some(copilot_tokens) = token_store.load("github-copilot-api")
         && let Some(expires_at) = copilot_tokens.expires_at
     {
@@ -258,29 +238,46 @@ async fn fetch_copilot_auth(
             .as_secs();
         if now + 60 < expires_at {
             let token = copilot_tokens.access_token.clone();
-            let proxy_ep = copilot_tokens.account_id.as_deref();
+            let endpoint_metadata = copilot_tokens.account_id.as_deref();
+            let endpoint = endpoint_from_cached_metadata(endpoint_metadata);
+            let endpoint_metadata_valid = endpoint.is_some();
+            let endpoint_metadata_present =
+                endpoint_metadata.is_some_and(|value| !value.trim().is_empty());
             debug!(
                 token_source = "cache",
                 cached_token_expires_at = expires_at,
-                cached_proxy_ep = ?proxy_ep,
-                cached_proxy_ep_present = proxy_ep.is_some_and(|ep| !ep.is_empty()),
+                cached_endpoint_metadata = ?endpoint_metadata,
+                cached_endpoint_metadata_present = endpoint_metadata_present,
+                cached_endpoint_metadata_valid = endpoint_metadata_valid,
                 "using cached github-copilot API token"
             );
-            let auth = copilot_auth_from_parts(token, proxy_ep);
-            info!(
-                token_source = "cache",
-                endpoint = %auth.base_url,
-                enterprise = auth.is_enterprise,
-                proxy_ep_present = proxy_ep.is_some_and(|ep| !ep.is_empty()),
-                "github-copilot authentication resolved"
+
+            if endpoint_metadata_valid {
+                let auth = copilot_auth_from_parts(token, endpoint);
+                info!(
+                    token_source = "cache",
+                    endpoint = %auth.base_url,
+                    enterprise = auth.is_enterprise,
+                    endpoint_metadata_present,
+                    endpoint_metadata_valid,
+                    "github-copilot authentication resolved"
+                );
+                return Ok(auth);
+            }
+
+            debug!(
+                token_source = "exchange",
+                cached_token_expires_at = expires_at,
+                cached_endpoint_metadata = ?endpoint_metadata,
+                cached_endpoint_metadata_present = endpoint_metadata_present,
+                "cached github-copilot API token lacks valid endpoint metadata"
             );
-            return Ok(auth);
         }
 
         debug!(
             token_source = "exchange",
             cached_token_expires_at = expires_at,
-            cached_proxy_ep = ?copilot_tokens.account_id,
+            cached_endpoint_metadata = ?copilot_tokens.account_id,
             "cached github-copilot API token is expired or near expiry"
         );
     } else {
@@ -318,10 +315,17 @@ async fn fetch_copilot_auth(
                 response_body.len()
             )
         })?;
+    let endpoint_api = copilot_resp
+        .endpoints
+        .as_ref()
+        .and_then(|endpoints| endpoints.api.as_deref());
+    let endpoint = endpoint_from_metadata(endpoint_api, copilot_resp.proxy_ep.as_deref());
+    let endpoint_metadata_valid = endpoint.is_some();
     debug!(
         token_source = "exchange",
+        endpoint_api = ?endpoint_api,
         proxy_ep = ?copilot_resp.proxy_ep,
-        proxy_ep_present = copilot_resp.proxy_ep.as_deref().is_some_and(|ep| !ep.is_empty()),
+        endpoint_metadata_valid,
         expires_at = copilot_resp.expires_at,
         sku = ?copilot_resp.sku,
         "received github-copilot API token metadata"
@@ -330,18 +334,22 @@ async fn fetch_copilot_auth(
         access_token: copilot_resp.token.clone(),
         refresh_token: None,
         id_token: None,
-        // NOTE: account_id is repurposed here to persist the enterprise
-        // proxy-ep hostname so it can be recovered from the token cache.
-        account_id: copilot_resp.proxy_ep.clone(),
+        // NOTE: account_id is repurposed here to persist the API endpoint
+        // metadata so it can be recovered from the token cache.
+        account_id: endpoint
+            .as_ref()
+            .map(|endpoint| endpoint.cache_value.clone())
+            .or_else(|| Some(COPILOT_API_BASE.to_string())),
         expires_at: Some(copilot_resp.expires_at),
     });
 
-    let auth = copilot_auth_from_parts(copilot_resp.token, copilot_resp.proxy_ep.as_deref());
+    let auth = copilot_auth_from_parts(copilot_resp.token, endpoint);
     info!(
         token_source = "exchange",
         endpoint = %auth.base_url,
         enterprise = auth.is_enterprise,
-        proxy_ep_present = copilot_resp.proxy_ep.is_some(),
+        endpoint_metadata_present = endpoint_api.is_some() || copilot_resp.proxy_ep.is_some(),
+        endpoint_metadata_valid,
         "github-copilot authentication resolved"
     );
     Ok(auth)

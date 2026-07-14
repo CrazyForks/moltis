@@ -181,8 +181,8 @@ version      = "0.1.0"
 # APNS
 a2 = { default-features = false, features = ["ring"], version = "0.10" }
 # Async runtime
-tokio = { features = ["full"], version = "1" }
 agent-client-protocol = "0.10.2"
+tokio                 = { features = ["full"], version = "1" }
 # HTTP/WS server
 askama     = "0.15"
 axum       = { features = ["ws"], version = "0.8" }
@@ -408,7 +408,7 @@ moltis-portable         = { path = "crates/portable" }
 moltis-projects         = { path = "crates/projects" }
 moltis-protocol         = { path = "crates/protocol" }
 moltis-provider-setup   = { path = "crates/provider-setup" }
-moltis-providers        = { features = ["provider-github-copilot", "provider-kimi-code", "provider-openai-codex"], path = "crates/providers" }
+moltis-providers        = { features = ["provider-kimi-code", "provider-openai-codex"], path = "crates/providers" }
 moltis-qmd              = { path = "crates/qmd" }
 moltis-routing          = { path = "crates/routing" }
 moltis-schema-export    = { path = "crates/schema-export" }

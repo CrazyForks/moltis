@@ -7139,6 +7139,7 @@ dependencies = [
  "moltis-plugins",
  "moltis-portable",
  "moltis-projects",
+ "moltis-providers",
  "moltis-sessions",
  "moltis-skills",
  "moltis-tools",

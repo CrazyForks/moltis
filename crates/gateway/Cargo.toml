@@ -190,6 +190,10 @@ netbird = ["dep:moltis-netbird"]
 nostr = ["dep:moltis-nostr"]
 openclaw-import = ["dep:moltis-openclaw-import"]
 prometheus = ["metrics", "moltis-metrics/prometheus"]
+provider-github-copilot = [
+  "moltis-provider-setup/provider-github-copilot",
+  "moltis-providers/provider-github-copilot",
+]
 provider-openai-codex = [
   "moltis-providers/provider-openai-codex",
   "moltis-tools/provider-openai-codex",

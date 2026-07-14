@@ -1,8 +1,11 @@
+mod auth_prefetch;
 mod catalog;
 mod diagnostics;
+mod endpoints;
 mod provider;
 
 pub use {
+    auth_prefetch::prefetch_api_token_metadata,
     catalog::default_model_catalog,
     provider::{
         DeviceCodeResponse, GitHubCopilotProvider, available_models, has_stored_tokens,
