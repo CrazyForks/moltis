@@ -240,6 +240,7 @@ function populateImageDropdown(): void {
 		id: string;
 		label: string;
 		kind: string;
+		available?: boolean;
 	}
 	interface BackendsResponse {
 		backends?: AvailableBackend[];
@@ -262,7 +263,7 @@ function populateImageDropdown(): void {
 			.then((r) => r.json())
 			.catch(() => ({ images: [] })),
 	]).then(([backendsData, imagesData]: [BackendsResponse, CachedImagesResponse]) => {
-		const backends = backendsData.backends || [];
+		const backends = (backendsData.backends || []).filter((backend) => backend.available !== false);
 		const images = imagesData.images || [];
 
 		// Backend section header.
