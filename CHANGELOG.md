@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [20260714.05] - 2026-07-14
+### Fixed
+- [copilot] Keep OAuth provider enabled for registry rebuild
+- [copilot] Include provider in packaged builds
+- [ci] Install codecov cli from pypi
+
 ## [20260714.04] - 2026-07-14
 ### Fixed
 - [ci] Clear profiled llama build caches
