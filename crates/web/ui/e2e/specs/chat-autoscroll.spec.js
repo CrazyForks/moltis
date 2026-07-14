@@ -134,6 +134,47 @@ async function scrollMessagesAwayFromBottom(page) {
 		.toBeGreaterThan(60);
 }
 
+async function addAssistantMessageWhileScrolledUp(page, text, minHeight = 80) {
+	const result = await page.evaluate(
+		async ({ messageText, messageMinHeight }) => {
+			var box = document.getElementById("messages");
+			if (!box) throw new Error("messages container not found");
+
+			// Recreate enough overflow in the same browser task that triggers
+			// smart-scroll. CI can otherwise run a late render between helper calls,
+			// leaving the chat close enough to bottom that no indicator is expected.
+			for (let i = 0; i < 30 && box.scrollHeight - box.clientHeight <= 320; i += 1) {
+				var fixture = document.createElement("div");
+				fixture.className = "msg assistant";
+				fixture.style.flex = "0 0 96px";
+				fixture.style.minHeight = "96px";
+				fixture.dataset.e2eAutoscrollFixture = "true";
+				fixture.textContent = "M".repeat(200);
+				box.appendChild(fixture);
+			}
+
+			box.scrollTop = Math.max(0, box.scrollHeight - box.clientHeight - 240);
+			const distanceBefore = box.scrollHeight - box.scrollTop - box.clientHeight;
+			if (distanceBefore <= 60) {
+				throw new Error(`chat was not scrolled away from bottom before message: ${distanceBefore}`);
+			}
+
+			var appScript = document.querySelector('script[type="module"][src*="js/app.js"]');
+			var appUrl = new URL(appScript.src, window.location.origin);
+			var prefix = appUrl.href.slice(0, appUrl.href.length - "js/app.js".length);
+			var chatUi = await import(`${prefix}js/chat-ui.js`);
+			var el = chatUi.chatAddMsg("assistant", messageText);
+			if (el) el.style.minHeight = `${messageMinHeight}px`;
+
+			return {
+				distanceBefore,
+			};
+		},
+		{ messageText: text, messageMinHeight: minHeight },
+	);
+	expect(result.distanceBefore).toBeGreaterThan(60);
+}
+
 test.describe("Smart auto-scroll", () => {
 	test.beforeEach(async ({ page }, testInfo) => {
 		testInfo.setTimeout(90_000);
@@ -162,14 +203,7 @@ test.describe("Smart auto-scroll", () => {
 		await scrollMessagesAwayFromBottom(page);
 
 		// Add a new assistant message via the smart scroll path
-		await page.evaluate(async () => {
-			var appScript = document.querySelector('script[type="module"][src*="js/app.js"]');
-			var appUrl = new URL(appScript.src, window.location.origin);
-			var prefix = appUrl.href.slice(0, appUrl.href.length - "js/app.js".length);
-			var chatUi = await import(`${prefix}js/chat-ui.js`);
-			var el = chatUi.chatAddMsg("assistant", "New message while scrolled up");
-			if (el) el.style.minHeight = "80px";
-		});
+		await addAssistantMessageWhileScrolledUp(page, "New message while scrolled up");
 
 		// The indicator should be visible
 		const indicator = page.locator(".new-content-indicator");
@@ -190,14 +224,7 @@ test.describe("Smart auto-scroll", () => {
 
 		// Scroll up, then add a message to trigger the indicator
 		await scrollMessagesAwayFromBottom(page);
-		await page.evaluate(async () => {
-			var appScript = document.querySelector('script[type="module"][src*="js/app.js"]');
-			var appUrl = new URL(appScript.src, window.location.origin);
-			var prefix = appUrl.href.slice(0, appUrl.href.length - "js/app.js".length);
-			var chatUi = await import(`${prefix}js/chat-ui.js`);
-			var el = chatUi.chatAddMsg("assistant", "Trigger indicator");
-			if (el) el.style.minHeight = "80px";
-		});
+		await addAssistantMessageWhileScrolledUp(page, "Trigger indicator");
 
 		const indicator = page.locator(".new-content-indicator");
 		await expect(indicator).toBeVisible({ timeout: 10_000 });
@@ -233,14 +260,7 @@ test.describe("Smart auto-scroll", () => {
 
 		// Scroll up, add message to trigger indicator
 		await scrollMessagesAwayFromBottom(page);
-		await page.evaluate(async () => {
-			var appScript = document.querySelector('script[type="module"][src*="js/app.js"]');
-			var appUrl = new URL(appScript.src, window.location.origin);
-			var prefix = appUrl.href.slice(0, appUrl.href.length - "js/app.js".length);
-			var chatUi = await import(`${prefix}js/chat-ui.js`);
-			var el = chatUi.chatAddMsg("assistant", "Trigger indicator again");
-			if (el) el.style.minHeight = "80px";
-		});
+		await addAssistantMessageWhileScrolledUp(page, "Trigger indicator again");
 
 		const indicator = page.locator(".new-content-indicator");
 		await expect(indicator).toBeVisible({ timeout: 5_000 });
