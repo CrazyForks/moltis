@@ -82,6 +82,8 @@ impl LiveProviderSetupService {
                         return;
                     }
                     prefetch_provider_api_metadata(&provider_name, &client, &token_store).await;
+                    let mut config = config.clone();
+                    ensure_provider_enabled(&mut config, &provider_name);
                     let new_registry = ProviderRegistry::from_env_with_config_and_overrides(
                         &config,
                         &env_overrides,
@@ -144,7 +146,8 @@ impl LiveProviderSetupService {
         if has_oauth_tokens(&provider_name, &self.token_store) {
             let client = reqwest::Client::new();
             prefetch_provider_api_metadata(&provider_name, &client, &self.token_store).await;
-            let effective = self.effective_config();
+            let mut effective = self.effective_config();
+            ensure_provider_enabled(&mut effective, &provider_name);
             let new_registry = self.build_registry(&effective);
             let provider_summary = new_registry.provider_summary();
             let model_count = new_registry.list_models().len();
@@ -234,6 +237,8 @@ impl LiveProviderSetupService {
                                 return;
                             }
                             // Rebuild registry with new tokens
+                            let mut config = config.clone();
+                            ensure_provider_enabled(&mut config, &provider_name);
                             let new_registry = ProviderRegistry::from_env_with_config_and_overrides(
                                 &config,
                                 &env_overrides,
@@ -349,7 +354,8 @@ impl LiveProviderSetupService {
         set_provider_enabled_in_config(&pending.provider_name, true)?;
         self.set_provider_enabled_in_memory(&pending.provider_name, true);
 
-        let effective = self.effective_config();
+        let mut effective = self.effective_config();
+        ensure_provider_enabled(&mut effective, &pending.provider_name);
         let new_registry = self.build_registry(&effective);
         let provider_summary = new_registry.provider_summary();
         let model_count = new_registry.list_models().len();
@@ -412,4 +418,12 @@ async fn prefetch_provider_api_metadata(
 #[cfg(feature = "provider-github-copilot")]
 fn is_github_copilot_provider(provider_name: &str) -> bool {
     provider_name == "github-copilot"
+}
+
+fn ensure_provider_enabled(config: &mut moltis_config::schema::ProvidersConfig, provider: &str) {
+    config
+        .providers
+        .entry(provider.to_string())
+        .or_default()
+        .enabled = true;
 }
