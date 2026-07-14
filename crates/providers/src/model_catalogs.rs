@@ -63,16 +63,18 @@ pub(crate) const ZAI_MODELS: &[(&str, &str)] = &[
     ("glm-4-32b-0414-128k", "GLM-4 32B 128K"),
 ];
 
-/// Fireworks Kimi router model-ID prefixes.
+/// Fireworks Kimi model-ID prefixes.
 ///
 /// These models proxy through Fireworks to Moonshot's Kimi API, which has
 /// different schema and message requirements (no strict tools, needs
 /// `reasoning_content`). Issue #810.
-const FIREWORKS_KIMI_ROUTER_PREFIXES: &[&str] = &["accounts/fireworks/routers/kimi"];
+const FIREWORKS_KIMI_ROUTER_PREFIXES: &[&str] = &[
+    "accounts/fireworks/routers/kimi",
+    "accounts/fireworks/models/kimi",
+];
 
 /// Known Fireworks models.
 pub(crate) const FIREWORKS_MODELS: &[(&str, &str)] = &[
-    ("accounts/fireworks/models/kimi-k2p5", "Kimi K2.5"),
     ("accounts/fireworks/models/kimi-k2p6", "Kimi K2.6"),
     ("accounts/fireworks/models/glm-5p1", "GLM 5.1"),
     ("accounts/fireworks/models/gpt-oss-120b", "GPT OSS 120B"),
@@ -579,7 +581,7 @@ mod tests {
     }
 
     #[test]
-    fn fireworks_kimi_router_prefixes_cover_router_models() {
+    fn fireworks_kimi_router_prefixes_cover_router_and_catalog_models() {
         let fireworks = OPENAI_COMPAT_PROVIDERS
             .iter()
             .find(|d| d.config_name == "fireworks")
@@ -589,8 +591,8 @@ mod tests {
         let matches = |id: &str| prefixes.iter().any(|p| id.starts_with(p));
 
         assert!(matches("accounts/fireworks/routers/kimi-k2p5-turbo"));
+        assert!(matches("accounts/fireworks/models/kimi-k2p6"));
         assert!(!matches("accounts/fireworks/models/glm-5p1"));
-        assert!(!matches("accounts/fireworks/models/kimi-k2p5"));
 
         // non_strict_tools_model_prefixes should use the same prefixes
         assert_eq!(
