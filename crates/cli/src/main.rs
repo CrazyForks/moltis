@@ -639,25 +639,41 @@ mod tests {
     }
 
     #[test]
-    fn full_build_includes_github_copilot_provider() {
+    fn default_builds_include_all_provider_features() {
         let cli_manifest =
             std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml"))
                 .unwrap_or_default();
-        assert!(manifest_includes_feature(
-            &cli_manifest,
-            "full",
-            "provider-github-copilot"
-        ));
-
         let gateway_manifest = std::fs::read_to_string(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../gateway/Cargo.toml"
         ))
         .unwrap_or_default();
-        assert!(manifest_includes_feature(
-            &gateway_manifest,
-            "default",
-            "provider-github-copilot"
-        ));
+        let providers_manifest = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../providers/Cargo.toml"
+        ))
+        .unwrap_or_default();
+
+        for provider_feature in [
+            "provider-github-copilot",
+            "provider-kimi-code",
+            "provider-openai-codex",
+        ] {
+            assert!(manifest_includes_feature(
+                &cli_manifest,
+                "full",
+                provider_feature
+            ));
+            assert!(manifest_includes_feature(
+                &gateway_manifest,
+                "default",
+                provider_feature
+            ));
+            assert!(manifest_includes_feature(
+                &providers_manifest,
+                "default",
+                provider_feature
+            ));
+        }
     }
 }

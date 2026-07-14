@@ -172,6 +172,7 @@ full = [
   "openclaw-import",
   "prometheus",
   "provider-github-copilot",
+  "provider-kimi-code",
   "provider-openai-codex",
   "push-notifications",
   "qmd",
@@ -241,6 +242,7 @@ provider-github-copilot = [
   "moltis-gateway/provider-github-copilot",
   "moltis-providers/provider-github-copilot",
 ]
+provider-kimi-code = ["moltis-gateway/provider-kimi-code", "moltis-providers/provider-kimi-code"]
 provider-openai-codex = ["moltis-gateway/provider-openai-codex"]
 push-notifications = ["moltis-httpd/push-notifications", "moltis-web?/push-notifications"]
 qmd = ["moltis-gateway/qmd"]
