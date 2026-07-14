@@ -19,6 +19,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [20260714.01] - 2026-07-14
+### Added
+- [whatsapp] Bump whatsapp-rust 0.5 -> 0.6 with LID-native addressing (#1144)
+
+
+### Removed
+- Drop VOLUME declarations that shadow the home bind mount (#1122)
+
+
+### Fixed
+- [github-copilot] Improve enterprise diagnostics
+- [github-copilot] Refresh auth after misdirected responses
+- [github-copilot] Prefetch API endpoint metadata
+
 ## [20260603.01] - 2026-06-03
 
 ## [20260602.05] - 2026-06-02
