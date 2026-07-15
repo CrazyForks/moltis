@@ -108,7 +108,7 @@ jobs:
       - uses: biomejs/setup-biome@29711cbb52afee00eb13aeb30636592f9edc0088 # v2.7.0
         if: ${{ env.RELEASE_DRY_RUN != 'true' }}
         with:
-          version: "2.4.6"
+          version: "2.5.3"
       - if: ${{ env.RELEASE_DRY_RUN != 'true' }}
         run: biome ci crates/web/ui/src/ crates/web/ui/e2e/
       - if: ${{ env.RELEASE_DRY_RUN != 'true' }}
