@@ -86,6 +86,7 @@ const GENERIC_CONTEXT_WINDOW_FALLBACKS: &[ContextWindowFallback] = &[
     ContextWindowFallback::Exact("gpt-5.6-terra", 1_050_000),
     ContextWindowFallback::Prefix("codestral", 256_000),
     ContextWindowFallback::Prefix("gemini-", 1_000_000),
+    ContextWindowFallback::Exact("MiniMax-M3", 1_000_000),
     ContextWindowFallback::Prefix("MiniMax-", 204_800),
     ContextWindowFallback::Prefix("gpt-4", 128_000),
     ContextWindowFallback::Prefix("gpt-5", 128_000),
@@ -240,6 +241,10 @@ pub fn supports_vision_for_model(model_id: &str) -> bool {
     let id = capability_model_id(model_id);
 
     // ── Known text-only models ──────────────────────────────────────
+    if id.starts_with("MiniMax-M2.7") {
+        return false;
+    }
+
     // Code-focused models
     if id.starts_with("codestral") {
         return false;
@@ -386,6 +391,16 @@ mod tests {
         assert_eq!(context_window_for_model("gpt-5.6-sol"), 1_050_000);
         assert_eq!(context_window_for_model("codestral-latest"), 256_000);
         assert_eq!(context_window_for_model("gemini-2.0-flash"), 1_000_000);
+        assert_eq!(context_window_for_model("kimi-k2.5"), 128_000);
+        assert_eq!(context_window_for_model("MiniMax-M3"), 1_000_000);
+        assert_eq!(context_window_for_model("MiniMax-M2.7"), 204_800);
+        // Z.AI GLM models
+        assert_eq!(context_window_for_model("glm-5"), 128_000);
+        assert_eq!(context_window_for_model("glm-4.7"), 128_000);
+        assert_eq!(context_window_for_model("glm-4.7-flash"), 128_000);
+        assert_eq!(context_window_for_model("glm-4.6"), 128_000);
+        assert_eq!(context_window_for_model("glm-4.5"), 128_000);
+        assert_eq!(context_window_for_model("glm-4-32b-0414-128k"), 128_000);
         assert_eq!(
             context_window_for_model("custom-openrouter::openai/gpt-5.2"),
             128_000
@@ -462,6 +477,9 @@ mod tests {
         // GPT-5 supports vision
         assert!(supports_vision_for_model("gpt-5.2-codex"));
 
+        // MiniMax M3 supports image inputs.
+        assert!(supports_vision_for_model("MiniMax-M3"));
+
         // o3/o4 series supports vision
         assert!(supports_vision_for_model("o3"));
         assert!(supports_vision_for_model("o3-mini"));
@@ -510,6 +528,10 @@ mod tests {
         assert!(!supports_vision_for_model("glm-5"));
         assert!(!supports_vision_for_model("glm-4.7"));
         assert!(!supports_vision_for_model("glm-4.5"));
+
+        // MiniMax M2.7 accepts text input only.
+        assert!(!supports_vision_for_model("MiniMax-M2.7"));
+        assert!(!supports_vision_for_model("MiniMax-M2.7-highspeed"));
     }
 
     #[test]
