@@ -102,10 +102,13 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
-      - uses: biomejs/setup-biome@29711cbb52afee00eb13aeb30636592f9edc0088 # v2.7.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          version: "2.5.3"
-      - run: biome ci crates/web/ui/src/ crates/web/ui/e2e/
+          node-version: 24
+          cache: npm
+          cache-dependency-path: crates/web/ui/package-lock.json
+      - run: npm ci --ignore-scripts --prefix crates/web/ui
+      - run: ./crates/web/ui/node_modules/.bin/biome ci crates/web/ui/src/ crates/web/ui/e2e/
       - run: ./scripts/i18n-check.sh
 
   fmt:
