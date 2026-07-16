@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [20260716.03] - 2026-07-16
+### Fixed
+- [ci] Install biome from npm lockfile
+
 ## [20260716.02] - 2026-07-16
 ### Added
 - Add Kimi K3 provider support (#1156)
