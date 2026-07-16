@@ -19,6 +19,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [20260716.01] - 2026-07-16
+### Added
+- [external-agents] Auto-detect ACP agents (#1149)
+- [providers] Add MiniMax M3 model support (#1151)
+
+
+### Removed
+- [httpd] Remove unused hashmap import
+
+
+### Fixed
+- [sandbox] Harden apple container handling
+- [e2e] Stabilize autoscroll indicator test
+- Handle cron null fields and biome migration
+- [cli] Support services without systemd (#1153)
+- [providers] Derive context windows from capabilities (#1150)
+- [providers] Derive openai-codex token expiry from JWT exp claim (#1152)
+- [ci] Align biome version with repo config
+- [e2e] Wait for onboarding summary readiness
+
 ## [20260714.11] - 2026-07-14
 ### Fixed
 - [ci] Align workflow rust nightly pin
