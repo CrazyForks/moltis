@@ -25,6 +25,18 @@ async function waitForOnboardingStepLoaded(page) {
 	await expect(page.getByText("Scanning OpenClaw installation…", { exact: true })).not.toBeVisible({
 		timeout: 10_000,
 	});
+	await expect(page.getByText("Checking voice providers…", { exact: true })).not.toBeVisible({
+		timeout: 10_000,
+	});
+	await expect(page.getByText("Loading summary…", { exact: true })).not.toBeVisible({
+		timeout: 10_000,
+	});
+}
+
+async function waitForOnboardingWsOpen(page) {
+	await expect
+		.poll(() => page.evaluate(() => window.__moltis_state?.ws?.readyState === WebSocket.OPEN).catch(() => false))
+		.toBe(true);
 }
 
 async function visibleOnboardingHeadingText(page) {
@@ -566,6 +578,7 @@ test.describe("Onboarding wizard", () => {
 
 		await page.goto("/onboarding");
 		await page.waitForLoadState("networkidle");
+		await waitForOnboardingWsOpen(page);
 		expect(await moveToSummaryStep(page)).toBeTruthy();
 
 		const acpRow = page.locator(".rounded-md.border").filter({ hasText: "ACP Agents" });
