@@ -19,6 +19,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [20260716.02] - 2026-07-16
+### Added
+- Add Kimi K3 provider support (#1156)
+
+
+### Changed
+- Improve agent and sandbox status feedback (#1155)
+
+
+### Fixed
+- [web] Show direct mode when sandbox is unavailable (#1154)
+
 ## [20260716.01] - 2026-07-16
 ### Added
 - [external-agents] Auto-detect ACP agents (#1149)
