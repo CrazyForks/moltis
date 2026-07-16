@@ -109,8 +109,7 @@ jobs:
         if: ${{ env.RELEASE_DRY_RUN != 'true' }}
         with:
           node-version: 24
-          cache: npm
-          cache-dependency-path: crates/web/ui/package-lock.json
+          package-manager-cache: false
       - if: ${{ env.RELEASE_DRY_RUN != 'true' }}
         run: npm ci --ignore-scripts --prefix crates/web/ui
       - if: ${{ env.RELEASE_DRY_RUN != 'true' }}
