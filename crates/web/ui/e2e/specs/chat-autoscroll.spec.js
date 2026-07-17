@@ -59,7 +59,7 @@ async function injectScrollableMessages(page, count) {
 					while (fixtures.length > msgCount) {
 						fixtures.pop()?.remove();
 					}
-					while (fixtures.length < msgCount) {
+					while (fixtures.length < msgCount || box.scrollHeight - box.clientHeight <= 320) {
 						var el = document.createElement("div");
 						el.className = "msg assistant";
 						el.style.flex = "0 0 48px";
@@ -68,15 +68,16 @@ async function injectScrollableMessages(page, count) {
 						el.textContent = "M".repeat(200);
 						box.appendChild(el);
 						fixtures.push(el);
+						if (fixtures.length > msgCount + 40) break;
 					}
 
 					box.querySelector(".new-content-indicator")?.remove();
 					box.scrollTop = box.scrollHeight;
-					return fixtures.length;
+					return box.scrollHeight - box.clientHeight;
 				}, count),
 			{ timeout: 10_000 },
 		)
-		.toBeGreaterThanOrEqual(count);
+		.toBeGreaterThan(60);
 	// Ensure welcome/empty-state cards are gone (they overlap #messages)
 	await expect(page.locator("#welcomeCard")).toHaveCount(0, { timeout: 5_000 });
 	await expect(page.locator("#messages .empty-state")).toHaveCount(0, { timeout: 2_000 });
