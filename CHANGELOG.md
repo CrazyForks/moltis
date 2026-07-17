@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [20260717.01] - 2026-07-17
+### Fixed
+- [web] Guard command palette input events
+
 ## [20260716.04] - 2026-07-16
 ### Fixed
 - [ci] Disable release biome cache
