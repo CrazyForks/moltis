@@ -105,31 +105,30 @@ async function getScrollState(page) {
 }
 
 async function scrollMessagesAwayFromBottom(page) {
-	await page.evaluate(() => {
-		var box = document.getElementById("messages");
-		if (!box) return;
-
-		// A late render can replace injected fixtures after setup in CI. If the
-		// container is no longer scrollable, add enough inert fixtures to restore
-		// the intended user-scrolled-up state for this test.
-		for (let i = 0; i < 20 && box.scrollHeight - box.clientHeight <= 80; i += 1) {
-			var el = document.createElement("div");
-			el.className = "msg assistant";
-			el.style.flex = "0 0 96px";
-			el.style.minHeight = "96px";
-			el.dataset.e2eAutoscrollFixture = "true";
-			el.textContent = "M".repeat(200);
-			box.appendChild(el);
-		}
-
-		// Stay away from the top edge so this helper does not trigger history
-		// autoload, which temporarily disables chatAddMsg() auto-scroll handling.
-		box.scrollTop = Math.max(0, box.scrollHeight - box.clientHeight - 200);
-	});
 	await expect
 		.poll(async () => {
-			const s = await getScrollState(page);
-			return s.scrollHeight - s.scrollTop - s.clientHeight;
+			return await page.evaluate(() => {
+				var box = document.getElementById("messages");
+				if (!box) return 0;
+
+				// Late renders can replace injected fixtures or snap back to bottom in
+				// CI. Re-establish overflow and the scrolled-up position in the same
+				// browser task that the poll verifies.
+				for (let i = 0; i < 20 && box.scrollHeight - box.clientHeight <= 220; i += 1) {
+					var el = document.createElement("div");
+					el.className = "msg assistant";
+					el.style.flex = "0 0 96px";
+					el.style.minHeight = "96px";
+					el.dataset.e2eAutoscrollFixture = "true";
+					el.textContent = "M".repeat(200);
+					box.appendChild(el);
+				}
+
+				// Stay away from the top edge so this helper does not trigger history
+				// autoload, which temporarily disables chatAddMsg() auto-scroll handling.
+				box.scrollTop = Math.max(0, box.scrollHeight - box.clientHeight - 200);
+				return box.scrollHeight - box.scrollTop - box.clientHeight;
+			});
 		})
 		.toBeGreaterThan(60);
 }
