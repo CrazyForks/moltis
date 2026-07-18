@@ -581,7 +581,9 @@ test.describe("Onboarding wizard", () => {
 		await waitForOnboardingWsOpen(page);
 		expect(await moveToSummaryStep(page)).toBeTruthy();
 
-		const acpRow = page.locator(".rounded-md.border").filter({ hasText: "ACP Agents" });
+		const acpRow = page.locator(".rounded-md.border", {
+			has: page.locator(".text-sm.font-medium").filter({ hasText: /^ACP Agents$/ }),
+		});
 		await expect(acpRow).toBeVisible();
 		await expect(acpRow.getByText("ACP: Copilot", { exact: true })).toBeVisible();
 		await expect(acpRow.getByText("ACP: Gemini", { exact: true })).toHaveCount(0);
