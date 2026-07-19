@@ -19,6 +19,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [20260719.01] - 2026-07-19
+### Added
+- [slack] Support configurable API base URL (#1159)
+
+
+### Fixed
+- [web] Support ACP-only chat setup (#1157)
+
 ## [20260717.03] - 2026-07-17
 
 ## [20260717.02] - 2026-07-17
