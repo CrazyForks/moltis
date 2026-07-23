@@ -1,4 +1,9 @@
-use std::{collections::HashMap, sync::Arc, time::SystemTime};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::SystemTime,
+};
 
 use {
     async_trait::async_trait,
@@ -484,6 +489,28 @@ impl ExternalAgentChatService {
         Some(self.send_external(params.clone(), session_key, kind).await)
     }
 
+    /// Resolve the directory the configured `context_command` should run in for
+    /// this session: the session worktree when present, else the bound project
+    /// directory. Returns `None` when no project is bound, in which case the
+    /// command inherits the server process's current directory.
+    async fn resolve_context_working_dir(&self, session_key: &str) -> Option<PathBuf> {
+        let entry = self.session_metadata.get(session_key).await?;
+        let pid = entry.project_id?;
+        let val = self
+            .state
+            .services
+            .project
+            .get(serde_json::json!({ "id": pid }))
+            .await
+            .ok()?;
+        let dir = val.get("directory").and_then(|v| v.as_str())?;
+        let worktree = entry.worktree_branch.as_ref().and_then(|_| {
+            let wt = Path::new(dir).join(".moltis-worktrees").join(session_key);
+            wt.exists().then_some(wt)
+        });
+        Some(worktree.unwrap_or_else(|| PathBuf::from(dir)))
+    }
+
     async fn send_external(
         &self,
         params: Value,
@@ -537,7 +564,13 @@ impl ExternalAgentChatService {
         )
         .await;
 
-        let context = context_from_history(&history);
+        let context_working_dir = self.resolve_context_working_dir(&session_key).await;
+        let context_command_output = moltis_common::context_command::run_context_command(
+            self.state.config.chat.context_command.as_deref(),
+            context_working_dir.as_deref(),
+        )
+        .await;
+        let context = context_from_history_with_project_context(&history, context_command_output);
         let start = std::time::Instant::now();
         let live_session = self
             .external_agents
@@ -791,7 +824,7 @@ impl ExternalAgentChatService {
             .read(&session_key)
             .await
             .unwrap_or_default();
-        let context = context_from_history(&history);
+        let context = context_from_history_with_project_context(&history, None);
         let messages: Vec<Value> = context
             .recent_turns
             .iter()
@@ -865,7 +898,10 @@ async fn resolve_session_key(params: &Value, state: &GatewayState) -> String {
     "main".to_string()
 }
 
-fn context_from_history(history: &[Value]) -> ContextSnapshot {
+fn context_from_history_with_project_context(
+    history: &[Value],
+    project_context: Option<String>,
+) -> ContextSnapshot {
     let recent_turns = history
         .iter()
         .rev()
@@ -892,6 +928,7 @@ fn context_from_history(history: &[Value]) -> ContextSnapshot {
         .collect();
     ContextSnapshot {
         recent_turns,
+        project_context,
         ..ContextSnapshot::default()
     }
 }
@@ -1048,6 +1085,28 @@ mod tests {
                 ExternalAgentStatus::Stopped
             }
         }
+    }
+
+    #[test]
+    fn context_from_history_includes_project_context() {
+        let history = vec![
+            PersistedMessage::User {
+                content: MessageContent::Text("hello".to_string()),
+                created_at: None,
+                audio: None,
+                documents: None,
+                channel: None,
+                seq: None,
+                run_id: None,
+            }
+            .to_value(),
+        ];
+
+        let context =
+            context_from_history_with_project_context(&history, Some("dynamic context".into()));
+
+        assert_eq!(context.project_context.as_deref(), Some("dynamic context"));
+        assert_eq!(context.recent_turns.len(), 1);
     }
 
     async fn sqlite_pool() -> sqlx::SqlitePool {
