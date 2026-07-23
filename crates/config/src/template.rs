@@ -810,6 +810,19 @@ port = {port}                           # Port number (auto-generated for this i
 # bot_token = "xoxb-..."
 # app_token = "xapp-..."
 # api_base_url = "https://slack.com/api"
+# dm_policy = "allowlist"
+# allowlist = []
+# otp_self_approval = true
+# otp_cooldown_secs = 300
+
+# Example Microsoft Teams account.
+# [channels.msteams.my-bot]
+# app_id = "00000000-0000-0000-0000-000000000000"
+# app_password = "..."
+# dm_policy = "allowlist"
+# allowlist = []
+# otp_self_approval = true
+# otp_cooldown_secs = 300
 
 # See docs or defaults.toml for full channel configuration examples
 # (WhatsApp, Telegram, Teams, Discord, Slack, Matrix, Nostr, Signal).
