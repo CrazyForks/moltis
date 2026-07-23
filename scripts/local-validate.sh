@@ -172,7 +172,7 @@ elif command -v just >/dev/null 2>&1 && [[ -f justfile ]]; then
 else
   fmt_cmd="cargo +${nightly_toolchain} fmt --all -- --check"
 fi
-biome_cmd="${LOCAL_VALIDATE_BIOME_CMD:-biome ci --diagnostic-level=error crates/web/ui/src/ crates/web/ui/e2e/}"
+biome_cmd="${LOCAL_VALIDATE_BIOME_CMD:-bash -c 'cd crates/web/ui && if [ ! -d node_modules ]; then npm ci; fi && npx biome ci --diagnostic-level=error src/ e2e/'}"
 tsc_cmd="${LOCAL_VALIDATE_TSC_CMD:-bash -c 'cd crates/web/ui && if [ ! -d node_modules ]; then npm ci; fi && npx tsc --noEmit'}"
 i18n_cmd="${LOCAL_VALIDATE_I18N_CMD:-./scripts/i18n-check.sh}"
 zizmor_cmd="${LOCAL_VALIDATE_ZIZMOR_CMD:-./scripts/run-zizmor-resilient.sh . --min-severity high}"
