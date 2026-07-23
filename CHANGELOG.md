@@ -19,6 +19,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [20260723.03] - 2026-07-23
+### Added
+- Add context command support for chat turns (#1124)
+
+
+### Fixed
+- [slack] Allow operator-approved api base hosts (#1164)
+- [web] Show dates for older sessions (#1162)
+- [ci] Keep local validation on pinned tools
+
 ## [20260723.02] - 2026-07-23
 
 ## [20260723.01] - 2026-07-23
