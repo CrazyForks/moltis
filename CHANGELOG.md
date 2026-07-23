@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [20260723.01] - 2026-07-23
+### Fixed
+- [slack] Challenge unknown allowlist DMs with OTP (#1163)
+
 ## [20260719.01] - 2026-07-19
 ### Added
 - [slack] Support configurable API base URL (#1159)
