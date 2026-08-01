@@ -60,6 +60,11 @@ export interface RpcMethodMap {
 
 	// ── Exec ────────────────────────────────────────────────────
 	"exec.approval.resolve": unknown;
+
+	// ── Feedback ────────────────────────────────────────────────
+	"feedback.status": unknown;
+	"feedback.submit": unknown;
+
 	"external_agents.bind": unknown;
 	"external_agents.list": ExternalAgentInfo[];
 	"external_agents.status": unknown;
@@ -79,6 +84,10 @@ export interface RpcMethodMap {
 	"hooks.list": unknown;
 	"hooks.reload": unknown;
 	"hooks.save": unknown;
+
+	// ── Instrumentation ─────────────────────────────────────────
+	"instrumentation.status": unknown;
+	"instrumentation.test": unknown;
 
 	// ── Location ────────────────────────────────────────────────
 	"location.result": unknown;

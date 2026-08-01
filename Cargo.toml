@@ -39,6 +39,7 @@ default-members = [
   "crates/node-host",
   "crates/nostr",
   "crates/oauth",
+  "crates/observability",
   "crates/onboarding",
   "crates/openclaw-import",
   "crates/plugins",
@@ -109,6 +110,7 @@ members = [
   "crates/node-host",
   "crates/nostr",
   "crates/oauth",
+  "crates/observability",
   "crates/onboarding",
   "crates/openclaw-import",
   "crates/plugins",
@@ -219,7 +221,7 @@ sqlx = { features = ["migrate", "runtime-tokio", "sqlite"], version = "0.8" }
 # HTTP client
 reqwest = { features = ["form", "json", "multipart", "query", "socks", "stream"], version = "0.13" }
 # UUID
-uuid = { features = ["v4"], version = "1" }
+uuid = { features = ["v4", "v5"], version = "1" }
 # Async
 async-stream = "0.3"
 async-trait  = "0.1"
@@ -414,6 +416,7 @@ moltis-network-filter   = { default-features = false, path = "crates/network-fil
 moltis-node-host        = { path = "crates/node-host" }
 moltis-nostr            = { path = "crates/nostr" }
 moltis-oauth            = { path = "crates/oauth" }
+moltis-observability    = { default-features = false, path = "crates/observability" }
 moltis-onboarding       = { path = "crates/onboarding" }
 moltis-openclaw-import  = { path = "crates/openclaw-import" }
 moltis-plugins          = { path = "crates/plugins" }

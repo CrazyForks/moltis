@@ -33,7 +33,7 @@ use {
 
 use crate::{
     agent_loop::effective_tool_mode,
-    channels::notify_channels_of_compaction,
+    channel_compaction::notify_channels_of_compaction,
     compaction_run,
     memory_tools::AgentScopedMemoryWriter,
     prompt::{

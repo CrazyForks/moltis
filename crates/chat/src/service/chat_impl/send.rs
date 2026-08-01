@@ -173,10 +173,6 @@ impl LiveChatService {
             "chat.send: received"
         );
 
-        // Decide whether this turn can run before doing provider lookup, prompt
-        // construction, hook dispatch, or other I/O. If a run already owns the
-        // session, queue immediately instead of letting a follow-up request
-        // contend with the active run's locks.
         let message_queue_mode = self.config.chat.message_queue_mode;
         let admission = if queue_if_busy && explicit_shell_command.is_none() {
             let mut queued_params = params.clone();
@@ -222,7 +218,6 @@ impl LiveChatService {
                     queued_replay,
                     "chat.send: acquired session permit"
                 );
-                // This call owns the session and will execute: claim its acks.
                 self.state
                     .activate_channel_acks(&run_id, &session_key, ack_keys.clone())
                     .await;
@@ -267,7 +262,6 @@ impl LiveChatService {
                     .await;
                 return Err("exec tool is denied by the request tool policy".into());
             }
-            // Generate run_id early so we can link the user message to this run.
             let run_id_clone = run_id.clone();
             let channel_meta = params.get("channel").cloned();
             let user_audio = user_audio_path_from_params(&params, &session_key);
@@ -1314,6 +1308,14 @@ impl LiveChatService {
                                 .await
                         {
                             warn!("failed to persist assistant message: {e}");
+                        }
+                        if !ephemeral {
+                            crate::channel_feedback::record_web_reply_trace(
+                                &state,
+                                &session_key_clone,
+                                &run_id_clone,
+                            )
+                            .await;
                         }
                         crate::channel_acks::note_turn_finished(&state, &run_id_clone, true).await;
                     },

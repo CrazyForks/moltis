@@ -92,6 +92,7 @@
 - [Streaming](streaming.md)
 - [SQLite Migrations](sqlite-migration.md)
 - [Metrics & Tracing](metrics-and-tracing.md)
+- [Instrumentation](instrumentation.md)
 - [Tool Registry](tool-registry.md)
 - [Tool Policy](tool-policy.md)
 - [Agent Presets](agent-presets.md)

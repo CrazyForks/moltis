@@ -95,6 +95,8 @@ const READ_METHODS: &[&str] = &[
     "webhooks.delivery.get",
     "webhooks.delivery.payload",
     "webhooks.delivery.actions",
+    "feedback.status",
+    "instrumentation.status",
     "heartbeat.status",
     "heartbeat.runs",
     "system-presence",
@@ -255,6 +257,9 @@ const WRITE_METHODS: &[&str] = &[
     "webhooks.create",
     "webhooks.update",
     "webhooks.delete",
+    // Writes a score against a trace: a mutation, not a read.
+    "feedback.submit",
+    "instrumentation.test",
     "heartbeat.update",
     "heartbeat.run",
     "voice.config.save_key",
@@ -497,6 +502,22 @@ mod tests {
         assert_error_code(
             authorize_method("channels.senders.list", "operator", &scopes(&[])),
             "UNAUTHORIZED",
+        );
+    }
+
+    #[test]
+    fn feedback_status_requires_read_but_submit_requires_write() {
+        // Submitting writes a score against a trace. A read-scoped client must
+        // not be able to record or retract one.
+        assert!(
+            authorize_method("feedback.status", "operator", &scopes(&["operator.read"])).is_none()
+        );
+        assert_error_code(
+            authorize_method("feedback.submit", "operator", &scopes(&["operator.read"])),
+            "UNAUTHORIZED",
+        );
+        assert!(
+            authorize_method("feedback.submit", "operator", &scopes(&["operator.write"])).is_none()
         );
     }
 
@@ -752,6 +773,54 @@ mod tests {
         assert_eq!(
             resp.error.as_ref().map(|e| e.code.as_str()),
             Some("UNKNOWN_METHOD")
+        );
+    }
+
+    /// Guards the fix end to end rather than only at `authorize_method`: the
+    /// method was reachable with `operator.read` while writing a score, so a
+    /// read-scoped client could forge or retract feedback.
+    #[test]
+    fn feedback_submit_is_rejected_for_read_scoped_clients() {
+        use crate::{
+            auth::{AuthMode, ResolvedAuth},
+            services::GatewayServices,
+            state::GatewayState,
+        };
+
+        let reg = MethodRegistry::new();
+        let ctx = MethodContext {
+            request_id: "test".into(),
+            method: "feedback.submit".into(),
+            params: serde_json::json!({
+                "sessionKey": "someone-elses-session",
+                "messageId": "run-1",
+                "signal": "positive",
+                // Ignored by the handler, which attributes to the
+                // authenticated operator; present here to prove the request
+                // cannot choose whose vote it writes.
+                "userId": "victim",
+            }),
+            client_conn_id: "conn-1".into(),
+            client_role: "operator".into(),
+            client_scopes: scopes(&["operator.read"]),
+            state: GatewayState::new(
+                ResolvedAuth {
+                    mode: AuthMode::Token,
+                    token: None,
+                    password: None,
+                },
+                GatewayServices::noop(),
+            ),
+            channel: None,
+        };
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .expect("runtime");
+        let resp = rt.block_on(reg.dispatch(ctx));
+        assert!(!resp.ok);
+        assert_eq!(
+            resp.error.as_ref().map(|e| e.code.as_str()),
+            Some("UNAUTHORIZED")
         );
     }
 

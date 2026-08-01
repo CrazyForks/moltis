@@ -40,11 +40,12 @@ use crate::{
         commit_terminal_and_finish_channel_stream, compact_session, mark_unsupported_model,
         ordered_runner_event_callback,
     },
+    channel_compaction::notify_channels_of_compaction,
     channels::{
         deliver_channel_error, deliver_channel_replies, dispatch_document_to_channels,
         document_payload_from_data_uri, document_payload_from_ref, generate_tts_audio,
-        notify_channels_of_compaction, send_location_to_channels, send_retry_status_to_channels,
-        send_screenshot_to_channels, send_tool_result_to_channels, send_tool_status_to_channels,
+        send_location_to_channels, send_retry_status_to_channels, send_screenshot_to_channels,
+        send_tool_result_to_channels, send_tool_status_to_channels,
     },
     chat_error::parse_chat_error,
     memory_tools::{effective_tool_mode, install_agent_scoped_memory_tools},
@@ -333,9 +334,10 @@ pub(crate) async fn run_with_tools(
     let provider_name_for_events = provider_name.to_string();
     let active_partial_for_events = active_partial_assistant.as_ref().map(Arc::clone);
     let (on_event, mut event_rx) = ordered_runner_event_callback();
-    let channel_stream_dispatcher = ChannelStreamDispatcher::for_session(state, session_key)
-        .await
-        .map(|dispatcher| Arc::new(Mutex::new(dispatcher)));
+    let channel_stream_dispatcher =
+        ChannelStreamDispatcher::for_session(state, session_key, run_id)
+            .await
+            .map(|dispatcher| Arc::new(Mutex::new(dispatcher)));
     let channel_stream_for_events = channel_stream_dispatcher.as_ref().map(Arc::clone);
     let event_forwarder_task = tokio::spawn(async move {
         // Track tool call arguments from ToolCallStart so they can be persisted in ToolCallEnd.
@@ -979,6 +981,7 @@ pub(crate) async fn run_with_tools(
         conn_id.as_deref(),
         prompt_runtime_context,
     );
+    tool_context["_trace_correlation_key"] = serde_json::json!(run_id);
     if let Some(controls) = tool_controls {
         if let Some(active_tools) = controls.active_tools {
             tool_context["active_tools"] = serde_json::json!(active_tools);

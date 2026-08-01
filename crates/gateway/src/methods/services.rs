@@ -506,6 +506,8 @@ mod admin;
 mod agents;
 mod channels;
 mod core;
+mod feedback;
+mod instrumentation;
 mod modes;
 mod sessions;
 mod system;
@@ -521,6 +523,8 @@ pub(super) fn register(reg: &mut MethodRegistry) {
     core::register(reg);
     system::register(reg);
     admin::register(reg);
+    feedback::register(reg);
+    instrumentation::register(reg);
     #[cfg(feature = "voice")]
     voice_personas::register(reg);
     voicecall::register(reg);
