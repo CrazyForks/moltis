@@ -51,6 +51,11 @@ pub struct NostrAccountConfig {
     /// Public keys allowed to send DMs (npub1/hex).
     pub allowed_pubkeys: Vec<String>,
 
+    /// Exact sender IDs allowed to run privileged channel commands.
+    /// Empty grants nobody privileged access.
+    #[serde(default)]
+    pub operators: Vec<String>,
+
     /// NIP-29 group ids (the `h` tag values) to join — e.g. Buzz channels.
     ///
     /// This list is authoritative for group access: it is both the set we
@@ -109,6 +114,7 @@ impl Default for NostrAccountConfig {
             relays: default_relays(),
             dm_policy: DmPolicy::Allowlist,
             allowed_pubkeys: Vec::new(),
+            operators: Vec::new(),
             groups: Vec::new(),
             group_mention_mode: MentionMode::Mention,
             group_ack_reactions: true,
@@ -139,6 +145,7 @@ impl std::fmt::Debug for NostrAccountConfig {
             .field("relays", &self.relays)
             .field("dm_policy", &self.dm_policy)
             .field("allowed_pubkeys", &self.allowed_pubkeys)
+            .field("operators", &self.operators)
             .field("groups", &self.groups)
             .field("group_mention_mode", &self.group_mention_mode)
             .field("group_ack_reactions", &self.group_ack_reactions)
@@ -162,13 +169,14 @@ impl Serialize for RedactedConfig<'_> {
         let c = self.0;
         // Must equal the number of unconditional `serialize_field` calls below;
         // self-describing formats emit the declared length verbatim.
-        let mut count = 14;
+        let mut count = 15;
         count += c.agent_id.is_some() as usize;
         let mut s = serializer.serialize_struct("NostrAccountConfig", count)?;
         s.serialize_field("secret_key", "[REDACTED]")?;
         s.serialize_field("relays", &c.relays)?;
         s.serialize_field("dm_policy", &c.dm_policy)?;
         s.serialize_field("allowed_pubkeys", &c.allowed_pubkeys)?;
+        s.serialize_field("operators", &c.operators)?;
         s.serialize_field("groups", &c.groups)?;
         s.serialize_field("group_mention_mode", &c.group_mention_mode)?;
         s.serialize_field("group_ack_reactions", &c.group_ack_reactions)?;
@@ -189,6 +197,10 @@ impl Serialize for RedactedConfig<'_> {
 impl ChannelConfigView for NostrAccountConfig {
     fn allowlist(&self) -> &[String] {
         &self.allowed_pubkeys
+    }
+
+    fn operators(&self) -> &[String] {
+        &self.operators
     }
 
     fn group_allowlist(&self) -> &[String] {
@@ -393,7 +405,7 @@ mod tests {
             .unwrap_or_default();
         assert_eq!(
             base.as_object().map(serde_json::Map::len),
-            Some(14),
+            Some(15),
             "keep `count` in RedactedConfig::serialize in sync"
         );
 
@@ -402,7 +414,7 @@ mod tests {
             ..Default::default()
         };
         let json = serde_json::to_value(RedactedConfig(&with_agent)).unwrap_or_default();
-        assert_eq!(json.as_object().map(serde_json::Map::len), Some(15));
+        assert_eq!(json.as_object().map(serde_json::Map::len), Some(16));
     }
 
     #[test]

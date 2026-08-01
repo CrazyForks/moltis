@@ -110,8 +110,14 @@ pub(crate) async fn run_with_tools(
     terminal_runs: &Arc<RwLock<HashSet<String>>>,
     sender_name: Option<String>,
     tool_controls: Option<AgentToolControls>,
+    private_context: bool,
 ) -> Option<AssistantTurnOutput> {
     let run_started = Instant::now();
+    let skills = if private_context {
+        skills
+    } else {
+        &[]
+    };
     let runtime_limits = persona.config.agent_runtime_limits(agent_id);
     info!(
         agent_id,
@@ -141,7 +147,13 @@ pub(crate) async fn run_with_tools(
             registry_guard.clone_without(&[])
         }
     };
-    if tools_enabled && let Some(manager) = state.memory_manager() {
+    // Agent-scoped memory tools are owner-private, so a public turn never gets
+    // them. `install_agent_scoped_memory_tools` only re-registers names it just
+    // unregistered, so it cannot reintroduce a tool the filters above removed.
+    if private_context
+        && tools_enabled
+        && let Some(manager) = state.memory_manager()
+    {
         install_agent_scoped_memory_tools(
             &mut filtered_registry,
             manager,
@@ -164,7 +176,7 @@ pub(crate) async fn run_with_tools(
     // Before building the system prompt, query long-term memory with the
     // user's message and inject relevant results as `<recalled_context>`.
     let mut memory_text_with_prefetch: Option<String> = None;
-    if persona.config.memory.enable_prefetch {
+    if private_context && persona.config.memory.enable_prefetch {
         let query_text = match user_content {
             UserContent::Text(t) => Some(t.as_str()),
             UserContent::Multimodal(parts) => parts.iter().find_map(|p| match p {
@@ -214,9 +226,32 @@ pub(crate) async fn run_with_tools(
             }
         }
     }
-    let effective_memory_text = memory_text_with_prefetch
-        .as_deref()
-        .or(persona.memory_text.as_deref());
+    let effective_memory_text = private_context
+        .then(|| {
+            memory_text_with_prefetch
+                .as_deref()
+                .or(persona.memory_text.as_deref())
+        })
+        .flatten();
+
+    let project_context = private_context.then_some(project_context).flatten();
+    let user = private_context.then_some(&persona.user);
+    let soul_text = private_context
+        .then_some(persona.soul_text.as_deref())
+        .flatten();
+    let boot_text = private_context
+        .then_some(persona.boot_text.as_deref())
+        .flatten();
+    let agents_text = private_context
+        .then_some(persona.agents_text.as_deref())
+        .flatten();
+    let tools_text = private_context
+        .then_some(persona.tools_text.as_deref())
+        .flatten();
+    let guidelines_text = private_context
+        .then_some(persona.guidelines_text.as_deref())
+        .flatten();
+    let prompt_runtime_context = private_context.then_some(runtime_context).flatten();
 
     // Build system prompt:
     // - Native tools: full prompt with tool schemas sent via API
@@ -230,30 +265,30 @@ pub(crate) async fn run_with_tools(
             project_context,
             skills,
             Some(&persona.identity),
-            Some(&persona.user),
-            persona.soul_text.as_deref(),
-            persona.boot_text.as_deref(),
-            persona.agents_text.as_deref(),
-            persona.tools_text.as_deref(),
-            runtime_context,
+            user,
+            soul_text,
+            boot_text,
+            agents_text,
+            tools_text,
+            prompt_runtime_context,
             effective_memory_text,
             prompt_limits,
-            persona.guidelines_text.as_deref(),
+            guidelines_text,
         )
         .prompt
     } else {
         build_system_prompt_minimal_runtime_details(
             project_context,
             Some(&persona.identity),
-            Some(&persona.user),
-            persona.soul_text.as_deref(),
-            persona.boot_text.as_deref(),
-            persona.agents_text.as_deref(),
-            persona.tools_text.as_deref(),
-            runtime_context,
+            user,
+            soul_text,
+            boot_text,
+            agents_text,
+            tools_text,
+            prompt_runtime_context,
             effective_memory_text,
             prompt_limits,
-            persona.guidelines_text.as_deref(),
+            guidelines_text,
         )
         .prompt
     };
@@ -930,9 +965,11 @@ pub(crate) async fn run_with_tools(
     // it stays positionally stable, preserving KV cache prefix matching for
     // local LLMs (llama.cpp, Ollama, LM Studio) and prompt-cache hits for
     // cloud providers.
-    let effective_user_content =
-        moltis_agents::prompt::prepend_datetime_to_user_content(user_content, runtime_context)
-            .unwrap_or_else(|| user_content.clone());
+    let effective_user_content = moltis_agents::prompt::prepend_datetime_to_user_content(
+        user_content,
+        prompt_runtime_context,
+    )
+    .unwrap_or_else(|| user_content.clone());
 
     // Inject session key and accept-language into tool call params so tools can
     // resolve per-session state and forward the user's locale to web requests.
@@ -940,7 +977,7 @@ pub(crate) async fn run_with_tools(
         session_key,
         accept_language.as_deref(),
         conn_id.as_deref(),
-        runtime_context,
+        prompt_runtime_context,
     );
     if let Some(controls) = tool_controls {
         if let Some(active_tools) = controls.active_tools {
@@ -993,7 +1030,9 @@ pub(crate) async fn run_with_tools(
 
     // On context-window overflow, compact the session and retry once.
     let result = match first_result {
-        Err(AgentRunError::ContextWindowExceeded(ref msg)) if session_store.is_some() => {
+        Err(AgentRunError::ContextWindowExceeded(ref msg))
+            if private_context && session_store.is_some() =>
+        {
             let store = session_store?;
             info!(
                 run_id,

@@ -7,8 +7,8 @@ use {
     secrecy::Secret,
     tracing::{debug, info, warn},
 };
-
 mod credential_env;
+mod webhook_security;
 
 use credential_env::{
     CredentialEnvVarProvider, ensure_sandbox_api_key, gateway_credentials_allowed,
@@ -442,6 +442,8 @@ pub(super) async fn complete_startup(
                     let mut params = serde_json::json!({
                         "text": req.message,
                         "_session_key": req.session_key,
+                        "_private_context": false,
+                        "_tool_audience": "public",
                     });
                     if let Some(ref model) = req.model {
                         params["model"] = serde_json::Value::String(model.clone());
@@ -449,10 +451,8 @@ pub(super) async fn complete_startup(
                     if let Some(ref agent_id) = req.agent_id {
                         params["agent_id"] = serde_json::Value::String(agent_id.clone());
                     }
-                    if let Some(ref tool_policy) = req.tool_policy {
-                        params["_tool_policy"] = serde_json::to_value(tool_policy)
-                            .map_err(|error| anyhow::anyhow!(error))?;
-                    }
+                    params["_tool_policy"] =
+                        webhook_security::request_tool_policy(req.tool_policy.as_ref())?;
                     let result = chat
                         .send_sync(params)
                         .await
@@ -735,7 +735,7 @@ pub(super) async fn complete_startup(
             .with_sandbox_router(Arc::clone(&sandbox_router));
 
         tool_registry.register(Box::new(exec_tool));
-        tool_registry.register(Box::new(moltis_tools::calc::CalcTool::new()));
+        tool_registry.register_public(Box::new(moltis_tools::calc::CalcTool::new()));
         #[cfg(feature = "fs-tools")]
         {
             use moltis_config::schema::FsBinaryPolicy;
@@ -910,7 +910,7 @@ pub(super) async fn complete_startup(
         ) {
             #[cfg(feature = "firecrawl")]
             let t = t.with_firecrawl_config(&config.tools.web.firecrawl);
-            tool_registry.register(Box::new(t.with_env_provider(Arc::clone(&env_provider))));
+            tool_registry.register_public(Box::new(t.with_env_provider(Arc::clone(&env_provider))));
         }
         if let Some(t) = moltis_tools::web_fetch::WebFetchTool::from_config(&config.tools.web.fetch)
         {
@@ -918,7 +918,7 @@ pub(super) async fn complete_startup(
             let t = t.with_firecrawl(&config.tools.web.firecrawl);
             #[cfg(feature = "trusted-network")]
             let t = super::apply_web_fetch_network_policy(t, profile, sandbox_router.config());
-            tool_registry.register(Box::new(t));
+            tool_registry.register_public(Box::new(t));
         }
         #[cfg(feature = "firecrawl")]
         if let Some(t) =

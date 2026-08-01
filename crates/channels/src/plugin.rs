@@ -8,6 +8,13 @@ use {
 
 use crate::{Error, Result, config_view::ChannelConfigView};
 
+mod message_types;
+
+pub use message_types::{
+    ChannelAttachment, ChannelDocumentFile, ChannelMessageKind, ChannelMessageMeta,
+    SavedChannelFile,
+};
+
 // ── Channel type enum ───────────────────────────────────────────────────────
 
 /// Supported channel types.
@@ -61,27 +68,14 @@ impl ChannelType {
     /// Best-effort chat classification for hook and prompt context.
     #[must_use]
     pub fn classify_chat(&self, chat_id: &str) -> Option<String> {
-        match self {
-            Self::Telegram => {
-                if chat_id.starts_with("-100") {
-                    Some("channel_or_supergroup".to_string())
-                } else if chat_id.starts_with('-') {
-                    Some("group".to_string())
-                } else {
-                    Some("private".to_string())
-                }
-            },
-            Self::Signal => {
-                if chat_id.starts_with("group:") {
-                    Some("group".to_string())
-                } else {
-                    Some("direct".to_string())
-                }
-            },
-            Self::Nostr => Some("dm".to_string()),
-            Self::Telephony => Some("call".to_string()),
-            _ => None,
-        }
+        crate::chat_classification::classify_chat(*self, chat_id)
+    }
+
+    /// Whether a chat can contain messages from multiple principals.
+    /// Unknown platform chat kinds fail closed as shared.
+    #[must_use]
+    pub fn is_shared_chat(&self, chat_id: &str) -> bool {
+        crate::chat_classification::is_shared_chat(*self, chat_id)
     }
 
     /// Top-level config fields that must be treated as persisted secrets.
@@ -429,10 +423,10 @@ pub trait ChannelEventSink: Send + Sync {
     /// Dispatch a slash command (e.g. "new", "clear", "compact", "context")
     /// and return a text result to send back to the channel.
     ///
-    /// `sender_id` identifies the message sender. Privileged commands
-    /// (`/approve`, `/deny`) are restricted to senders on the channel
-    /// account's allowlist — authorization is enforced centrally by the
-    /// gateway, so channel implementations do not need to handle it.
+    /// `sender_id` identifies the message sender. The gateway enforces each
+    /// command's [`crate::commands::CommandPrivilege`]: public commands remain
+    /// available to guests, while operator-direct commands require an exact ID
+    /// in the account's `operators` list and a verified direct conversation.
     async fn dispatch_command(
         &self,
         command: &str,
@@ -505,6 +499,7 @@ pub trait ChannelEventSink: Send + Sync {
     async fn update_location(
         &self,
         _reply_to: &ChannelReplyTarget,
+        _sender_id: Option<&str>,
         _latitude: f64,
         _longitude: f64,
     ) -> bool {
@@ -519,6 +514,7 @@ pub trait ChannelEventSink: Send + Sync {
     async fn resolve_pending_location(
         &self,
         _reply_to: &ChannelReplyTarget,
+        _sender_id: Option<&str>,
         _latitude: f64,
         _longitude: f64,
     ) -> bool {
@@ -532,6 +528,7 @@ pub trait ChannelEventSink: Send + Sync {
         &self,
         _callback_data: &str,
         _reply_to: ChannelReplyTarget,
+        _sender_id: Option<&str>,
     ) -> Result<String> {
         Err(Error::unavailable("interactions not supported"))
     }
@@ -552,81 +549,6 @@ pub trait ChannelEventSink: Send + Sync {
         let _ = attachments;
         self.dispatch_to_chat(text, reply_to, meta).await;
     }
-}
-
-/// Metadata about a channel message, used for UI display.
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct ChannelMessageMeta {
-    pub channel_type: ChannelType,
-    pub sender_name: Option<String>,
-    pub username: Option<String>,
-    /// Platform-specific sender/peer ID (e.g. Telegram user ID, Discord user ID).
-    /// Used for per-sender tool policy resolution.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub sender_id: Option<String>,
-    /// Original inbound message media kind (voice, audio, photo, etc.).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub message_kind: Option<ChannelMessageKind>,
-    /// Default model configured for this channel account.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub model: Option<String>,
-    /// Default agent configured for this channel account or chat override.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub agent_id: Option<String>,
-    /// Filename of saved voice audio (set by `save_channel_voice`).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub audio_filename: Option<String>,
-    /// Saved inbound documents/files attached to this user message.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub documents: Option<Vec<ChannelDocumentFile>>,
-}
-
-/// Inbound channel message media kind.
-#[derive(Debug, Clone, Copy, serde::Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ChannelMessageKind {
-    Text,
-    Voice,
-    Audio,
-    Photo,
-    Document,
-    Video,
-    Location,
-    Other,
-}
-
-/// An attachment (image, file) from a channel message.
-#[derive(Debug, Clone)]
-pub struct ChannelAttachment {
-    /// MIME type of the attachment (e.g., "image/jpeg", "image/png").
-    pub media_type: String,
-    /// Raw binary data of the attachment.
-    pub data: Vec<u8>,
-}
-
-/// Metadata for a saved inbound channel document.
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct ChannelDocumentFile {
-    /// User-facing original filename when available.
-    pub display_name: String,
-    /// Sanitized stored filename inside session media.
-    pub stored_filename: String,
-    /// MIME type reported by the channel.
-    pub mime_type: String,
-    /// Attachment size when the channel exposes it.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub size_bytes: Option<u64>,
-}
-
-/// Metadata for an inbound channel file saved to session media.
-#[derive(Debug, Clone)]
-pub struct SavedChannelFile {
-    /// Original or generated filename used in session media storage.
-    pub filename: String,
-    /// Relative media reference (e.g. `media/main/report.pdf`).
-    pub media_ref: String,
-    /// Absolute filesystem path for local tooling access.
-    pub absolute_path: String,
 }
 
 /// Where to send the LLM response back.
@@ -658,6 +580,18 @@ pub struct ChannelReplyTarget {
 }
 
 impl ChannelReplyTarget {
+    /// Deterministic session key used when a channel has no explicit active
+    /// session override.
+    pub fn default_session_key(&self) -> String {
+        match &self.thread_id {
+            Some(thread_id) => format!(
+                "{}:{}:{}:{}",
+                self.channel_type, self.account_id, self.chat_id, thread_id
+            ),
+            None => format!("{}:{}:{}", self.channel_type, self.account_id, self.chat_id),
+        }
+    }
+
     /// Returns the address string for outbound sends.
     ///
     /// For Telegram forum topics this encodes both chat and thread as
@@ -1154,7 +1088,11 @@ mod tests {
             message_id: None,
             thread_id: None,
         };
-        assert!(!sink.update_location(&target, 48.8566, 2.3522).await);
+        assert!(
+            !sink
+                .update_location(&target, Some("sender"), 48.8566, 2.3522)
+                .await
+        );
     }
 
     #[test]
